@@ -1,4 +1,3 @@
-import React, { useState, useEffect } from 'react';
 import {
   TextInput,
   StatusBar,
@@ -22,7 +21,8 @@ import * as Clipboard from 'expo-clipboard';
 import { Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { lightTheme, darkTheme } from './Color';// 匯入主色設定
-
+import React, { useState, useEffect, useRef } from 'react';
+import WaveformBars from './WaveformBars';
 
 
 const AudioRecorder = () => {
@@ -55,6 +55,21 @@ const AudioRecorder = () => {
 
   const [currentVolume, setCurrentVolume] = useState(0); // 當前音量 (0-1)
   const [currentDecibels, setCurrentDecibels] = useState(-160); // 當前分貝 (dB) 
+  const [waveform, setWaveform] = useState([]); // 存播放過程中每個時間點的音量大小（0~1）
+
+  const [playbackPosition, setPlaybackPosition] = useState(0); // 當前播放位置 (ms)
+  const [playbackDuration, setPlaybackDuration] = useState(0); // 總時長 (ms)
+  const [isSeeking, setIsSeeking] = useState(false); // 是否正在拖曳
+  const [seekPosition, setSeekPosition] = useState(0); // 拖曳暫存位置
+  const progressRef = useRef(null);
+
+  const formatTime = (ms) => {
+    if (!ms || ms < 0) return "00:00";
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  };
 
   // WAV 格式錄音配置
   const recordingOptions = {
@@ -94,6 +109,8 @@ const AudioRecorder = () => {
       // 錄音前強制停止播放
       if (currentSound) {
         await currentSound.unloadAsync();
+        setWaveform([]); // 👈 清空上一次播放留下的音量波形
+
         setCurrentSound(null);
         setPlayingUri(null);
         setIsPlaying(false);
@@ -131,8 +148,13 @@ const AudioRecorder = () => {
             setCurrentDecibels(db);
 
             // 轉換為 0-1 範圍 (線性)
-            const linear = Math.pow(10, db / 20);
-            setCurrentVolume(linear);
+            const amplified = (Math.min(Math.max(status.metering, -130), 0) + 130) / 130;
+            //const amplified = Math.min(linear * 3, 1);
+            setCurrentVolume(amplified);
+
+            setWaveform((prev) =>
+              prev.length > 200 ? [...prev.slice(1), amplified] : [...prev, amplified]
+            );
           }
         } catch (err) {
           console.warn('獲取音量失敗:', err);
@@ -183,6 +205,34 @@ const AudioRecorder = () => {
     }
   };
 
+  // 跳轉到指定位置
+  const handleSeekComplete = async () => {
+    if (!currentSound) return;
+
+    try {
+      await currentSound.setPositionAsync(seekPosition);
+      setPlaybackPosition(seekPosition);
+    } catch (err) {
+      console.warn('跳轉失敗:', err);
+    } finally {
+      setIsSeeking(false);
+    }
+  };
+
+  // 進度條拖曳處理
+  const handleProgressDrag = (e) => {
+    if (!playbackDuration || !progressRef.current) return;
+
+    const touchX = e.nativeEvent.locationX;
+
+    progressRef.current.measure((x, y, width) => {
+      const newPosition = (touchX / width) * playbackDuration;
+      setSeekPosition(Math.max(0, Math.min(newPosition, playbackDuration)));
+      setIsSeeking(true);
+    });
+  };
+
+
   // 播放錄音
   const playRecording = async (uri) => {
     try {
@@ -201,20 +251,73 @@ const AudioRecorder = () => {
           await currentSound.unloadAsync();
         }
 
-        const { sound } = await Audio.Sound.createAsync({ uri });
+        // 創建新音頻實例
+        const { sound } = await Audio.Sound.createAsync(
+          { uri },
+          {
+            shouldPlay: true,
+            isMeteringEnabled: true // 啟用音量檢測
+          },
+          (status) => {
+            if (status.isLoaded) {
+              // 更新總時長（只在首次載入時）
+              if (status.durationMillis) {
+                setPlaybackDuration(status.durationMillis);
+              }
+
+              // 更新當前位置（不在拖曳狀態時）
+              if (!isSeeking && status.positionMillis) {
+                setPlaybackPosition(status.positionMillis);
+              }
+
+              // 播放結束處理
+              if (status.didJustFinish) {
+                setIsPlaying(false);
+                setPlayingUri(null);
+                setPlaybackPosition(0); // 重置到開頭
+              }
+            }
+          }
+        );
+
+
+        // 設置播放速率監聽（確保進度更新頻率）
+        await sound.setProgressUpdateIntervalAsync(250); // 每250ms更新一次
+
         setCurrentSound(sound);
         setPlayingUri(uri);
         setIsPlaying(true);
-
         await sound.playAsync();
 
         // 播放完自動清除狀態
         sound.setOnPlaybackStatusUpdate((status) => {
-          if (status.didJustFinish) {
-            setIsPlaying(false);
-            setPlayingUri(null);
+
+          if (status.metering != null) {
+            const db = status.metering;
+            const linear = Math.pow(10, db / 20);
+            const volume = Math.min(linear * 3, 1); // 放大一點點方便顯示
+          
+            setWaveform((prev) =>
+              prev.length > 200 ? [...prev.slice(1), volume] : [...prev, volume]
+            );
+          }
+          if (status.isLoaded) {
+            if (!isSeeking && status.positionMillis != null) {
+              setPlaybackPosition(status.positionMillis);
+            }
+
+            if (status.durationMillis != null) {
+              setPlaybackDuration(status.durationMillis);
+            }
+
+            if (status.didJustFinish) {
+              setIsPlaying(false);
+              setPlayingUri(null);
+              setPlaybackPosition(0);
+            }
           }
         });
+
       }
     } catch (err) {
       Alert.alert('播放失敗', err.message);
@@ -391,7 +494,7 @@ const AudioRecorder = () => {
       {/* 展開的浮動選單 */}
       {menuVisible && (
         <View style={styles.dropdownMenu}>
-          <Text style={styles.menuItem}>版本：v1.0.0</Text>
+          <Text style={styles.menuItem}>版本：v1.0.2</Text>
           <TouchableOpacity onPress={() => {
             setIsDarkMode(prev => !prev);
             closeMenu();
@@ -434,22 +537,25 @@ const AudioRecorder = () => {
                 </Text>
               </TouchableOpacity>
 
-              {/* 音量顯示移到這裡 */}
               {recording && (
-                <View style={styles.volumeContainer}>
-                  <Text style={styles.volumeText}>
-                    音量: {currentDecibels.toFixed(1)} dB
-                  </Text>
-                  <View style={styles.volumeBarContainer}>
-                    <View
-                      style={[
-                        styles.volumeBar,
-                        { width: `${currentVolume * 100}%` }
-                      ]}
-                    />
-                  </View>
-                </View>
-              )}
+  <View style={styles.volumeContainer}>
+    <Text style={styles.volumeText}>
+      音量: {currentDecibels.toFixed(1)} dB
+    </Text>
+    
+    <View style={styles.volumeBarWrapper}>
+      <View 
+        style={[
+          styles.volumeBar,
+          { 
+            width: `${Math.min(currentVolume * 100, 100)}%`,
+            backgroundColor: currentVolume > 0.9 ? colors.warning : colors.primary
+          }
+        ]}
+      />
+    </View>
+  </View>
+)}
             </View>
             <View style={styles.bottomSection}>
               <ScrollView
@@ -470,6 +576,52 @@ const AudioRecorder = () => {
                       {/* <View style={styles.circle} />*/}     {/* 這是圈圈 */}
                       <Text style={styles.recordingName}>{item.name}</Text>
                     </View>
+
+
+                    {/* 可拖曳進度條 */}
+                    {playingUri === item.uri && waveform.length > 0 && (
+  <WaveformBars waveform={waveform} height={40} />
+)}
+                    <View style={styles.progressContainer}>
+                      {/* 進度條 */}
+                      <View
+                        ref={progressRef}
+                        style={styles.progressBarContainer}
+                        onStartShouldSetResponder={() => true}
+                        onResponderGrant={handleProgressDrag}
+                        onResponderMove={handleProgressDrag}
+                        onResponderRelease={handleSeekComplete}
+                      >
+
+                        <View style={styles.progressBarBackground}>
+                          <View style={[
+                            styles.progressBarFill,
+                            {
+                              width: `${Math.min(
+                                (isSeeking ? seekPosition : playbackPosition) / playbackDuration * 100,
+                                100
+                              )}%`
+                            }
+                          ]} />
+                        </View>
+                        <View style={[
+                          styles.progressThumb,
+                          {
+                            left: `${Math.min(
+                              (isSeeking ? seekPosition : playbackPosition) / playbackDuration * 100,
+                              100
+                            )}%`
+                          }
+                        ]} />
+                      </View>
+
+                      {/* 時間顯示 */}
+                      <Text style={styles.durationText}>
+                        {formatTime(isSeeking ? seekPosition : playbackPosition)} / {formatTime(playbackDuration)}
+                      </Text>
+                    </View>
+
+
 
                     <View style={styles.buttonGroup}>
                       {/* ▶️ 播放 */}
@@ -848,33 +1000,30 @@ const createStyles = (colors) => StyleSheet.create({
     fontSize: 20,
   },
   volumeContainer: {
-    width: '80%',
-    flexDirection: 'row',       // 橫向排列
-    alignItems: 'center',      // 垂直居中
-    justifyContent: 'space-between', // 左右分散對齊
-    marginTop: 10,
-  },
-  volumeBarWrapper: {
-    flex: 1,                   // 佔用剩餘空間
-    marginRight: 10,           // 與文字間距
-  },
-  volumeBarContainer: {
-    height: 10,
-    width: '100%',             // 佔滿父容器寬度
-    backgroundColor: colors.background,
-    borderRadius: 5,
-    overflow: 'hidden',
-  },
-  volumeBar: {
-    height: '100%',
-    backgroundColor: colors.primary,
-    borderRadius: 5,
+    width: '80%', // 固定寬度
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 15,
+    paddingVertical: 8, // 增加垂直內邊距
   },
   volumeText: {
     color: colors.text,
     fontSize: 14,
-    minWidth: 80,              // 固定文字區域寬度
-    textAlign: 'right',        // 文字右對齊
+    width: 100, // 固定文字寬度
+    marginRight: 10, // 增加右邊距
+  },
+  volumeBarWrapper: {
+    flex: 1,
+    height: 10, // 固定高度
+    backgroundColor: colors.background, // 背景色
+    borderRadius: 5, // 圓角
+    overflow: 'hidden', // 確保子元素不超出
+  },
+  volumeBar: {
+    height: '100%',
+    width: '50%', // 這個會被動態覆蓋
+    backgroundColor: colors.primary, // 藍色進度條
+    borderRadius: 5,
   },
   bottomSection: {
     flex: 1,
@@ -905,6 +1054,44 @@ const createStyles = (colors) => StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 14,
     color: colors.text,
+  },
+  progressContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 5,
+    width: '100%',
+  },
+  progressBarContainer: {
+    flex: 1,
+    height: 30, // 增加高度方便觸控
+    marginRight: 10,
+    justifyContent: 'center',
+  },
+  progressBarBackground: {
+    height: 4,
+    width: '100%',
+    backgroundColor: colors.secondary,
+    borderRadius: 2,
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: colors.primary,
+    borderRadius: 2,
+  },
+  progressThumb: {
+    position: 'absolute',
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: colors.primary,
+    marginLeft: -8, // 居中對齊
+    top: -6, // 垂直居中
+  },
+  durationText: {
+    color: colors.text,
+    fontSize: 12,
+    minWidth: 100,
+    textAlign: 'right',
   },
   buttonGroup: {
     flexDirection: 'row',
