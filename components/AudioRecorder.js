@@ -53,6 +53,9 @@ const AudioRecorder = () => {
   const colors = isDarkMode ? darkTheme : lightTheme;
   const styles = createStyles(colors);
 
+  const [currentVolume, setCurrentVolume] = useState(0); // 當前音量 (0-1)
+  const [currentDecibels, setCurrentDecibels] = useState(-160); // 當前分貝 (dB) 
+
   // WAV 格式錄音配置
   const recordingOptions = {
     android: {
@@ -102,12 +105,42 @@ const AudioRecorder = () => {
         playsInSilentModeIOS: true,
       });
 
-      const { recording } = await Audio.Recording.createAsync(recordingOptions);
+      const { recording } = await Audio.Recording.createAsync({
+        ...recordingOptions,
+        isMeteringEnabled: true, // 啟用音量測量
+      });
       setRecording(recording);
+
+      // 開始監聽音量變化
+      startMetering(recording);
     } catch (err) {
       Alert.alert('錄音失敗', err.message);
       console.error('錄音錯誤:', err);
     }
+  };
+
+  // 音量量測
+  const startMetering = async (recording) => {
+    const interval = setInterval(async () => {
+      if (recording) {
+        try {
+          const status = await recording.getStatusAsync();
+          if (status.isRecording && status.metering) {
+            // 轉換為分貝 (dB)，範圍約 -160 到 0
+            const db = status.metering;
+            setCurrentDecibels(db);
+
+            // 轉換為 0-1 範圍 (線性)
+            const linear = Math.pow(10, db / 20);
+            setCurrentVolume(linear);
+          }
+        } catch (err) {
+          console.warn('獲取音量失敗:', err);
+        }
+      } else {
+        clearInterval(interval); // 停止監聽
+      }
+    }, 100); // 每 100ms 更新一次
   };
 
   // 停止錄音
@@ -145,6 +178,8 @@ const AudioRecorder = () => {
       console.error('停止錄音錯誤:', err);
     } finally {
       setRecording(null);
+      setCurrentVolume(0); // 重置音量
+      setCurrentDecibels(-160); // 重置分貝
     }
   };
 
@@ -390,7 +425,7 @@ const AudioRecorder = () => {
               <TouchableOpacity
                 style={recording ? styles.stopRecordButton : styles.startRecordButton}
                 onPress={() => {
-                  handleCloseOptions(); // ✅ 加這行！
+                  handleCloseOptions();
                   recording ? stopRecording() : startRecording();
                 }}
               >
@@ -399,8 +434,23 @@ const AudioRecorder = () => {
                 </Text>
               </TouchableOpacity>
 
+              {/* 音量顯示移到這裡 */}
+              {recording && (
+                <View style={styles.volumeContainer}>
+                  <Text style={styles.volumeText}>
+                    音量: {currentDecibels.toFixed(1)} dB
+                  </Text>
+                  <View style={styles.volumeBarContainer}>
+                    <View
+                      style={[
+                        styles.volumeBar,
+                        { width: `${currentVolume * 100}%` }
+                      ]}
+                    />
+                  </View>
+                </View>
+              )}
             </View>
-
             <View style={styles.bottomSection}>
               <ScrollView
                 keyboardShouldPersistTaps="handled"
@@ -774,7 +824,7 @@ const createStyles = (colors) => StyleSheet.create({
     backgroundColor: colors.background, /* 黑底 */
   },
   topSection: {
-    height: 80,
+    height: 150,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: colors.background,
@@ -797,7 +847,35 @@ const createStyles = (colors) => StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 20,
   },
-
+  volumeContainer: {
+    width: '80%',
+    flexDirection: 'row',       // 橫向排列
+    alignItems: 'center',      // 垂直居中
+    justifyContent: 'space-between', // 左右分散對齊
+    marginTop: 10,
+  },
+  volumeBarWrapper: {
+    flex: 1,                   // 佔用剩餘空間
+    marginRight: 10,           // 與文字間距
+  },
+  volumeBarContainer: {
+    height: 10,
+    width: '100%',             // 佔滿父容器寬度
+    backgroundColor: colors.background,
+    borderRadius: 5,
+    overflow: 'hidden',
+  },
+  volumeBar: {
+    height: '100%',
+    backgroundColor: colors.primary,
+    borderRadius: 5,
+  },
+  volumeText: {
+    color: colors.text,
+    fontSize: 14,
+    minWidth: 80,              // 固定文字區域寬度
+    textAlign: 'right',        // 文字右對齊
+  },
   bottomSection: {
     flex: 1,
     backgroundColor: colors.background,
