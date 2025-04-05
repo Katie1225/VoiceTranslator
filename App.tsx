@@ -578,38 +578,38 @@ const AudioRecorder = () => {
         onPress={async () => {
           try {
             const originalName = getOriginalName(item.name);
-            const folder = item.uri.substring(0, item.uri.lastIndexOf('/') + 1);
-            const originalUri = item.uri.replace(/smart_/, '');
-
-            const fileExists = await FileSystem.getInfoAsync(originalUri);
-            if (!fileExists.exists) {
+        
+            // 🔍 正確從 recordings 中找對應的原始音檔項目
+            const originalItem = recordings.find(r => r.name === originalName);
+        
+            if (!originalItem) {
               Alert.alert('錯誤', '找不到原始音檔');
               return;
             }
-
-            // ✅ 覆蓋 smart_xxx -> xxx
-// ❌ 不要再複製檔案內容
-// await FileSystem.copyAsync({ from: originalUri, to: item.uri });
-
-setRecordings(prev =>
-  prev.map((rec, i) =>
-    i === index ? {
-      ...rec,
-      name: originalName,
-      uri: originalUri,
-      isEnhanced: false
-    } : rec
-  )
-);
-
-playRecording(originalUri, index);
-
-
+        
+            // ✅ 更新 smart 檔那一筆為原始檔資訊
+            setRecordings(prev =>
+              prev.map((rec, i) =>
+                i === index
+                  ? {
+                      ...rec,
+                      name: originalItem.name,
+                      uri: originalItem.uri,
+                      isEnhanced: false,
+                      originalUri: undefined
+                    }
+                  : rec
+              )
+            );
+        
+            playRecording(originalItem.uri, index);
           } catch (err) {
             Alert.alert('還原失敗', (err as Error).message);
           }
           setSelectedIndex(null);
         }}
+        
+        
       >
         <Text style={styles.optionText}>▶ 播放原始音檔</Text>
       </TouchableOpacity>
@@ -620,22 +620,13 @@ playRecording(originalUri, index);
           try {
             const smartItem = await enhanceAudio(item.uri, item.name);
 
-            // ✅ 覆蓋 xxx -> smart_xxx（內容與檔名都改）
-            await FileSystem.copyAsync({
-              from: smartItem.uri,
-              to: item.uri,
+            setRecordings(prev => {
+              const newList = [...prev];
+              newList.splice(index, 0, smartItem); // 插入 smart 檔到原始位置
+              return newList;
             });
-
-            setRecordings(prev =>
-              prev.map((rec, i) =>
-                i === index ? {
-                  ...rec,
-                  name: smartItem.name
-                } : rec
-              )
-            );
-
-            playRecording(item.uri, index);
+            playRecording(smartItem.uri, index);
+            
           } catch (err) {
             Alert.alert('強化失敗', (err as Error).message);
           }
@@ -729,10 +720,13 @@ playRecording(originalUri, index);
                         try {
                           const originalName = recordings[pendingIndex].name;
                           const { uri: enhancedUri, name: newName } = await enhanceAudio(pendingPlayUri, originalName);
-                          setRecordings(prev => prev.map((rec, i) =>
-                            i === pendingIndex ? { uri: enhancedUri, name: newName } : rec
-                          ));
-                          playRecording(enhancedUri, pendingIndex);
+                          const smartItem = await enhanceAudio(pendingPlayUri, originalName);
+                          setRecordings(prev => {
+                            const newList = [...prev];
+                            newList.splice(pendingIndex, 0, smartItem); // 插入 smart 檔到原位置
+                            return newList;
+                          });
+                          playRecording(smartItem.uri, pendingIndex);
                           Alert.alert('智慧音質強化成功', `已新增 ${newName}`);
                         } catch (err) {
                           Alert.alert('智慧音質強化失敗', (err as Error).message);
