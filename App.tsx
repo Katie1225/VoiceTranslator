@@ -125,26 +125,28 @@ const AudioRecorder = () => {
   // WAV錄音配置
   const recordingOptions = {
     android: {
-      extension: '.wav',
-      outputFormat: Audio.RECORDING_OPTION_ANDROID_OUTPUT_FORMAT_DEFAULT,
-      audioEncoder: Audio.RECORDING_OPTION_ANDROID_AUDIO_ENCODER_DEFAULT,
-      sampleRate: 44100,
+      extension: '.m4a',
+      outputFormat: 2, // MPEG_4
+      audioEncoder: 5, // HE_AAC (Android特有)
+      sampleRate: 48000,
       numberOfChannels: 1,
-      bitRate: 256000,
+      bitRate: 320000,
+      audioSource: 6, // VOICE_RECOGNITION
+      enableAcousticEchoCanceler: true,
+      enableNoiseSuppressor: true
     },
     ios: {
-      extension: '.wav',
-      outputFormat: Audio.RECORDING_OPTION_IOS_OUTPUT_FORMAT_LINEARPCM,
-      audioQuality: Audio.RECORDING_OPTION_IOS_AUDIO_QUALITY_MAX,
-      sampleRate: 44100,
+      extension: '.m4a',
+      outputFormat: 2, // MPEG4AAC
+      audioQuality: 2, // MAX
+      sampleRate: 48000,
       numberOfChannels: 1,
-      bitRate: 256000,
-      linearPCMBitDepth: 16,
-      linearPCMIsBigEndian: false,
-      linearPCMIsFloat: false,
+      bitRate: 320000,
+      linearPCMBitDepth: 24
     },
     isMeteringEnabled: true
   };
+
 
   // 清理資源
   useEffect(() => {
@@ -209,7 +211,7 @@ const AudioRecorder = () => {
         const status = await recording.getStatusAsync();
         const secondsOnly = Math.floor((status.durationMillis ?? 0) / 1000);
 
-        const defaultName = `${hh}${mm}${ss}_${secondsOnly}s_${month}${day}${year}.wav`;
+        const defaultName = `${hh}${mm}${ss}_${secondsOnly}s_${month}${day}${year}.m4a`;
 
         const recordingsToAdd = [{ uri, name: defaultName }];
 
