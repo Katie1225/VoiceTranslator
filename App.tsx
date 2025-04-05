@@ -61,23 +61,6 @@ const AudioRecorder = () => {
   };
   const styles = createStyles(colors);
 
-  // 增強音檔
-  const enhanceAudio = async (inputUri: string, originalName: string): Promise<RecordingItem> => {
-    const folder = inputUri.substring(0, inputUri.lastIndexOf('/') + 1);
-    const newName = getSmartName(originalName);
-    const outputUri = `${folder}${newName}`;
-    const inputPath = inputUri.replace('file://', '');
-    const outputPath = outputUri.replace('file://', '');
-    const command = `-y -i "${inputPath}" -af "highpass=f=200, lowpass=f=8000, afftdn=nf=-60, equalizer=f=1500:width_type=h:width=400:g=4,equalizer=f=3500:width_type=h:width=1000:g=3,volume=2.0" "${outputPath}"`;
-    const session = await FFmpegKit.execute(command);
-    const returnCode = await session.getReturnCode();
-    return {
-      uri: outputUri,
-      name: newName,
-      isEnhanced: true,
-      originalUri: inputUri // 保留原始URI參照
-    };
-  };
   // 💡 套用過濾邏輯：只顯示 smart 檔 or 尚未被 smart 的原始檔
   const displayedRecordings = recordings.filter(rec => {
     if (isSmartFile(rec.name)) return true; // 顯示 smart 檔
@@ -578,8 +561,6 @@ const AudioRecorder = () => {
         onPress={async () => {
           try {
             const originalName = getOriginalName(item.name);
-        
-            // 🔍 正確從 recordings 中找對應的原始音檔項目
             const originalItem = recordings.find(r => r.name === originalName);
         
             if (!originalItem) {
@@ -587,21 +568,18 @@ const AudioRecorder = () => {
               return;
             }
         
-            // ✅ 更新 smart 檔那一筆為原始檔資訊
-            setRecordings(prev =>
-              prev.map((rec, i) =>
-                i === index
-                  ? {
-                      ...rec,
-                      name: originalItem.name,
-                      uri: originalItem.uri,
-                      isEnhanced: false,
-                      originalUri: undefined
-                    }
-                  : rec
-              )
-            );
-        
+
+            setRecordings(prev => {
+              const filtered = prev.filter((_, i) => i !== index && prev[i].name !== originalName); // 移除 smart 和原始的重複那筆
+              const newList = [...filtered];
+              newList.splice(index, 0, {
+                ...originalItem,
+                isEnhanced: false,
+                originalUri: undefined
+              });
+              return newList;
+            });
+            
             playRecording(originalItem.uri, index);
           } catch (err) {
             Alert.alert('還原失敗', (err as Error).message);
@@ -609,6 +587,7 @@ const AudioRecorder = () => {
           setSelectedIndex(null);
         }}
         
+
         
       >
         <Text style={styles.optionText}>▶ 播放原始音檔</Text>
