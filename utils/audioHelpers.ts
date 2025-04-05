@@ -1,4 +1,26 @@
 import { FFmpegKit, ReturnCode } from 'ffmpeg-kit-react-native';
+import * as FileSystem from 'expo-file-system';
+
+export async function trimSilence(uri: string, name: string): Promise<{ uri: string; name: string }> {
+  const baseName = name.replace(/\.(m4a|wav)$/, '');
+  const outputName = `trim_${baseName}.m4a`;
+  const outputPath = `${FileSystem.cacheDirectory}${outputName}`;
+
+  const command = `-i "${uri}" -af silenceremove=start_periods=1:start_silence=0.3:start_threshold=-40dB:stop_periods=-1:stop_silence=0.3:stop_threshold=-40dB -y "${outputPath}"`;
+
+  const session = await FFmpegKit.execute(command);
+  const returnCode = await session.getReturnCode();
+
+  if (!ReturnCode.isSuccess(returnCode)) {
+    throw new Error('靜音剪輯失敗');
+  }
+
+  return {
+    uri: outputPath,
+    name: outputName,
+  };
+}
+
 
 export type RecordingItem = {
   uri: string;

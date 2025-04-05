@@ -19,11 +19,9 @@ import { FFmpegKit, ReturnCode } from 'ffmpeg-kit-react-native';
 import {
   RecordingItem,
   isSmartFile,
-  getOriginalName,
   getSmartName,
-  findMatchingSmartUri,
-  findMatchingOriginalUri,
-  enhanceAudio
+  enhanceAudio,
+  trimSilence
 } from './utils/audioHelpers';
 import Slider from '@react-native-community/slider';
 
@@ -68,29 +66,6 @@ const AudioRecorder = () => {
     return !recordings.some(r => r.name === smartVersionName);
   });
 
-
-  const handlePlayPress = (item: RecordingItem, index: number) => {
-    closeAllMenus();
-
-    if (item.isEnhanced) {
-      // 智慧音檔直接播放
-      playRecording(item.uri, index);
-    } else {
-      // 檢查是否有對應智慧檔
-      const enhancedVersion = recordings.find(r =>
-        r.originalUri === item.uri
-      );
-
-      enhancedVersion
-        ? playRecording(enhancedVersion.uri, recordings.indexOf(enhancedVersion))
-        : setPlayModalVisible(true);
-    }
-  };
-
-  // 增強視窗
-  const [playModalVisible, setPlayModalVisible] = useState(false);
-  const [pendingPlayUri, setPendingPlayUri] = useState<string | null>(null);
-  const [pendingIndex, setPendingIndex] = useState<number | null>(null);
 
   // 變速播放
   const [speedMenuIndex, setSpeedMenuIndex] = useState<number | null>(null);
@@ -225,8 +200,8 @@ const AudioRecorder = () => {
         }
       } else {
         if (currentSound) await currentSound.unloadAsync();
-
-        const { sound } = await Audio.Sound.createAsync(
+  
+        const { sound, status } = await Audio.Sound.createAsync(
           { uri },
           {
             shouldPlay: true,
@@ -234,12 +209,11 @@ const AudioRecorder = () => {
           },
           (status) => {
             if (status.isLoaded) {
-              if (status.durationMillis) {
+              if (status.durationMillis != null) {
                 setPlaybackDuration(status.durationMillis);
               }
-              if (status.positionMillis) {
-                setPlaybackPosition(status.positionMillis);
-              }
+              setPlaybackPosition(status.positionMillis || 0);
+  
               if (status.didJustFinish) {
                 setIsPlaying(false);
                 setPlayingUri(null);
@@ -248,7 +222,7 @@ const AudioRecorder = () => {
             }
           }
         );
-
+  
         setCurrentSound(sound);
         setPlayingUri(uri);
         setIsPlaying(true);
@@ -258,6 +232,7 @@ const AudioRecorder = () => {
       Alert.alert("播放失敗", (err as Error).message);
     }
   };
+  
 
   // 啟動進度定時器
   const startProgressTimer = () => {
@@ -349,7 +324,6 @@ const AudioRecorder = () => {
   const closeAllMenus = () => {
     setSelectedIndex(null);
     setMenuVisible(false);
-    setPlayModalVisible(false);
     setSpeedMenuIndex(null);
     if (editingIndex !== null) {
       saveEditedName(editingIndex);
@@ -441,8 +415,6 @@ const AudioRecorder = () => {
         <ScrollView style={styles.listContainer}>
           {displayedRecordings.map((item, index) => {
             const isSmart = isSmartFile(item.name);
-            const smartUri = findMatchingSmartUri(item.name, recordings);
-            const originalUri = findMatchingOriginalUri(item.name, recordings);
             const isCurrentPlaying = playingUri === item.uri;
 
             return (
@@ -451,26 +423,13 @@ const AudioRecorder = () => {
                   <View style={styles.nameRow}>
                     {/* 播放/暫停按鈕 */}
                     <TouchableOpacity
-                      onPress={() => {
-                        closeAllMenus();
-                        if (isCurrentPlaying) {
-                          // 當前正在播放此音檔 -> 暫停/繼續
-                          playRecording(item.uri, index);
-                        } else if (isSmart) {
-                          // 直接播放smart音檔
-                          playRecording(item.uri, index);
-                        } else if (smartUri) {
-                          // 有對應的smart音檔 -> 直接播放
-                          playRecording(smartUri, index);
-                        } else {
-                          // 原始音檔且未播放 -> 顯示播放選項
-                          setPendingPlayUri(item.uri);
-                          setPendingIndex(index);
-                          setPlayModalVisible(true);
-                        }
-                      }}
-                      style={styles.playIconContainer}
-                    >
+  style={styles.playIconContainer}
+  onPress={() => {
+    closeAllMenus();
+    playRecording(item.uri, index); // 永遠使用自己這筆的 uri
+  }}
+>
+
                       <Text style={styles.playIcon}>
                         {isCurrentPlaying && isPlaying ? '❚❚' : '▶'}
                       </Text>
@@ -490,16 +449,7 @@ const AudioRecorder = () => {
                         style={styles.nameContainer}
                         onPress={() => {
                           closeAllMenus();
-                          if (isSmartFile(item.name)) {
-                            playRecording(item.uri, index);
-                          } else if (smartUri) {
-                            playRecording(smartUri, index);
-                          } else {
-                            setSelectedIndex(null);
-                            setPendingPlayUri(item.uri);
-                            setPendingIndex(index);
-                            setPlayModalVisible(true);
-                          }
+                          playRecording(item.uri, index); // ✅ 點檔名也能播放
                         }}
                       >
                         <Text
@@ -528,136 +478,118 @@ const AudioRecorder = () => {
 
                   {/* 播放進度條 */}
                   {playingUri === item.uri && (
-  <View style={styles.progressContainer}>
-    <Slider
-      style={{ flex: 1 }}
-      minimumValue={0}
-      maximumValue={playbackDuration}
-      value={playbackPosition}
-      onSlidingComplete={async (value) => {
-        if (currentSound) {
-          await currentSound.setPositionAsync(value);
-          setPlaybackPosition(value);
-        }
-      }}
-      minimumTrackTintColor={colors.primary}
-      maximumTrackTintColor="#ccc"
-      thumbTintColor={colors.primary}
-    />
-    <Text style={styles.timeText}>
-      {formatTime(playbackPosition)} / {formatTime(playbackDuration)}
-    </Text>
-  </View>
-)}
+                    <View style={styles.progressContainer}>
+                      <Slider
+                        style={{ flex: 1 }}
+                        minimumValue={0}
+                        maximumValue={playbackDuration}
+                        value={playbackPosition}
+                        onSlidingComplete={async (value) => {
+                          if (currentSound) {
+                            await currentSound.setPositionAsync(value);
+                            setPlaybackPosition(value);
+                          }
+                        }}
+                        minimumTrackTintColor={colors.primary}
+                        maximumTrackTintColor="#ccc"
+                        thumbTintColor={colors.primary}
+                      />
+                      <Text style={styles.timeText}>
+                        {formatTime(playbackPosition)} / {formatTime(playbackDuration)}
+                      </Text>
+                    </View>
+                  )}
                 </View>
 
                 {/* 三點選單浮動層（全域定位） */}
                 {selectedIndex === index && (
-  <View style={styles.optionsMenu}>
-    {/* 第一項：智慧音質強化 or 還原原始音檔 */}
-    {isSmartFile(item.name) ? (
-      <TouchableOpacity
-        style={styles.optionButton}
-        onPress={async () => {
-          try {
-            const originalName = getOriginalName(item.name);
-            const originalItem = recordings.find(r => r.name === originalName);
-        
-            if (!originalItem) {
-              Alert.alert('錯誤', '找不到原始音檔');
-              return;
-            }
-        
+                  <View style={styles.optionsMenu}>
+                    {/* 第一項：智慧音質強化 or 還原原始音檔 */}
+                    {isSmartFile(item.name) ? (
+                      <TouchableOpacity>
+                        <Text style={styles.optionText}>▶ 播放原始音檔</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.optionButton}
+                        onPress={async () => {
+                          try {
+                            const smartItem = await enhanceAudio(item.uri, item.name);
 
-            setRecordings(prev => {
-              const filtered = prev.filter((_, i) => i !== index && prev[i].name !== originalName); // 移除 smart 和原始的重複那筆
-              const newList = [...filtered];
-              newList.splice(index, 0, {
-                ...originalItem,
-                isEnhanced: false,
-                originalUri: undefined
-              });
-              return newList;
-            });
-            
-            playRecording(originalItem.uri, index);
-          } catch (err) {
-            Alert.alert('還原失敗', (err as Error).message);
-          }
-          setSelectedIndex(null);
-        }}
-        
+                            setRecordings(prev => {
+                              const newList = [...prev];
+                              newList.splice(index, 0, smartItem); // 插入 smart 檔到原始位置
+                              return newList;
+                            });
+                            playRecording(smartItem.uri, index);
 
-        
-      >
-        <Text style={styles.optionText}>▶ 播放原始音檔</Text>
-      </TouchableOpacity>
-    ) : (
-      <TouchableOpacity
-        style={styles.optionButton}
-        onPress={async () => {
-          try {
-            const smartItem = await enhanceAudio(item.uri, item.name);
+                          } catch (err) {
+                            Alert.alert('強化失敗', (err as Error).message);
+                          }
+                          setSelectedIndex(null);
+                        }}
+                      >
+                        <Text style={styles.optionText}>✨ 智慧音質強化</Text>
+                      </TouchableOpacity>
+                    )}
+<TouchableOpacity
+  style={styles.optionButton}
+  onPress={async () => {
+    try {
+      const trimmedItem = await trimSilence(item.uri, item.name);
+      setRecordings(prev => [...prev, trimmedItem]);
+      Alert.alert("靜音剪輯完成", `已新增 ${trimmedItem.name}`);
+    } catch (err) {
+      Alert.alert("剪輯失敗", (err as Error).message);
+    }
+    setSelectedIndex(null);
+  }}
+>
+  <Text style={styles.optionText}>✂️ 靜音剪輯</Text>
+</TouchableOpacity>
 
-            setRecordings(prev => {
-              const newList = [...prev];
-              newList.splice(index, 0, smartItem); // 插入 smart 檔到原始位置
-              return newList;
-            });
-            playRecording(smartItem.uri, index);
-            
-          } catch (err) {
-            Alert.alert('強化失敗', (err as Error).message);
-          }
-          setSelectedIndex(null);
-        }}
-      >
-        <Text style={styles.optionText}>✨ 智慧音質強化</Text>
-      </TouchableOpacity>
-    )}
+                    {/* 其他選單功能照舊 */}
+                    <TouchableOpacity
+                      style={styles.optionButton}
+                      onPress={() => {
+                        startEditingName(index);
+                        setSelectedIndex(null);
+                      }}
+                    >
+                      <Text style={styles.optionText}>✏️ 重新命名</Text>
+                    </TouchableOpacity>
 
-    {/* 其他選單功能照舊 */}
-    <TouchableOpacity
-      style={styles.optionButton}
-      onPress={() => {
-        startEditingName(index);
-        setSelectedIndex(null);
-      }}
-    >
-      <Text style={styles.optionText}>✏️ 重新命名</Text>
-    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.optionButton}
+                      onPress={() => {
+                        shareRecording(item.uri);
+                        setSelectedIndex(null);
+                      }}
+                    >
+                      <Text style={styles.optionText}>📤 分享</Text>
+                    </TouchableOpacity>
 
-    <TouchableOpacity
-      style={styles.optionButton}
-      onPress={() => {
-        shareRecording(item.uri);
-        setSelectedIndex(null);
-      }}
-    >
-      <Text style={styles.optionText}>📤 分享</Text>
-    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.optionButton}
+                      onPress={() => {
+                        deleteRecording(index);
+                        setSelectedIndex(null);
+                      }}
+                    >
+                      <Text style={styles.optionText}>🗑️ 刪除</Text>
+                    </TouchableOpacity>
 
-    <TouchableOpacity
-      style={styles.optionButton}
-      onPress={() => {
-        deleteRecording(index);
-        setSelectedIndex(null);
-      }}
-    >
-      <Text style={styles.optionText}>🗑️ 刪除</Text>
-    </TouchableOpacity>
-
-    <TouchableOpacity
-      style={styles.optionButton}
-      onPress={() => {
-        setSpeedMenuIndex(index);
-        setSelectedIndex(null);
-      }}
-    >
-      <Text style={styles.optionText}>⏩ 播放速度</Text>
-    </TouchableOpacity>
-  </View>
-)}
+                    <TouchableOpacity
+                      style={styles.optionButton}
+                      onPress={() => {
+                        setSpeedMenuIndex(index);
+                        setSelectedIndex(null);
+                      }}
+                    >
+                      <Text style={styles.optionText}>⏩ 播放速度</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
 
 
 
@@ -679,45 +611,6 @@ const AudioRecorder = () => {
                   </View>
                 )}
 
-                {/* 播放方式選單浮動層（全域定位） */}
-                {playModalVisible && pendingIndex === index && (
-                  <View style={styles.playOptionsMenu}>
-
-                    <TouchableOpacity style={styles.optionButton} onPress={() => {
-                      if (pendingPlayUri && pendingIndex !== null) {
-                        playRecording(pendingPlayUri, pendingIndex);
-                      }
-                      setPlayModalVisible(false);
-                    }}>
-                      <Text style={styles.optionText}>
-                        <Text style={{ color: colors.primary }}>▶ </Text>
-                        播放原始音檔
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.optionButton} onPress={async () => {
-                      if (pendingPlayUri && pendingIndex !== null) {
-                        try {
-                          const originalName = recordings[pendingIndex].name;
-                          const { uri: enhancedUri, name: newName } = await enhanceAudio(pendingPlayUri, originalName);
-                          const smartItem = await enhanceAudio(pendingPlayUri, originalName);
-                          setRecordings(prev => {
-                            const newList = [...prev];
-                            newList.splice(pendingIndex, 0, smartItem); // 插入 smart 檔到原位置
-                            return newList;
-                          });
-                          playRecording(smartItem.uri, pendingIndex);
-                          Alert.alert('智慧音質強化成功', `已新增 ${newName}`);
-                        } catch (err) {
-                          Alert.alert('智慧音質強化失敗', (err as Error).message);
-                        }
-                      }
-                      setPlayModalVisible(false);
-                    }}>
-
-                      <Text style={[styles.optionText]}>✨ 智慧音質強化</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
               </View>
             );
           })
