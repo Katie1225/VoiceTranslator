@@ -19,7 +19,8 @@ import { FFmpegKit, ReturnCode } from 'ffmpeg-kit-react-native';
 import {
   RecordingItem,
   enhanceAudio,
-  trimSilence
+  trimSilence,
+  transcribeAudio
 } from './utils/audioHelpers';
 import Slider from '@react-native-community/slider';
 
@@ -36,15 +37,18 @@ const AudioRecorder = () => {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editName, setEditName] = useState('');
+  const [dbHistory, setDbHistory] = useState<number[]>([]);
+
 
   // 音量狀態
   const [currentVolume, setCurrentVolume] = useState(0);
   const [currentDecibels, setCurrentDecibels] = useState(-160);
+  const [recordingTime, setRecordingTime] = useState(0);
 
   // 播放進度狀態
   const [playbackPosition, setPlaybackPosition] = useState(0);
   const [playbackDuration, setPlaybackDuration] = useState(0);
-  const progressUpdateInterval = useRef<NodeJS.Timeout>();
+  const progressUpdateInterval = useRef<NodeJS.Timeout | null>(null);
   const [progressBarWidth, setProgressBarWidth] = useState(0);
 
   // 顏色主題
@@ -57,29 +61,35 @@ const AudioRecorder = () => {
   };
   const styles = createStyles(colors);
 
-  const displayedRecordings = recordings;
-
   const [selectedDerivedIndex, setSelectedDerivedIndex] = useState<{
     type: 'enhanced' | 'trimmed';
     index: number;
     position?: { x: number; y: number }; // 添加這個可選屬性
   } | null>(null);
 
-
   const [selectedMainIndex, setSelectedMainIndex] = useState<number | null>(null);
   const [mainMenuPosition, setMainMenuPosition] = useState<{ x: number; y: number } | null>(null);
   // 變速播放
+  const [currentPlaybackRate, setCurrentPlaybackRate] = useState(1.0);
   const [speedMenuIndex, setSpeedMenuIndex] = useState<number | null>(null);
+  const [speedMenuPosition, setSpeedMenuPosition] = useState<{ x: number; y: number } | null>(null);
+
 
   const setPlaybackRate = async (rate: number) => {
-    if (!currentSound) return;
-    try {
-      await currentSound.setRateAsync(rate, true); // 啟用音高校正
-      console.log("速度已更新:", rate);
-    } catch (error) {
-      console.error("變速失敗:", error);
+    setCurrentPlaybackRate(rate); // 儲存當前播放速度
+    if (currentSound) {
+      try {
+        const status = await currentSound.getStatusAsync();
+        if (status.isLoaded) {
+          await currentSound.setRateAsync(rate, true); // true 代表啟用 pitch 校正
+          console.log("✅ 播放速度已設定為", rate);
+        }
+      } catch (err) {
+        console.error("❌ 設定播放速度失敗：", err);
+      }
     }
   };
+
 
   // WAV錄音配置
   const recordingOptions = {
@@ -171,8 +181,16 @@ const AudioRecorder = () => {
           const clampedDb = Math.min(Math.max(status.metering, -100), 0); // 限制在 -100~0
           const volume = (clampedDb + 100) / 100; // 轉換為 0~1
           setCurrentVolume(volume);
+          setRecordingTime(Math.floor((status.durationMillis ?? 0) / 1000));
+          setDbHistory(prev => {
+            const newDb = clampedDb;
+            const next = [...prev.slice(-39), newDb]; // 最多保留 40 筆
+            return next;
+          });
+
         }
-      }, 100);
+      }, 50);
+
 
       return () => clearInterval(interval);
     } catch (err) {
@@ -197,10 +215,22 @@ const AudioRecorder = () => {
         const year = now.getFullYear().toString();
         const status = await recording.getStatusAsync();
         const secondsOnly = Math.floor((status.durationMillis ?? 0) / 1000);
-
-        const defaultName = `音檔長度${secondsOnly}s_${hh}${mm}${ss}_${month}${day}${year}.m4a`;
-
-        const recordingsToAdd = [{ uri, name: defaultName }];
+        const durationParts = [
+          Math.floor(secondsOnly / 3600) > 0 ? `${Math.floor(secondsOnly / 3600)}小時` : '',
+          Math.floor((secondsOnly % 3600) / 60) > 0 ? `${Math.floor((secondsOnly % 3600) / 60)}分` : '',
+          `${secondsOnly % 60}秒`,
+        ].filter(Boolean).join('');
+        
+        const displayName = `${durationParts} ${hh}:${mm}:${ss} ${month}/${day}/${year}`;
+        
+        const defaultName = `rec_${hh}${mm}${ss}_${month}${day}${year}.m4a`;
+        
+        const recordingsToAdd: RecordingItem[] = [{
+          uri,
+          name: defaultName,
+          displayName,
+        }];
+        
 
         // ✅ 僅儲存原始音檔
         setRecordings(prev => [...recordingsToAdd, ...prev]);
@@ -210,6 +240,8 @@ const AudioRecorder = () => {
     } finally {
       setRecording(null);
       setCurrentVolume(0);
+      setRecordingTime(0); // ✅ 重置錄音秒數
+      setDbHistory([]);
     }
   };
 
@@ -234,6 +266,8 @@ const AudioRecorder = () => {
           { uri },
           {
             shouldPlay: true,
+            rate: currentPlaybackRate,          // 加這行
+            shouldCorrectPitch: true,           // 很重要，讓音調不變
             progressUpdateIntervalMillis: 250
           },
           (status) => {
@@ -431,22 +465,48 @@ const AudioRecorder = () => {
 
           {recording && (
             <View style={styles.volumeMeter}>
-              <Text style={styles.volumeText}>
+              {/*隱藏音量
+              <Text style={styles.volumeText}> 
                 {currentDecibels.toFixed(1)} dB
               </Text>
-              <View style={styles.volumeBar}>
-                <View style={[
-                  styles.volumeLevel,
-                  { width: `${currentVolume * 100}%` }
-                ]} />
-              </View>
+              */}
+<View style={styles.volumeAndTimeContainer}>
+  {/* 分貝條區塊：75% */}
+  <View style={styles.volumeContainer}>
+    {dbHistory.map((db, i) => {
+      const clampedDb = typeof db === 'number' ? Math.min(Math.max(db, -100), 0) : -100;
+      let height = ((clampedDb + 100) / 100) * 40;
+      if (height < 1) height = 1;
+      return (
+        <View
+          key={i}
+          style={{
+            width:3,
+            height,
+            marginRight: i === dbHistory.length - 1 ? 0 : 1,
+            marginLeft: 1,
+            backgroundColor: colors.primary,
+            borderRadius: 2,
+          }}
+        />
+      );
+    })}
+  </View>
+
+  {/* 錄音時間區塊：25% */}
+  <View style={styles.timeContainer}>
+    <Text style={styles.volumeText}>⏱ {recordingTime}s</Text>
+  </View>
+</View>
+
+
             </View>
           )}
         </View>
 
         {/* 錄音列表 */}
         <ScrollView style={styles.listContainer}>
-          {displayedRecordings.map((item, index) => {
+          {recordings.map((item, index) => {
             const isCurrentPlaying = playingUri === item.uri;
             const hasDerivedFiles = item.derivedFiles && (item.derivedFiles.enhanced || item.derivedFiles.trimmed);
 
@@ -475,13 +535,15 @@ const AudioRecorder = () => {
                         playRecording(item.uri, index); // ✅ 點檔名也能播放
                       }}
                     >
-                      <Text
-                        style={styles.recordingName}
-                        numberOfLines={1}
-                        ellipsizeMode="tail"
-                      >
-                        {item.name}
-                      </Text>
+<Text
+  style={[styles.recordingName, playingUri === item.uri && styles.playingText]}
+  numberOfLines={1}
+  ellipsizeMode="tail"
+>
+  {item.displayName || item.name}
+</Text>
+
+
                     </TouchableOpacity>
 
 
@@ -491,20 +553,20 @@ const AudioRecorder = () => {
                         style={styles.moreButton}
                         onPress={(e) => {
                           e.stopPropagation();
-                        
+
                           // 若點同一個就收起來
                           if (selectedMainIndex === index) {
                             setSelectedMainIndex(null);
                             setMainMenuPosition(null);
                             return;
                           }
-                        
+
                           e.target.measureInWindow((x, y, width, height) => {
                             setMainMenuPosition({ x, y: y + height });
                             setSelectedMainIndex(index);
                           });
                         }}
-                        
+
 
                       >
                         <Text style={styles.moreIcon}>⋯</Text>
@@ -513,28 +575,58 @@ const AudioRecorder = () => {
                   </View>
 
                   {/* 播放進度條 */}
-                  {playingUri === item.uri && (
-                    <View style={styles.progressContainer}>
-                      <Slider
-                        style={{ flex: 1 }}
-                        minimumValue={0}
-                        maximumValue={playbackDuration}
-                        value={playbackPosition}
-                        onSlidingComplete={async (value) => {
-                          if (currentSound) {
-                            await currentSound.setPositionAsync(value);
-                            setPlaybackPosition(value);
-                          }
-                        }}
-                        minimumTrackTintColor={colors.primary}
-                        maximumTrackTintColor="#ccc"
-                        thumbTintColor={colors.primary}
-                      />
-                      <Text style={styles.timeText}>
-                        {formatTime(playbackPosition)} / {formatTime(playbackDuration)}
-                      </Text>
-                    </View>
-                  )}
+                  {(playingUri === item.uri ||
+                    playingUri === item.derivedFiles?.enhanced?.uri ||
+                    playingUri === item.derivedFiles?.trimmed?.uri) && (
+                      <View style={styles.progressContainer}>
+                        <Slider
+                          style={{ flex: 1 }}
+                          minimumValue={0}
+                          maximumValue={playbackDuration}
+                          value={playbackPosition}
+                          onSlidingComplete={async (value) => {
+                            if (currentSound) {
+                              await currentSound.setPositionAsync(value);
+                              setPlaybackPosition(value);
+                            }
+                          }}
+                          minimumTrackTintColor={colors.primary}
+                          maximumTrackTintColor="#ccc"
+                          thumbTintColor={colors.primary}
+                        />
+
+                        {/* 時間 + 播放速度排一列 */}
+                        <View
+                          style={{
+                            flexDirection: 'row',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            marginTop: 4,
+                          }}
+                        >
+                          <Text style={styles.timeText}>
+                            {formatTime(playbackPosition)} / {formatTime(playbackDuration)}
+                          </Text>
+
+                          {/* 播放速度按鈕 */}
+                          <TouchableOpacity
+                            onPress={(e) => {
+                              e.target.measureInWindow((x, y, width, height) => {
+                                setSpeedMenuIndex(index);
+                                setSpeedMenuPosition({ x, y: y + height });
+                              });
+                            }}
+                          >
+                            <Text style={[styles.timeText]}>{currentPlaybackRate}x</Text>
+                          </TouchableOpacity>
+
+                        </View>
+
+
+                      </View>
+                    )}
+
+
 
                   {/* 衍生檔案列表 */}
                   {hasDerivedFiles && (
@@ -545,7 +637,15 @@ const AudioRecorder = () => {
                             style={[styles.derivedFileItem, { flex: 1 }]}
                             onPress={() => playRecording(item.derivedFiles!.enhanced!.uri, index)}
                           >
-                            <Text style={styles.derivedFileName} numberOfLines={1} ellipsizeMode="tail">
+
+                            <Text
+                              style={[
+                                styles.derivedFileName,
+                                playingUri === item.derivedFiles?.enhanced?.uri && styles.playingText
+                              ]}
+                              numberOfLines={1}
+                              ellipsizeMode="tail"
+                            >
                               🔊 增強音質 {item.derivedFiles.enhanced.name}
                             </Text>
                           </TouchableOpacity>
@@ -554,17 +654,17 @@ const AudioRecorder = () => {
                             style={styles.derivedMoreButton}
                             onPress={(e) => {
                               e.stopPropagation();
-  // 若再次點選相同的衍生三點，則收起
-  if (
-    selectedDerivedIndex &&
-    selectedDerivedIndex.index === index &&
-    selectedDerivedIndex.type === 'enhanced' // or 'trimmed'，視當前按鈕而定
-  ) {
-    setSelectedDerivedIndex(null);
-    return;
-  }
+                              // 若再次點選相同的衍生三點，則收起
+                              if (
+                                selectedDerivedIndex &&
+                                selectedDerivedIndex.index === index &&
+                                selectedDerivedIndex.type === 'enhanced' // or 'trimmed'，視當前按鈕而定
+                              ) {
+                                setSelectedDerivedIndex(null);
+                                return;
+                              }
 
-                              
+
                               // 獲取按鈕在屏幕上的絕對位置
                               e.target.measure((x, y, width, height, pageX, pageY) => {
                                 setSelectedDerivedIndex({
@@ -586,7 +686,14 @@ const AudioRecorder = () => {
                             style={[styles.derivedFileItem, { flex: 1 }]}
                             onPress={() => playRecording(item.derivedFiles!.trimmed!.uri, index)}
                           >
-                            <Text style={styles.derivedFileName} numberOfLines={1} ellipsizeMode="tail">
+                            <Text
+                              style={[
+                                styles.derivedFileName,
+                                playingUri === item.derivedFiles?.trimmed?.uri && styles.playingText
+                              ]}
+                              numberOfLines={1}
+                              ellipsizeMode="tail"
+                            >
                               ✂️ 靜音剪輯 {item.derivedFiles.trimmed.name}
                             </Text>
                           </TouchableOpacity>
@@ -594,20 +701,20 @@ const AudioRecorder = () => {
                             style={styles.derivedMoreButton}
                             onPress={(e) => {
                               e.stopPropagation();
-  // 若再次點選相同的衍生三點，則收起
-  if (
-    selectedDerivedIndex &&
-    selectedDerivedIndex.index === index &&
-    selectedDerivedIndex.type === 'trimmed'//視當前按鈕而定
-  ) {
-    setSelectedDerivedIndex(null);
-    return;
-  }
+                              // 若再次點選相同的衍生三點，則收起
+                              if (
+                                selectedDerivedIndex &&
+                                selectedDerivedIndex.index === index &&
+                                selectedDerivedIndex.type === 'trimmed'//視當前按鈕而定
+                              ) {
+                                setSelectedDerivedIndex(null);
+                                return;
+                              }
 
                               // 獲取按鈕在屏幕上的絕對位置
                               e.target.measure((x, y, width, height, pageX, pageY) => {
                                 setSelectedDerivedIndex({
-                                  type: 'enhanced',
+                                  type: 'trimmed',
                                   index,
                                   position: { x: pageX, y: pageY } // 儲存位置
                                 });
@@ -619,28 +726,19 @@ const AudioRecorder = () => {
                           </TouchableOpacity>
                         </View>
                       )}
+
+                      {typeof item.derivedFiles?.trimmed?.transcript === 'string' && (
+                        <View style={styles.transcriptContainer}>
+                          <View style={styles.bar} />
+                          <Text style={styles.transcriptText}>
+                            {item.derivedFiles.trimmed.transcript}
+                          </Text>
+                        </View>
+                      )}
+
                     </View>
                   )}
                 </View>
-
-                {/* 變速選單 */}
-                {speedMenuIndex === index && (
-                  <View style={styles.speedOptionsMenu}>
-                    {[0.75, 1.0, 1.25, 1.5, 2.0].map((rate) => (
-                      <TouchableOpacity
-                        key={rate}
-                        style={styles.optionButton}
-                        onPress={async () => {
-                          await setPlaybackRate(rate);
-                          setSpeedMenuIndex(null);
-                        }}
-                      >
-                        <Text style={styles.optionText}>{rate}x</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-
               </View>
             );
           })
@@ -660,6 +758,45 @@ const AudioRecorder = () => {
               elevation: 10,
             }
           ]}>
+
+            {/* 新增這一項：轉文字 
+            <TouchableOpacity
+              style={styles.optionButton}
+              onPress={async () => {
+                const item = recordings[selectedMainIndex];
+                try {
+                  const { trimmedRecording, transcript } = await transcribeAudio(item);
+
+                  // 更新 recordings 陣列
+                  setRecordings(prev =>
+                    prev.map((rec, i) =>
+                      i === selectedMainIndex
+                        ? {
+                          ...rec,
+                          derivedFiles: {
+                            ...rec.derivedFiles,
+                            trimmed: {
+                              ...trimmedRecording,
+                              transcript: transcript,
+                            },
+                          },
+                        }
+                        : rec
+                    )
+                  );
+
+                  Alert.alert('轉文字完成', '已顯示在靜音剪輯下方');
+                } catch (err) {
+                  Alert.alert('轉文字失敗', (err as Error).message);
+                } finally {
+                  closeAllMenus();
+                }
+              }}
+            >
+              <Text style={styles.optionText}>📝 轉文字</Text>
+            </TouchableOpacity>
+          */}
+            {/*  新增這一項：智慧音質 
             <TouchableOpacity
               style={styles.optionButton}
               onPress={async () => {
@@ -680,28 +817,54 @@ const AudioRecorder = () => {
             >
               <Text style={styles.optionText}>✨ 智慧音質</Text>
             </TouchableOpacity>
+          */}
 
+            {/* 放在這裡！不要放在 map 循環內部 */}
             <TouchableOpacity
               style={styles.optionButton}
               onPress={async () => {
                 const item = recordings[selectedMainIndex];
                 try {
                   const trimmedRecording = await trimSilence(item.uri, item.name);
-                  setRecordings(prev => prev.map((rec, i) =>
-                    i === selectedMainIndex
-                      ? { ...rec, derivedFiles: { ...rec.derivedFiles, trimmed: trimmedRecording } }
-                      : rec
-                  ));
-                  Alert.alert("靜音剪輯完成", `已為 ${item.name} 創建剪輯版`);
+                
+                  // 取得原始與剪輯後的音訊資訊
+                  const originalSound = await Audio.Sound.createAsync({ uri: item.uri });
+                  const trimmedSound = await Audio.Sound.createAsync({ uri: trimmedRecording.uri });
+                
+                  const originalStatus = await originalSound.sound.getStatusAsync();
+                  const trimmedStatus = await trimmedSound.sound.getStatusAsync();
+                
+                  if (originalStatus.isLoaded && trimmedStatus.isLoaded) {
+                    const originalSecs = Math.round((originalStatus.durationMillis ?? 0) / 1000);
+                    const trimmedSecs = Math.round((trimmedStatus.durationMillis ?? 0) / 1000);
+                
+                    await originalSound.sound.unloadAsync();
+                    await trimmedSound.sound.unloadAsync();
+                
+                    setRecordings(prev => prev.map((rec, i) =>
+                      i === selectedMainIndex
+                        ? { ...rec, derivedFiles: { ...rec.derivedFiles, trimmed: trimmedRecording } }
+                        : rec
+                    ));
+                
+                    Alert.alert(
+                      "靜音剪輯完成",
+                      `已為 ${item.name} 創建剪輯版\n原始長度：${originalSecs}s → 剪輯後：${trimmedSecs}s`
+                    );
+                  } else {
+                    Alert.alert("音訊讀取失敗", "無法取得音檔長度");
+                  }
                 } catch (err) {
                   Alert.alert("剪輯失敗", (err as Error).message);
                 }
+                
                 closeAllMenus();
               }}
+              
             >
               <Text style={styles.optionText}>✂️ 靜音剪輯</Text>
             </TouchableOpacity>
-
+{/*
             <TouchableOpacity
               style={styles.optionButton}
               onPress={() => {
@@ -711,7 +874,7 @@ const AudioRecorder = () => {
             >
               <Text style={styles.optionText}>✏️ 重新命名</Text>
             </TouchableOpacity>
-
+*/}
             <TouchableOpacity
               style={styles.optionButton}
               onPress={() => {
@@ -730,16 +893,6 @@ const AudioRecorder = () => {
               }}
             >
               <Text style={styles.optionText}>🗑️ 刪除</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.optionButton}
-              onPress={() => {
-                setSpeedMenuIndex(selectedMainIndex);
-                closeAllMenus();
-              }}
-            >
-              <Text style={styles.optionText}>⏩ 播放速度</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -798,6 +951,46 @@ const AudioRecorder = () => {
             </TouchableOpacity>
           </View>
         )}
+
+        {/* 放在這裡！不要放在 map 循環內部 */}
+        {speedMenuIndex !== null && speedMenuPosition && (
+          <View style={{
+            position: 'absolute',
+            left: speedMenuPosition.x - 60,
+            top: speedMenuPosition.y + 5,
+            backgroundColor: colors.container,
+            borderRadius: 8,
+            padding: 8,
+            zIndex: 9999,
+            elevation: 10,
+          }}>
+            {[0.75, 1.0, 1.25, 1.5, 2.0].map((rate) => (
+              <TouchableOpacity
+                key={rate}
+                style={[
+                  styles.optionButton,
+                  currentPlaybackRate === rate && { backgroundColor: colors.primary + '20' },
+                ]}
+                onPress={async () => {
+                  await setPlaybackRate(rate);
+                  setSpeedMenuIndex(null);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.optionText,
+                    currentPlaybackRate === rate && { fontWeight: 'bold' },
+                  ]}
+                >
+                  {rate}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
+
+
       </SafeAreaView>
     </TouchableWithoutFeedback>
   );

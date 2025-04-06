@@ -4,9 +4,11 @@ import * as FileSystem from 'expo-file-system';
 export type RecordingItem = {
   uri: string;
   name: string;
+  displayName?: string; // 顯示名稱（你要的格式）
   originalUri?: string;
   isEnhanced?: boolean;
   isTrimmed?: boolean;
+  transcript?: string; 
   derivedFiles?: {
     enhanced?: RecordingItem;
     trimmed?: RecordingItem;
@@ -59,4 +61,108 @@ export const getSmartName = (originalName: string): string =>
   isSmartFile(originalName) ? originalName : `smart_${originalName}`;
 
 
+
+
+/**
+ * 將 m4a 或其他格式的音檔轉為 wav 格式，回傳輸出 wav 的 uri。
+ */
+export const convertToWav = async (inputUri: string): Promise<string> => {
+  try {
+    // 取得檔名（不含副檔名）
+    const fileNameWithoutExt = inputUri.split('/').pop()?.split('.').slice(0, -1).join('.') || 'converted';
+
+    // 輸出路徑：放在 cache 資料夾下
+    const outputPath = `${FileSystem.cacheDirectory}${fileNameWithoutExt}.wav`;
+
+    // 刪除同名檔案（如果已存在）
+    const existing = await FileSystem.getInfoAsync(outputPath);
+    if (existing.exists) {
+      await FileSystem.deleteAsync(outputPath, { idempotent: true });
+    }
+
+    // 執行轉檔指令
+    const ffmpegCommand = `-i "${inputUri}" -ac 1 -ar 16000 "${outputPath}"`;
+    const session = await FFmpegKit.execute(ffmpegCommand);
+
+    const returnCode = await session.getReturnCode();
+
+    if (ReturnCode.isSuccess(returnCode)) {
+      return outputPath;
+    } else {
+      throw new Error(`轉換失敗，錯誤碼：${returnCode}`);
+    }
+  } catch (err) {
+    console.error('convertToWav 錯誤：', err);
+    throw err;
+  }
+};
+
+export const speedUpAudio = async (
+  inputUri: string,
+  speed: number = 1.25
+): Promise<string> => {
+  const baseName = inputUri.split('/').pop()?.split('.').slice(0, -1).join('_') || 'spedup';
+  const outputPath = `${FileSystem.cacheDirectory}${baseName}_x${speed}.m4a`;
+
+  // 先刪除舊檔（如果存在）
+  const existing = await FileSystem.getInfoAsync(outputPath);
+  if (existing.exists) {
+    await FileSystem.deleteAsync(outputPath, { idempotent: true });
+  }
+
+  const command = `-y -i "${inputUri}" -filter:a "atempo=${speed}" -vn "${outputPath}"`;
+  const session = await FFmpegKit.execute(command);
+  const returnCode = await session.getReturnCode();
+
+  if (ReturnCode.isSuccess(returnCode)) {
+    return outputPath;
+  } else {
+    throw new Error('音檔加速處理失敗');
+  }
+};
+
+
+
+export const transcribeAudio = async (item: RecordingItem): Promise<{
+  trimmedRecording: RecordingItem;
+  transcript: string;
+}> => {
+  try {
+    // 1. 剪掉靜音
+    const trimmedRecording = await trimSilence(item.uri, item.name);
+
+    // 2. 加速播放到 1.25x
+    const spedUpUri = await speedUpAudio(trimmedRecording.uri, 1.25);
+
+    // 3. 轉為 .wav（Whisper 用）
+    const wavUri = await convertToWav(spedUpUri);
+
+    // 4. 上傳到 Whisper API
+    const formData = new FormData();
+    formData.append('file', {
+      uri: wavUri,
+      name: 'audio.wav',
+      type: 'audio/wav',
+    } as any);
+
+    const response = await fetch('https://your-backend.com/api/whisper', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      body: formData,
+    });
+
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || '轉文字失敗');
+
+    return {
+      trimmedRecording,
+      transcript: result.text,
+    };
+  } catch (err) {
+    console.error('轉文字錯誤', err);
+    throw err;
+  }
+};
 
