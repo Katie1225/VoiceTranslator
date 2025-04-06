@@ -97,6 +97,34 @@ const AudioRecorder = () => {
     isMeteringEnabled: true
   };
 
+  // 儲存原始檔案及其處理版本
+  const processRecording = async (uri: string, name: string) => {
+    try {
+      // 創建原始錄音項目
+      const originalRecording: RecordingItem = {
+        uri,
+        name,
+        derivedFiles: {}
+      };
+
+      // 創建並儲存增強版本
+      const enhancedRecording = await enhanceAudio(uri, name);
+      originalRecording.derivedFiles!.enhanced = enhancedRecording;
+
+      // 創建並儲存剪輯版本
+      const trimmedRecording = await trimSilence(uri, name);
+      originalRecording.derivedFiles!.trimmed = trimmedRecording;
+
+      // 更新 recordings 陣列
+      setRecordings(prev => [originalRecording, ...prev]);
+
+      Alert.alert("處理完成", "已儲存原始檔案與衍生版本");
+    } catch (err) {
+      Alert.alert("處理失敗", (err as Error).message);
+    }
+  };
+
+
 
   // 清理資源
   useEffect(() => {
@@ -407,6 +435,7 @@ const AudioRecorder = () => {
         <ScrollView style={styles.listContainer}>
           {displayedRecordings.map((item, index) => {
             const isCurrentPlaying = playingUri === item.uri;
+            const hasDerivedFiles = item.derivedFiles && (item.derivedFiles.enhanced || item.derivedFiles.trimmed);
 
             return (
               <View key={index} style={{ position: 'relative' }}>
@@ -417,41 +446,31 @@ const AudioRecorder = () => {
                       style={styles.playIconContainer}
                       onPress={() => {
                         closeAllMenus();
-                        playRecording(item.uri, index); // 永遠使用自己這筆的 uri
+                        playRecording(item.uri, index);
                       }}
                     >
-
                       <Text style={styles.playIcon}>
                         {isCurrentPlaying && isPlaying ? '❚❚' : '▶'}
                       </Text>
                     </TouchableOpacity>
 
-                    {editingIndex === index ? (
-                      <TextInput
-                        value={editName}
-                        onChangeText={setEditName}
-                        style={styles.nameInput}
-                        autoFocus
-                        onSubmitEditing={() => saveEditedName(index)}
-                        onBlur={() => saveEditedName(index)}
-                      />
-                    ) : (
-                      <TouchableOpacity
-                        style={styles.nameContainer}
-                        onPress={() => {
-                          closeAllMenus();
-                          playRecording(item.uri, index); // ✅ 點檔名也能播放
-                        }}
+
+                    <TouchableOpacity
+                      style={styles.nameContainer}
+                      onPress={() => {
+                        closeAllMenus();
+                        playRecording(item.uri, index); // ✅ 點檔名也能播放
+                      }}
+                    >
+                      <Text
+                        style={styles.recordingName}
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
                       >
-                        <Text
-                          style={styles.recordingName}
-                          numberOfLines={1}
-                          ellipsizeMode="tail"
-                        >
-                          {item.name}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
+                        {item.name}
+                      </Text>
+                    </TouchableOpacity>
+
 
                     {/* 三點選單按鈕 - 只在非播放狀態或當前播放項目顯示 */}
                     {(isCurrentPlaying || !isPlaying) && (
@@ -466,6 +485,32 @@ const AudioRecorder = () => {
                       </TouchableOpacity>
                     )}
                   </View>
+{/* 衍生檔案列表 */}
+      {hasDerivedFiles && (
+        <View style={styles.derivedFilesContainer}>
+          {item.derivedFiles?.enhanced && (
+            <TouchableOpacity 
+              style={styles.derivedFileItem}
+              onPress={() => playRecording(item.derivedFiles!.enhanced!.uri, index)}
+            >
+              <Text style={styles.derivedFileName}>
+                🔊 強化版: {item.derivedFiles.enhanced.name}
+              </Text>
+            </TouchableOpacity>
+          )}
+          {item.derivedFiles?.trimmed && (
+            <TouchableOpacity 
+              style={styles.derivedFileItem}
+              onPress={() => playRecording(item.derivedFiles!.trimmed!.uri, index)}
+            >
+              <Text style={styles.derivedFileName}>
+                ✂️ 剪輯版: {item.derivedFiles.trimmed.name}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+                  
 
                   {/* 播放進度條 */}
                   {playingUri === item.uri && (
@@ -500,9 +545,13 @@ const AudioRecorder = () => {
                       style={styles.optionButton}
                       onPress={async () => {
                         try {
-                          const smartItem = await enhanceAudio(item.uri, item.name);
-                          setRecordings(prev => [smartItem, ...prev]);
-                          Alert.alert("智慧音質強化完成", `已新增 ${smartItem.name}`);
+                          const enhancedRecording = await enhanceAudio(item.uri, item.name);
+                          setRecordings(prev => prev.map(rec => 
+                            rec.uri === item.uri 
+                              ? { ...rec, derivedFiles: { ...rec.derivedFiles, enhanced: enhancedRecording } } 
+                              : rec
+                          ));
+                          Alert.alert("智慧音質強化完成", `已為 ${item.name} 創建強化版`);
                         } catch (err) {
                           Alert.alert('強化失敗', (err as Error).message);
                         }
@@ -516,9 +565,13 @@ const AudioRecorder = () => {
                       style={styles.optionButton}
                       onPress={async () => {
                         try {
-                          const trimmedItem = await trimSilence(item.uri, item.name);
-                          setRecordings(prev => [trimmedItem, ...prev]);
-                          Alert.alert("靜音剪輯完成", `已新增 ${trimmedItem.name}`);
+                          const trimmedRecording = await trimSilence(item.uri, item.name);
+                          setRecordings(prev => prev.map(rec => 
+                            rec.uri === item.uri 
+                              ? { ...rec, derivedFiles: { ...rec.derivedFiles, trimmed: trimmedRecording } } 
+                              : rec
+                          ));
+                          Alert.alert("靜音剪輯完成", `已為 ${item.name} 創建剪輯版`);
                         } catch (err) {
                           Alert.alert("剪輯失敗", (err as Error).message);
                         }

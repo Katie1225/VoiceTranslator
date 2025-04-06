@@ -157,7 +157,19 @@ export const createStyles = (colors: any) => StyleSheet.create({
         zIndex: 1000, // 👈 重點：比 optionsMenuLayered 更高
         minWidth: 120,
       },
-      
+      derivedFilesContainer: {
+        marginLeft: 20,
+        borderLeftWidth: 2,
+        borderLeftColor: colors.primary,
+        paddingLeft: 10,
+      },
+      derivedFileItem: {
+        paddingVertical: 8,
+      },
+      derivedFileName: {
+        color: colors.text,
+        fontSize: 14,
+      },
     progressRow: {
       flexDirection: 'row',
       alignItems: 'center',
