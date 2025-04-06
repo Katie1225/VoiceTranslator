@@ -164,8 +164,39 @@ export const createStyles = (colors: any) => StyleSheet.create({
         paddingLeft: 10,
       },
       derivedFileItem: {
+        flex: 1,
+      },
+      derivedFileContent: {
+        flex: 1,
+      },
+      derivedMoreButton: {
+        paddingHorizontal: 10,
+      },
+      derivedOptionsMenu: {
+        backgroundColor: '#fff',
+        borderRadius: 5,
+        padding: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
+        elevation: 5,
+        minWidth: 120,
+      },
+      progressContainer: {
+        marginTop: 8,
+        width: '100%',
+      },
+
+      derivedFileRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
         paddingVertical: 8,
       },
+      mainFileRow: {
+        marginBottom: 8, // 原始檔案與強化版之間的間距
+      },
+
       derivedFileName: {
         color: colors.text,
         fontSize: 14,
@@ -174,10 +205,7 @@ export const createStyles = (colors: any) => StyleSheet.create({
       flexDirection: 'row',
       alignItems: 'center',
     },
-    progressContainer: {
-      flex: 1,
-      marginRight: 10,
-    },
+
     progressBar: {
       height: 10,
       backgroundColor: colors.secondary,
@@ -212,7 +240,7 @@ export const createStyles = (colors: any) => StyleSheet.create({
       borderRadius: 8,
       padding: 8,
       elevation: 5,
-      zIndex: 20,
+      zIndex: 9999,
       minWidth: 120,
     },
     optionButton: {
