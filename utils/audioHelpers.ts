@@ -37,25 +37,6 @@ export const getOriginalName = (smartName: string) => smartName.replace(/^smart_
 export const getSmartName = (originalName: string): string =>
   isSmartFile(originalName) ? originalName : `smart_${originalName}`;
 
-export const findMatchingSmartUri = (
-  originalName: string,
-  recordings: { uri: string; name: string }[]
-): string | null => {
-  const smartName = getSmartName(originalName);
-  const match = recordings.find((r) => r.name === smartName);
-  return match ? match.uri : null;
-};
-
-export const findMatchingOriginalUri = (
-  smartName: string,
-  recordings: { uri: string; name: string }[]
-): string | null => {
-  const originalName = getOriginalName(smartName);
-  const match = recordings.find((r) => r.name === originalName);
-  return match ? match.uri : null;
-};
-
-
 
 export const enhanceAudio = async (
   inputUri: string,
@@ -66,8 +47,10 @@ export const enhanceAudio = async (
   const outputUri = `${folder}${newName}`;
   const inputPath = inputUri.replace('file://', '');
   const outputPath = outputUri.replace('file://', '');
-
-  const command = `-y -i "${inputPath}" -af "highpass=f=200, lowpass=f=3000, afftdn" "${outputPath}"`;
+  // 加入 RNN 降噪模型處理
+ // const command = `-y -i "${inputPath}" -af "arnndn=m=rnnoise-models/rnnoise-model.onnx, highpass=f=200, lowpass=f=3000" "${outputPath}"`;
+  
+ const command = `-y -i "${inputPath}" -af "highpass=f=200, lowpass=f=3000, afftdn" "${outputPath}"`;
   const session = await FFmpegKit.execute(command);
   const returnCode = await session.getReturnCode();
 

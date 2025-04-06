@@ -18,8 +18,6 @@ import { createStyles } from './styles/audioStyles';
 import { FFmpegKit, ReturnCode } from 'ffmpeg-kit-react-native';
 import {
   RecordingItem,
-  isSmartFile,
-  getSmartName,
   enhanceAudio,
   trimSilence
 } from './utils/audioHelpers';
@@ -59,13 +57,7 @@ const AudioRecorder = () => {
   };
   const styles = createStyles(colors);
 
-  // 💡 套用過濾邏輯：只顯示 smart 檔 or 尚未被 smart 的原始檔
-  const displayedRecordings = recordings.filter(rec => {
-    if (isSmartFile(rec.name)) return true; // 顯示 smart 檔
-    const smartVersionName = getSmartName(rec.name);
-    return !recordings.some(r => r.name === smartVersionName);
-  });
-
+  const displayedRecordings = recordings;
 
   // 變速播放
   const [speedMenuIndex, setSpeedMenuIndex] = useState<number | null>(null);
@@ -200,7 +192,7 @@ const AudioRecorder = () => {
         }
       } else {
         if (currentSound) await currentSound.unloadAsync();
-  
+
         const { sound, status } = await Audio.Sound.createAsync(
           { uri },
           {
@@ -213,7 +205,7 @@ const AudioRecorder = () => {
                 setPlaybackDuration(status.durationMillis);
               }
               setPlaybackPosition(status.positionMillis || 0);
-  
+
               if (status.didJustFinish) {
                 setIsPlaying(false);
                 setPlayingUri(null);
@@ -222,7 +214,7 @@ const AudioRecorder = () => {
             }
           }
         );
-  
+
         setCurrentSound(sound);
         setPlayingUri(uri);
         setIsPlaying(true);
@@ -232,7 +224,7 @@ const AudioRecorder = () => {
       Alert.alert("播放失敗", (err as Error).message);
     }
   };
-  
+
 
   // 啟動進度定時器
   const startProgressTimer = () => {
@@ -414,7 +406,6 @@ const AudioRecorder = () => {
         {/* 錄音列表 */}
         <ScrollView style={styles.listContainer}>
           {displayedRecordings.map((item, index) => {
-            const isSmart = isSmartFile(item.name);
             const isCurrentPlaying = playingUri === item.uri;
 
             return (
@@ -423,12 +414,12 @@ const AudioRecorder = () => {
                   <View style={styles.nameRow}>
                     {/* 播放/暫停按鈕 */}
                     <TouchableOpacity
-  style={styles.playIconContainer}
-  onPress={() => {
-    closeAllMenus();
-    playRecording(item.uri, index); // 永遠使用自己這筆的 uri
-  }}
->
+                      style={styles.playIconContainer}
+                      onPress={() => {
+                        closeAllMenus();
+                        playRecording(item.uri, index); // 永遠使用自己這筆的 uri
+                      }}
+                    >
 
                       <Text style={styles.playIcon}>
                         {isCurrentPlaying && isPlaying ? '❚❚' : '▶'}
@@ -504,49 +495,38 @@ const AudioRecorder = () => {
                 {/* 三點選單浮動層（全域定位） */}
                 {selectedIndex === index && (
                   <View style={styles.optionsMenu}>
-                    {/* 第一項：智慧音質強化 or 還原原始音檔 */}
-                    {isSmartFile(item.name) ? (
-                      <TouchableOpacity>
-                        <Text style={styles.optionText}>▶ 播放原始音檔</Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity
-                        style={styles.optionButton}
-                        onPress={async () => {
-                          try {
-                            const smartItem = await enhanceAudio(item.uri, item.name);
 
-                            setRecordings(prev => {
-                              const newList = [...prev];
-                              newList.splice(index, 0, smartItem); // 插入 smart 檔到原始位置
-                              return newList;
-                            });
-                            playRecording(smartItem.uri, index);
+                    <TouchableOpacity
+                      style={styles.optionButton}
+                      onPress={async () => {
+                        try {
+                          const smartItem = await enhanceAudio(item.uri, item.name);
+                          setRecordings(prev => [smartItem, ...prev]);
+                          Alert.alert("智慧音質強化完成", `已新增 ${smartItem.name}`);
+                        } catch (err) {
+                          Alert.alert('強化失敗', (err as Error).message);
+                        }
+                        setSelectedIndex(null);
+                      }}
+                    >
+                      <Text style={styles.optionText}>✨ 智慧音質強化</Text>
+                    </TouchableOpacity>
 
-                          } catch (err) {
-                            Alert.alert('強化失敗', (err as Error).message);
-                          }
-                          setSelectedIndex(null);
-                        }}
-                      >
-                        <Text style={styles.optionText}>✨ 智慧音質強化</Text>
-                      </TouchableOpacity>
-                    )}
-<TouchableOpacity
-  style={styles.optionButton}
-  onPress={async () => {
-    try {
-      const trimmedItem = await trimSilence(item.uri, item.name);
-      setRecordings(prev => [...prev, trimmedItem]);
-      Alert.alert("靜音剪輯完成", `已新增 ${trimmedItem.name}`);
-    } catch (err) {
-      Alert.alert("剪輯失敗", (err as Error).message);
-    }
-    setSelectedIndex(null);
-  }}
->
-  <Text style={styles.optionText}>✂️ 靜音剪輯</Text>
-</TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.optionButton}
+                      onPress={async () => {
+                        try {
+                          const trimmedItem = await trimSilence(item.uri, item.name);
+                          setRecordings(prev => [trimmedItem, ...prev]);
+                          Alert.alert("靜音剪輯完成", `已新增 ${trimmedItem.name}`);
+                        } catch (err) {
+                          Alert.alert("剪輯失敗", (err as Error).message);
+                        }
+                        setSelectedIndex(null);
+                      }}
+                    >
+                      <Text style={styles.optionText}>✂️ 靜音剪輯</Text>
+                    </TouchableOpacity>
 
                     {/* 其他選單功能照舊 */}
                     <TouchableOpacity
