@@ -220,17 +220,17 @@ const AudioRecorder = () => {
           Math.floor((secondsOnly % 3600) / 60) > 0 ? `${Math.floor((secondsOnly % 3600) / 60)}分` : '',
           `${secondsOnly % 60}秒`,
         ].filter(Boolean).join('');
-        
+
         const displayName = `${durationParts} ${hh}:${mm}:${ss} ${month}/${day}/${year}`;
-        
+
         const defaultName = `rec_${hh}${mm}${ss}_${month}${day}${year}.m4a`;
-        
+
         const recordingsToAdd: RecordingItem[] = [{
           uri,
           name: defaultName,
           displayName,
         }];
-        
+
 
         // ✅ 僅儲存原始音檔
         setRecordings(prev => [...recordingsToAdd, ...prev]);
@@ -411,7 +411,7 @@ const AudioRecorder = () => {
         {/* 漢堡菜單內容 */}
         {menuVisible && (
           <View style={styles.menuContainer}>
-            <Text style={styles.menuItem}>版本: v1.0.3</Text>
+            <Text style={styles.menuItem}>版本: v1.0.4</Text>
 
             {/* 深淺色切換 */}
             <TouchableOpacity
@@ -470,34 +470,34 @@ const AudioRecorder = () => {
                 {currentDecibels.toFixed(1)} dB
               </Text>
               */}
-<View style={styles.volumeAndTimeContainer}>
-  {/* 分貝條區塊：75% */}
-  <View style={styles.volumeContainer}>
-    {dbHistory.map((db, i) => {
-      const clampedDb = typeof db === 'number' ? Math.min(Math.max(db, -100), 0) : -100;
-      let height = ((clampedDb + 100) / 100) * 40;
-      if (height < 1) height = 1;
-      return (
-        <View
-          key={i}
-          style={{
-            width:3,
-            height,
-            marginRight: i === dbHistory.length - 1 ? 0 : 1,
-            marginLeft: 1,
-            backgroundColor: colors.primary,
-            borderRadius: 2,
-          }}
-        />
-      );
-    })}
-  </View>
+              <View style={styles.volumeAndTimeContainer}>
+                {/* 分貝條區塊：75% */}
+                <View style={styles.volumeContainer}>
+                  {dbHistory.map((db, i) => {
+                    const clampedDb = typeof db === 'number' ? Math.min(Math.max(db, -100), 0) : -100;
+                    let height = ((clampedDb + 100) / 100) * 40;
+                    if (height < 1) height = 1;
+                    return (
+                      <View
+                        key={i}
+                        style={{
+                          width: 3,
+                          height,
+                          marginRight: i === dbHistory.length - 1 ? 0 : 1,
+                          marginLeft: 1,
+                          backgroundColor: colors.primary,
+                          borderRadius: 2,
+                        }}
+                      />
+                    );
+                  })}
+                </View>
 
-  {/* 錄音時間區塊：25% */}
-  <View style={styles.timeContainer}>
-    <Text style={styles.volumeText}>⏱ {recordingTime}s</Text>
-  </View>
-</View>
+                {/* 錄音時間區塊：25% */}
+                <View style={styles.timeContainer}>
+                  <Text style={styles.volumeText}>⏱ {recordingTime}s</Text>
+                </View>
+              </View>
 
 
             </View>
@@ -535,13 +535,13 @@ const AudioRecorder = () => {
                         playRecording(item.uri, index); // ✅ 點檔名也能播放
                       }}
                     >
-<Text
-  style={[styles.recordingName, playingUri === item.uri && styles.playingText]}
-  numberOfLines={1}
-  ellipsizeMode="tail"
->
-  {item.displayName || item.name}
-</Text>
+                      <Text
+                        style={[styles.recordingName, playingUri === item.uri && styles.playingText]}
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
+                      >
+                        {item.displayName || item.name}
+                      </Text>
 
 
                     </TouchableOpacity>
@@ -826,27 +826,27 @@ const AudioRecorder = () => {
                 const item = recordings[selectedMainIndex];
                 try {
                   const trimmedRecording = await trimSilence(item.uri, item.name);
-                
+
                   // 取得原始與剪輯後的音訊資訊
                   const originalSound = await Audio.Sound.createAsync({ uri: item.uri });
                   const trimmedSound = await Audio.Sound.createAsync({ uri: trimmedRecording.uri });
-                
+
                   const originalStatus = await originalSound.sound.getStatusAsync();
                   const trimmedStatus = await trimmedSound.sound.getStatusAsync();
-                
+
                   if (originalStatus.isLoaded && trimmedStatus.isLoaded) {
                     const originalSecs = Math.round((originalStatus.durationMillis ?? 0) / 1000);
                     const trimmedSecs = Math.round((trimmedStatus.durationMillis ?? 0) / 1000);
-                
+
                     await originalSound.sound.unloadAsync();
                     await trimmedSound.sound.unloadAsync();
-                
+
                     setRecordings(prev => prev.map((rec, i) =>
                       i === selectedMainIndex
                         ? { ...rec, derivedFiles: { ...rec.derivedFiles, trimmed: trimmedRecording } }
                         : rec
                     ));
-                
+
                     Alert.alert(
                       "靜音剪輯完成",
                       `已為 ${item.name} 創建剪輯版\n原始長度：${originalSecs}s → 剪輯後：${trimmedSecs}s`
@@ -857,14 +857,14 @@ const AudioRecorder = () => {
                 } catch (err) {
                   Alert.alert("剪輯失敗", (err as Error).message);
                 }
-                
+
                 closeAllMenus();
               }}
-              
+
             >
               <Text style={styles.optionText}>✂️ 靜音剪輯</Text>
             </TouchableOpacity>
-{/*
+            {/*
             <TouchableOpacity
               style={styles.optionButton}
               onPress={() => {
