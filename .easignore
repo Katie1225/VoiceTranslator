@@ -1,0 +1,35 @@
+# 不用的系統或編輯器檔案
+.DS_Store
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# 不要上傳你的打包輸出
+android/
+ios/
+web-build/
+dist/
+build/
+
+# 不需要上傳的圖片/素材 (除非你打算用在 App 裡)
+*.psd
+*.ai
+*.sketch
+*.zip
+
+# 不需要的錄音或測試音檔
+*.m4a
+*.mp3
+*.wav
+*.aac
+
+# 測試資料或暫存檔
+__tests__/
+coverage/
+tmp/
+temp/
+*.log
+
+# Git 本身無關的檔案
+.git
+.gitignore
