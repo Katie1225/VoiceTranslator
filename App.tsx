@@ -23,7 +23,7 @@ import {
   transcribeAudio
 } from './utils/audioHelpers';
 import Slider from '@react-native-community/slider';
-import {ANDROID_AUDIO_ENCODERS,  ANDROID_OUTPUT_FORMATS} from './constants/AudioConstants';
+import { ANDROID_AUDIO_ENCODERS, ANDROID_OUTPUT_FORMATS } from './constants/AudioConstants';
 
 const AudioRecorder = () => {
   // 核心狀態
@@ -95,12 +95,12 @@ const AudioRecorder = () => {
   const recordingOptions = {
     android: {
       extension: '.m4a',
-      outputFormat: ANDROID_OUTPUT_FORMATS,
-      audioEncoder: ANDROID_AUDIO_ENCODERS,
+      outputFormat: ANDROID_OUTPUT_FORMATS.MPEG_4,
+      audioEncoder: ANDROID_AUDIO_ENCODERS.AAC,
       sampleRate: 48000,
       numberOfChannels: 1,
       bitRate: 320000,
-      audioSource: 6, // VOICE_RECOGNITION
+      audioSource: 1,
       enableAcousticEchoCanceler: true,
       enableNoiseSuppressor: true
     },
@@ -165,9 +165,10 @@ const AudioRecorder = () => {
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
-        staysActiveInBackground: true, // 👈 加上這行！
+        staysActiveInBackground: true,  // 確保在後台保持活動
         shouldDuckAndroid: true,
-        });
+        playThroughEarpieceAndroid: false,
+      });
 
       const { recording: newRecording } = await Audio.Recording.createAsync(
         // @ts-ignore - Expo Audio types are incorrect for createAsync
@@ -413,7 +414,7 @@ const AudioRecorder = () => {
         {/* 漢堡菜單內容 */}
         {menuVisible && (
           <View style={styles.menuContainer}>
-            <Text style={styles.menuItem}>版本: v1.0.6</Text>
+            <Text style={styles.menuItem}>版本: v1.0.8</Text>
 
             {/* 深淺色切換 */}
             <TouchableOpacity

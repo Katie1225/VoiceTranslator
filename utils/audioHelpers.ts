@@ -21,8 +21,16 @@ export const enhanceAudio = async (inputUri: string, originalName: string): Prom
   const outputUri = `${folder}${newName}`;
   const inputPath = inputUri.replace('file://', '');
   const outputPath = outputUri.replace('file://', '');
+  const command = `-i ${inputPath} ` +
+  `-af "` +
+  `highpass=f=100, ` +          // 高通濾波去除低頻噪音
+  `lowpass=f=3000, ` +          // 低通濾波去除高頻噪音
+  `equalizer=f=1000:width_type=h:width=1000:g=3, ` +  // 提升中頻
+  `compand=attacks=0:points=-80/-80|-30/-15|0/-5|20/0, ` +  // 動態範圍壓縮
+  `volume=2dB" ` +              // 提升總體音量
+  `-ar 44100 -ac 1 -b:a 128k ${outputPath}`;
 
-  const command = `-y -i "${inputPath}" -af "highpass=f=200, lowpass=f=3000" "${outputPath}"`;
+  //const command = `-y -i "${inputPath}" -af "highpass=f=200, lowpass=f=3000" "${outputPath}"`;
   const session = await FFmpegKit.execute(command);
   const returnCode = await session.getReturnCode();
 
