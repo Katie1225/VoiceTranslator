@@ -12,6 +12,10 @@
       "supportsTablet": true
     },
     "android": {
+      "permissions": [
+        "RECORD_AUDIO",
+        "FOREGROUND_SERVICE"
+      ],
       "versionCode": 6,           
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon_safe_1024.png",

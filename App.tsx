@@ -165,7 +165,9 @@ const AudioRecorder = () => {
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
-      });
+        staysActiveInBackground: true, // 👈 加上這行！
+        shouldDuckAndroid: true,
+        });
 
       const { recording: newRecording } = await Audio.Recording.createAsync(
         // @ts-ignore - Expo Audio types are incorrect for createAsync
