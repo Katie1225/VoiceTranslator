@@ -2,9 +2,9 @@
   "expo": {
     "name": "audio-recorder-mvp",
     "slug": "audio-recorder-mvp",
-    "version": "1.0.8",
+    "version": "1.1.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon_safe_1024.png",
+    "icon": "./assets/images/icon.png",
     "scheme": "myapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -18,7 +18,7 @@
       ],
       "versionCode": 6,           
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/icon_safe_1024.png",
+        "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#ffffff"
       },
       "package": "com.katiehuang.audiorecordermvp"

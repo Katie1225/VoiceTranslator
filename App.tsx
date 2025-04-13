@@ -16,6 +16,7 @@ import * as Sharing from 'expo-sharing';
 import { lightTheme, darkTheme, additionalColors } from './constants/Colors';
 import { createStyles } from './styles/audioStyles';
 import { FFmpegKit, ReturnCode } from 'ffmpeg-kit-react-native';
+import { useKeepAwake } from 'expo-keep-awake';
 import {
   RecordingItem,
   enhanceAudio,
@@ -26,6 +27,7 @@ import Slider from '@react-native-community/slider';
 import { ANDROID_AUDIO_ENCODERS, ANDROID_OUTPUT_FORMATS } from './constants/AudioConstants';
 
 const AudioRecorder = () => {
+  useKeepAwake(); // 保持清醒
   // 核心狀態
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [recordings, setRecordings] = useState<RecordingItem[]>([]);
@@ -414,7 +416,7 @@ const AudioRecorder = () => {
         {/* 漢堡菜單內容 */}
         {menuVisible && (
           <View style={styles.menuContainer}>
-            <Text style={styles.menuItem}>版本: v1.0.8</Text>
+            <Text style={styles.menuItem}>版本: v1.1.0</Text>
 
             {/* 深淺色切換 */}
             <TouchableOpacity
