@@ -2,9 +2,9 @@
   "expo": {
     "name": "audio-recorder-mvp",
     "slug": "audio-recorder-mvp",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/VoiceClamp.png",
     "scheme": "myapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -18,7 +18,7 @@
       ],
       "versionCode": 6,           
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/icon.png",
+        "foregroundImage": "./assets/images/VoiceClamp.png",
         "backgroundColor": "#ffffff"
       },
       "package": "com.katiehuang.audiorecordermvp"
@@ -26,14 +26,14 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/VoiceClamp.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
