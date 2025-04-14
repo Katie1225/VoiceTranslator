@@ -3,28 +3,31 @@ import {
   View,
   Text,
   TouchableOpacity,
-  StyleSheet,
+  // StyleSheet,
   ScrollView,
   SafeAreaView,
   TextInput,
   Alert,
+  ActivityIndicator,
   TouchableWithoutFeedback
 } from 'react-native';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
-import { lightTheme, darkTheme, additionalColors } from './constants/Colors';
-import { createStyles } from './styles/audioStyles';
-import { FFmpegKit, ReturnCode } from 'ffmpeg-kit-react-native';
+//import { FFmpegKit, ReturnCode } from 'ffmpeg-kit-react-native';
 import { useKeepAwake } from 'expo-keep-awake';
+import Slider from '@react-native-community/slider';
+
 import {
   RecordingItem,
   enhanceAudio,
   trimSilence,
   transcribeAudio
 } from './utils/audioHelpers';
-import Slider from '@react-native-community/slider';
+import { createStyles } from './styles/audioStyles';
 import { ANDROID_AUDIO_ENCODERS, ANDROID_OUTPUT_FORMATS } from './constants/AudioConstants';
+import { lightTheme, darkTheme, additionalColors } from './constants/Colors';
+
 
 const AudioRecorder = () => {
   useKeepAwake(); // 保持清醒
@@ -118,6 +121,8 @@ const AudioRecorder = () => {
     isMeteringEnabled: true
   };
 
+
+
   // 儲存原始檔案及其處理版本
   const processRecording = async (uri: string, name: string) => {
     try {
@@ -144,6 +149,75 @@ const AudioRecorder = () => {
       Alert.alert("處理失敗", (err as Error).message);
     }
   };
+  // 新增狀態
+  const [isLoading, setIsLoading] = useState(true);
+
+  // 儲存錄音列表到本地檔案
+  const saveRecordings = async (items: RecordingItem[]) => {
+    try {
+      await FileSystem.writeAsStringAsync(
+        `${FileSystem.documentDirectory}recordings.json`,
+        JSON.stringify(items)
+      );
+    } catch (err) {
+      console.error('儲存錄音列表失敗:', err);
+    }
+  };
+
+  // 從本地檔案載入錄音列表
+  const loadRecordings = async () => {
+    try {
+      const path = `${FileSystem.documentDirectory}recordings.json`;
+      const fileInfo = await FileSystem.getInfoAsync(path);
+
+      if (fileInfo.exists) {
+        const content = await FileSystem.readAsStringAsync(path);
+        const loadedRecordings = JSON.parse(content);
+
+        // 驗證每個錄音檔是否仍然存在
+        const validRecordings = [];
+        for (const item of loadedRecordings) {
+          const fileInfo = await FileSystem.getInfoAsync(item.uri);
+          if (fileInfo.exists) {
+            validRecordings.push(item);
+          } else {
+            // 如果主檔案不存在，嘗試刪除其衍生檔案
+            if (item.derivedFiles?.enhanced?.uri) {
+              try {
+                await FileSystem.deleteAsync(item.derivedFiles.enhanced.uri, { idempotent: true });
+              } catch (e) { }
+            }
+            if (item.derivedFiles?.trimmed?.uri) {
+              try {
+                await FileSystem.deleteAsync(item.derivedFiles.trimmed.uri, { idempotent: true });
+              } catch (e) { }
+            }
+          }
+        }
+
+        setRecordings(validRecordings);
+        if (loadedRecordings.length !== validRecordings.length) {
+          await saveRecordings(validRecordings); // 更新儲存檔
+        }
+      }
+    } catch (err) {
+      console.error('載入錄音列表失敗:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 在組件掛載時載入
+  useEffect(() => {
+    loadRecordings();
+  }, []);
+
+  // 在錄音列表變更時自動儲存
+  useEffect(() => {
+    if (!isLoading && recordings.length > 0) {
+      saveRecordings(recordings);
+    }
+  }, [recordings, isLoading]);
 
 
 
@@ -234,6 +308,7 @@ const AudioRecorder = () => {
           uri,
           name: defaultName,
           displayName,
+          derivedFiles: {} // 初始化衍生檔案結構
         }];
 
 
@@ -324,7 +399,7 @@ const AudioRecorder = () => {
   // 修改文件名
   const startEditingName = (index: number) => {
     setEditingIndex(index);
-    setEditName(recordings[index].name);
+    setEditName(recordings[index].displayName || recordings[index].name);
     setSelectedIndex(null); // 關閉菜單
   };
 
@@ -332,7 +407,7 @@ const AudioRecorder = () => {
     if (editName.trim()) {
       setRecordings(prev =>
         prev.map((item, i) =>
-          i === index ? { ...item, name: editName } : item
+          i === index ? { ...item, displayName: editName } : item
         )
       );
     }
@@ -351,8 +426,17 @@ const AudioRecorder = () => {
           onPress: async () => {
             closeAllMenus();
             try {
-              const uri = recordings[index].uri;
-              await FileSystem.deleteAsync(uri, { idempotent: true });
+              const item = recordings[index];
+              // 刪除主檔案
+              await FileSystem.deleteAsync(item.uri, { idempotent: true });
+              // 刪除衍生檔案
+              if (item.derivedFiles?.enhanced?.uri) {
+                await FileSystem.deleteAsync(item.derivedFiles.enhanced.uri, { idempotent: true });
+              }
+              if (item.derivedFiles?.trimmed?.uri) {
+                await FileSystem.deleteAsync(item.derivedFiles.trimmed.uri, { idempotent: true });
+              }
+
               const newRecordings = [...recordings];
               newRecordings.splice(index, 1);
               setRecordings(newRecordings);
@@ -405,366 +489,355 @@ const AudioRecorder = () => {
   return (
     <TouchableWithoutFeedback onPress={closeAllMenus}>
       <SafeAreaView style={styles.container}>
-        {/* 漢堡菜單按鈕 */}
-        <TouchableOpacity
-          style={styles.menuButton}
-          onPress={() => { closeAllMenus(); setMenuVisible(!menuVisible); }}
-        >
-          <Text style={styles.menuIcon}>☰</Text>
-        </TouchableOpacity>
+        {isLoading ? (
+          <View style={styles.loadingContainer}>
+            {/* 使用 ActivityIndicator 作為載入動畫 */}
+            <ActivityIndicator
+              size="large"
+              color={colors.primary}
+            />
+            <Text style={styles.loadingText}>載入錄音列表中...</Text>
+          </View>
+        ) : (
+          <>
 
-        {/* 漢堡菜單內容 */}
-        {menuVisible && (
-          <View style={styles.menuContainer}>
-            <Text style={styles.menuItem}>版本: v1.1.1</Text>
-
-            {/* 深淺色切換 */}
+            {/* 漢堡菜單按鈕 */}
             <TouchableOpacity
-              onPress={() => { closeAllMenus(); setIsDarkMode(!isDarkMode); }}
-              style={styles.menuItemButton}
+              style={styles.menuButton}
+              onPress={() => { closeAllMenus(); setMenuVisible(!menuVisible); }}
             >
-              <Text style={styles.menuItem}>
-                {isDarkMode ? '切換淺色模式' : '切換深色模式'}
-              </Text>
+              <Text style={styles.menuIcon}>☰</Text>
             </TouchableOpacity>
 
-            {/* 顏色選擇 */}
-            <Text style={styles.menuHeader}>主題顏色</Text>
-            <View style={styles.colorOptionsContainer}>
-              {/* 預設顏色 */}
-              <TouchableOpacity
-                style={[
-                  styles.colorOption,
-                  { backgroundColor: isDarkMode ? darkTheme.primary : lightTheme.primary },
-                  !customPrimaryColor && styles.selectedColor
-                ]}
-                onPress={() => { closeAllMenus(); setCustomPrimaryColor(null); }}
-              />
+            {/* 漢堡菜單內容 */}
+            {menuVisible && (
+              <View style={styles.menuContainer}>
+                <Text style={styles.menuItem}>版本: v1.1.1</Text>
 
-              {/* 額外顏色選項 */}
-              {Object.entries(additionalColors).map(([name, color]) => (
+                {/* 深淺色切換 */}
                 <TouchableOpacity
-                  key={name}
-                  style={[
-                    styles.colorOption,
-                    { backgroundColor: color },
-                    customPrimaryColor === color && styles.selectedColor
-                  ]}
-                  onPress={() => { closeAllMenus(); setCustomPrimaryColor(color); }}
-                />
-              ))}
-            </View>
-          </View>
-        )}
+                  onPress={() => { closeAllMenus(); setIsDarkMode(!isDarkMode); }}
+                  style={styles.menuItemButton}
+                >
+                  <Text style={styles.menuItem}>
+                    {isDarkMode ? '切換淺色模式' : '切換深色模式'}
+                  </Text>
+                </TouchableOpacity>
 
-        {/* 錄音按鈕 & 音量顯示 */}
-        <View style={styles.recordSection}>
-          <TouchableOpacity
-            style={recording ? styles.stopButton : styles.recordButton}
-            onPress={recording ? stopRecording : startRecording}
-          >
-            <Text style={styles.buttonText}>
-              {recording ? '停止錄音' : '開始錄音'}
-            </Text>
-          </TouchableOpacity>
+                {/* 顏色選擇 */}
+                <Text style={styles.menuHeader}>主題顏色</Text>
+                <View style={styles.colorOptionsContainer}>
+                  {/* 預設顏色 */}
+                  <TouchableOpacity
+                    style={[
+                      styles.colorOption,
+                      { backgroundColor: isDarkMode ? darkTheme.primary : lightTheme.primary },
+                      !customPrimaryColor && styles.selectedColor
+                    ]}
+                    onPress={() => { closeAllMenus(); setCustomPrimaryColor(null); }}
+                  />
 
-          {recording && (
-            <View style={styles.volumeMeter}>
-              {/*隱藏音量
+                  {/* 額外顏色選項 */}
+                  {Object.entries(additionalColors).map(([name, color]) => (
+                    <TouchableOpacity
+                      key={name}
+                      style={[
+                        styles.colorOption,
+                        { backgroundColor: color },
+                        customPrimaryColor === color && styles.selectedColor
+                      ]}
+                      onPress={() => { closeAllMenus(); setCustomPrimaryColor(color); }}
+                    />
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* 錄音按鈕 & 音量顯示 */}
+            <View style={styles.recordSection}>
+              <TouchableOpacity
+                style={recording ? styles.stopButton : styles.recordButton}
+                onPress={recording ? stopRecording : startRecording}
+              >
+                <Text style={styles.buttonText}>
+                  {recording ? '停止錄音' : '開始錄音'}
+                </Text>
+              </TouchableOpacity>
+
+              {recording && (
+                <View style={styles.volumeMeter}>
+                  {/*隱藏音量
               <Text style={styles.volumeText}> 
                 {currentDecibels.toFixed(1)} dB
               </Text>
               */}
-              <View style={styles.volumeAndTimeContainer}>
-                {/* 分貝條區塊：75% */}
-                <View style={styles.volumeContainer}>
-                  {dbHistory.map((db, i) => {
-                    const clampedDb = typeof db === 'number' ? Math.min(Math.max(db, -100), 0) : -100;
-                    let height = ((clampedDb + 100) / 100) * 40;
-                    if (height < 1) height = 1;
-                    return (
-                      <View
-                        key={i}
-                        style={{
-                          width: 3,
-                          height,
-                          marginRight: i === dbHistory.length - 1 ? 0 : 1,
-                          marginLeft: 1,
-                          backgroundColor: colors.primary,
-                          borderRadius: 2,
-                        }}
-                      />
-                    );
-                  })}
-                </View>
+                  <View style={styles.volumeAndTimeContainer}>
+                    {/* 分貝條區塊：75% */}
+                    <View style={styles.volumeContainer}>
+                      {dbHistory.map((db, i) => {
+                        const clampedDb = typeof db === 'number' ? Math.min(Math.max(db, -100), 0) : -100;
+                        let height = ((clampedDb + 100) / 100) * 40;
+                        if (height < 1) height = 1;
+                        return (
+                          <View
+                            key={i}
+                            style={{
+                              width: 3,
+                              height,
+                              marginRight: i === dbHistory.length - 1 ? 0 : 1,
+                              marginLeft: 1,
+                              backgroundColor: colors.primary,
+                              borderRadius: 2,
+                            }}
+                          />
+                        );
+                      })}
+                    </View>
 
-                {/* 錄音時間區塊：25% */}
-                <View style={styles.timeContainer}>
-                  <Text style={styles.volumeText}>⏱ {recordingTime}s</Text>
-                </View>
-              </View>
-
-
-            </View>
-          )}
-        </View>
-
-        {/* 錄音列表 */}
-        <ScrollView style={styles.listContainer}>
-          {recordings.map((item, index) => {
-            const isCurrentPlaying = playingUri === item.uri;
-            const hasDerivedFiles = item.derivedFiles && (item.derivedFiles.enhanced || item.derivedFiles.trimmed);
-
-            return (
-              <View key={index} style={{ position: 'relative', zIndex: selectedDerivedIndex?.index === index ? 999 : 0, }}>
-                <View style={styles.recordingItem}>
-                  <View style={styles.nameRow}>
-                    {/* 播放/暫停按鈕 */}
-                    <TouchableOpacity
-                      style={styles.playIconContainer}
-                      onPress={() => {
-                        closeAllMenus();
-                        playRecording(item.uri, index);
-                      }}
-                    >
-                      <Text style={styles.playIcon}>
-                        {isCurrentPlaying && isPlaying ? '❚❚' : '▶'}
-                      </Text>
-                    </TouchableOpacity>
-
-
-                    <TouchableOpacity
-                      style={styles.nameContainer}
-                      onPress={() => {
-                        closeAllMenus();
-                        playRecording(item.uri, index); // ✅ 點檔名也能播放
-                      }}
-                    >
-                      <Text
-                        style={[styles.recordingName, playingUri === item.uri && styles.playingText]}
-                        numberOfLines={1}
-                        ellipsizeMode="tail"
-                      >
-                        {item.displayName || item.name}
-                      </Text>
-
-
-                    </TouchableOpacity>
-
-
-                    {/* 三點選單按鈕 - 只在非播放狀態或當前播放項目顯示 */}
-                    {(isCurrentPlaying || !isPlaying) && (
-                      <TouchableOpacity
-                        style={styles.moreButton}
-                        onPress={(e) => {
-                          e.stopPropagation();
-
-                          // 若點同一個就收起來
-                          if (selectedMainIndex === index) {
-                            setSelectedMainIndex(null);
-                            setMainMenuPosition(null);
-                            return;
-                          }
-
-                          e.target.measureInWindow((x, y, width, height) => {
-                            setMainMenuPosition({ x, y: y + height });
-                            setSelectedMainIndex(index);
-                          });
-                        }}
-
-
-                      >
-                        <Text style={styles.moreIcon}>⋯</Text>
-                      </TouchableOpacity>
-                    )}
+                    {/* 錄音時間區塊：25% */}
+                    <View style={styles.timeContainer}>
+                      <Text style={styles.volumeText}>⏱ {recordingTime}s</Text>
+                    </View>
                   </View>
 
-                  {/* 播放進度條 */}
-                  {(playingUri === item.uri ||
-                    playingUri === item.derivedFiles?.enhanced?.uri ||
-                    playingUri === item.derivedFiles?.trimmed?.uri) && (
-                      <View style={styles.progressContainer}>
-                        <Slider
-                          style={{ flex: 1 }}
-                          minimumValue={0}
-                          maximumValue={playbackDuration}
-                          value={playbackPosition}
-                          onSlidingComplete={async (value) => {
-                            if (currentSound) {
-                              await currentSound.setPositionAsync(value);
-                              setPlaybackPosition(value);
-                            }
-                          }}
-                          minimumTrackTintColor={colors.primary}
-                          maximumTrackTintColor="#ccc"
-                          thumbTintColor={colors.primary}
-                        />
 
-                        {/* 時間 + 播放速度排一列 */}
-                        <View
-                          style={{
-                            flexDirection: 'row',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            marginTop: 4,
-                          }}
-                        >
-                          <Text style={styles.timeText}>
-                            {formatTime(playbackPosition)} / {formatTime(playbackDuration)}
-                          </Text>
-
-                          {/* 播放速度按鈕 */}
-                          <TouchableOpacity
-                            onPress={(e) => {
-                              e.target.measureInWindow((x, y, width, height) => {
-                                setSpeedMenuIndex(index);
-                                setSpeedMenuPosition({ x, y: y + height });
-                              });
-                            }}
-                          >
-                            <Text style={[styles.timeText]}>{currentPlaybackRate}x</Text>
-                          </TouchableOpacity>
-
-                        </View>
-
-
-                      </View>
-                    )}
-
-
-
-                  {/* 衍生檔案列表 */}
-                  {hasDerivedFiles && (
-                    <View style={styles.derivedFilesContainer}>
-                      {item.derivedFiles?.enhanced && (
-                        <View style={styles.derivedFileRow}>
-                          <TouchableOpacity
-                            style={[styles.derivedFileItem, { flex: 1 }]}
-                            onPress={() => playRecording(item.derivedFiles!.enhanced!.uri, index)}
-                          >
-
-                            <Text
-                              style={[
-                                styles.derivedFileName,
-                                playingUri === item.derivedFiles?.enhanced?.uri && styles.playingText
-                              ]}
-                              numberOfLines={1}
-                              ellipsizeMode="tail"
-                            >
-                              🔊 增強音質 {item.derivedFiles.enhanced.name}
-                            </Text>
-                          </TouchableOpacity>
-
-                          <TouchableOpacity
-                            style={styles.derivedMoreButton}
-                            onPress={(e) => {
-                              e.stopPropagation();
-                              // 若再次點選相同的衍生三點，則收起
-                              if (
-                                selectedDerivedIndex &&
-                                selectedDerivedIndex.index === index &&
-                                selectedDerivedIndex.type === 'enhanced' // or 'trimmed'，視當前按鈕而定
-                              ) {
-                                setSelectedDerivedIndex(null);
-                                return;
-                              }
-
-
-                              // 獲取按鈕在屏幕上的絕對位置
-                              e.target.measure((x, y, width, height, pageX, pageY) => {
-                                setSelectedDerivedIndex({
-                                  type: 'enhanced',
-                                  index,
-                                  position: { x: pageX, y: pageY } // 儲存位置
-                                });
-                              });
-                            }}
-                          >
-                            <Text style={styles.moreIcon}>⋯</Text>
-                          </TouchableOpacity>
-                        </View>
-                      )}
-
-                      {item.derivedFiles?.trimmed && (
-                        <View style={styles.derivedFileRow}>
-                          <TouchableOpacity
-                            style={[styles.derivedFileItem, { flex: 1 }]}
-                            onPress={() => playRecording(item.derivedFiles!.trimmed!.uri, index)}
-                          >
-                            <Text
-                              style={[
-                                styles.derivedFileName,
-                                playingUri === item.derivedFiles?.trimmed?.uri && styles.playingText
-                              ]}
-                              numberOfLines={1}
-                              ellipsizeMode="tail"
-                            >
-                              ✂️ 靜音剪輯 {item.derivedFiles.trimmed.name}
-                            </Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={styles.derivedMoreButton}
-                            onPress={(e) => {
-                              e.stopPropagation();
-                              // 若再次點選相同的衍生三點，則收起
-                              if (
-                                selectedDerivedIndex &&
-                                selectedDerivedIndex.index === index &&
-                                selectedDerivedIndex.type === 'trimmed'//視當前按鈕而定
-                              ) {
-                                setSelectedDerivedIndex(null);
-                                return;
-                              }
-
-                              // 獲取按鈕在屏幕上的絕對位置
-                              e.target.measure((x, y, width, height, pageX, pageY) => {
-                                setSelectedDerivedIndex({
-                                  type: 'trimmed',
-                                  index,
-                                  position: { x: pageX, y: pageY } // 儲存位置
-                                });
-                              });
-                            }}
-                          >
-
-                            <Text style={styles.moreIcon}>⋯</Text>
-                          </TouchableOpacity>
-                        </View>
-                      )}
-
-                      {typeof item.derivedFiles?.trimmed?.transcript === 'string' && (
-                        <View style={styles.transcriptContainer}>
-                          <View style={styles.bar} />
-                          <Text style={styles.transcriptText}>
-                            {item.derivedFiles.trimmed.transcript}
-                          </Text>
-                        </View>
-                      )}
-
-                    </View>
-                  )}
                 </View>
-              </View>
-            );
-          })
-          }
+              )}
+            </View>
 
-        </ScrollView>
+            {/* 錄音列表 */}
+            <ScrollView style={styles.listContainer}>
+              {recordings.length === 0 ? (
+                <View style={styles.emptyListContainer}>
+                  <Text style={styles.emptyListText}>暫無錄音檔案</Text>
+                </View>
+              ) : (
+                // 這裡開始是 recordings.map 的內容
+                recordings.map((item, index) => {
+                  const isCurrentPlaying = playingUri === item.uri;
+                  const hasDerivedFiles = item.derivedFiles && (item.derivedFiles.enhanced || item.derivedFiles.trimmed);
 
-        {/* 三點選單浮動層（全域定位） */}
-        {selectedMainIndex !== null && mainMenuPosition && (
-          <View style={[
-            styles.optionsMenu,
-            {
-              position: 'absolute',
-              left: mainMenuPosition.x - 120,
-              top: mainMenuPosition.y,
-              zIndex: 9999,
-              elevation: 10,
-            }
-          ]}>
+                  return (
+                    <View key={index} style={{ position: 'relative', zIndex: selectedDerivedIndex?.index === index ? 999 : 0 }}>
+                      {/* 單個錄音項目的完整 UI */}
+                      <View style={styles.recordingItem}>
+                        {/* 名稱行 */}
+                        <View style={styles.nameRow}>
+                          {/* 播放按鈕 */}
+                          <TouchableOpacity
+                            style={styles.playIconContainer}
+                            onPress={() => {
+                              closeAllMenus();
+                              playRecording(item.uri, index);
+                            }}
+                          >
+                            <Text style={styles.playIcon}>
+                              {isCurrentPlaying && isPlaying ? '❚❚' : '▶'}
+                            </Text>
+                          </TouchableOpacity>
 
-            {/* 新增這一項：轉文字 
+                          {/* 名稱顯示/編輯 */}
+                          <View style={styles.nameContainer}>
+                            {editingIndex === index ? (
+                              <TextInput
+                                style={styles.nameInput}
+                                value={editName}
+                                onChangeText={setEditName}
+                                onSubmitEditing={() => saveEditedName(index)}
+                                autoFocus
+                                onBlur={() => saveEditedName(index)}
+                              />
+                            ) : (
+                              <Text
+                                style={[styles.recordingName, playingUri === item.uri && styles.playingText]}
+                                numberOfLines={1}
+                                ellipsizeMode="tail"
+                              >
+                                {item.displayName || item.name}
+                              </Text>
+                            )}
+                          </View>
+
+                          {/* 更多按鈕 */}
+                          {(isCurrentPlaying || !isPlaying) && (
+                            <TouchableOpacity
+                              style={styles.moreButton}
+                              onPress={(e) => {
+                                e.stopPropagation();
+                                closeAllMenus();
+                                if (selectedMainIndex === index) {
+                                  setSelectedMainIndex(null);
+                                  setMainMenuPosition(null);
+                                  return;
+                                }
+                                e.target.measureInWindow((x, y, width, height) => {
+                                  setMainMenuPosition({ x, y: y + height });
+                                  setSelectedMainIndex(index);
+                                });
+                              }}
+                            >
+                              <Text style={styles.moreIcon}>⋯</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+
+                        {/* 播放進度條 */}
+                        {(playingUri === item.uri ||
+                          playingUri === item.derivedFiles?.enhanced?.uri ||
+                          playingUri === item.derivedFiles?.trimmed?.uri) && (
+                            <View style={styles.progressContainer}>
+                              {/* 進度條和時間顯示 */}
+                              <Slider
+                                style={{ flex: 1 }}
+                                minimumValue={0}
+                                maximumValue={playbackDuration}
+                                value={playbackPosition}
+                                onSlidingComplete={async (value) => {
+                                  if (currentSound) {
+                                    await currentSound.setPositionAsync(value);
+                                    setPlaybackPosition(value);
+                                  }
+                                }}
+                                minimumTrackTintColor={colors.primary}
+                                maximumTrackTintColor="#ccc"
+                                thumbTintColor={colors.primary}
+                              />
+                              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                                <Text style={styles.timeText}>
+                                  {formatTime(playbackPosition)} / {formatTime(playbackDuration)}
+                                </Text>
+                                <TouchableOpacity
+                                  onPress={(e) => {
+                                    closeAllMenus();
+                                    e.target.measureInWindow((x, y, width, height) => {
+                                      setSpeedMenuIndex(index);
+                                      setSpeedMenuPosition({ x, y: y + height });
+                                    });
+                                  }}
+                                >
+                                  <Text style={[styles.timeText]}>{currentPlaybackRate}x</Text>
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+                          )}
+
+                        {/* 衍生檔案列表 */}
+                        {hasDerivedFiles && (
+                          <View style={styles.derivedFilesContainer}>
+                            {/* 增強音質版本 */}
+                            {item.derivedFiles?.enhanced && (
+                              <View style={styles.derivedFileRow}>
+                                <TouchableOpacity
+                                  style={[styles.derivedFileItem, { flex: 1 }]}
+                                  onPress={() => playRecording(item.derivedFiles!.enhanced!.uri, index)}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.derivedFileName,
+                                      playingUri === item.derivedFiles?.enhanced?.uri && styles.playingText
+                                    ]}
+                                    numberOfLines={1}
+                                    ellipsizeMode="tail"
+                                  >
+                                    🔊 增強音質 {item.derivedFiles.enhanced.name}
+                                  </Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  style={styles.derivedMoreButton}
+                                  onPress={(e) => {
+                                    e.stopPropagation();
+                                    closeAllMenus();
+                                    if (selectedDerivedIndex?.index === index && selectedDerivedIndex?.type === 'enhanced') {
+                                      setSelectedDerivedIndex(null);
+                                      return;
+                                    }
+                                    e.target.measure((x, y, width, height, pageX, pageY) => {
+                                      setSelectedDerivedIndex({
+                                        type: 'enhanced',
+                                        index,
+                                        position: { x: pageX, y: pageY }
+                                      });
+                                    });
+                                  }}
+                                >
+                                  <Text style={styles.moreIcon}>⋯</Text>
+                                </TouchableOpacity>
+                              </View>
+                            )}
+
+                            {/* 靜音剪輯版本 */}
+                            {item.derivedFiles?.trimmed && (
+                              <View style={styles.derivedFileRow}>
+                                <TouchableOpacity
+                                  style={[styles.derivedFileItem, { flex: 1 }]}
+                                  onPress={() => playRecording(item.derivedFiles!.trimmed!.uri, index)}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.derivedFileName,
+                                      playingUri === item.derivedFiles?.trimmed?.uri && styles.playingText
+                                    ]}
+                                    numberOfLines={1}
+                                    ellipsizeMode="tail"
+                                  >
+                                    ✂️ 靜音剪輯 {item.derivedFiles.trimmed.name}
+                                  </Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  style={styles.derivedMoreButton}
+                                  onPress={(e) => {
+                                    e.stopPropagation();
+                                    closeAllMenus();
+                                    if (selectedDerivedIndex?.index === index && selectedDerivedIndex?.type === 'trimmed') {
+                                      setSelectedDerivedIndex(null);
+                                      return;
+                                    }
+                                    e.target.measure((x, y, width, height, pageX, pageY) => {
+                                      setSelectedDerivedIndex({
+                                        type: 'trimmed',
+                                        index,
+                                        position: { x: pageX, y: pageY }
+                                      });
+                                    });
+                                  }}
+                                >
+                                  <Text style={styles.moreIcon}>⋯</Text>
+                                </TouchableOpacity>
+                              </View>
+                            )}
+
+                            {/* 文字轉錄內容 */}
+                            {typeof item.derivedFiles?.trimmed?.transcript === 'string' && (
+                              <View style={styles.transcriptContainer}>
+                                <View style={styles.bar} />
+                                <Text style={styles.transcriptText}>
+                                  {item.derivedFiles.trimmed.transcript}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })
+              )}
+            </ScrollView>
+
+            {/* 三點選單浮動層（全域定位） */}
+            {selectedMainIndex !== null && mainMenuPosition && (
+              <View style={[
+                styles.optionsMenu,
+                {
+                  position: 'absolute',
+                  left: mainMenuPosition.x - 120,
+                  top: mainMenuPosition.y,
+                  zIndex: 9999,
+                  elevation: 10,
+                }
+              ]}>
+
+                {/* 新增這一項：轉文字 
             <TouchableOpacity
               style={styles.optionButton}
               onPress={async () => {
@@ -801,7 +874,7 @@ const AudioRecorder = () => {
               <Text style={styles.optionText}>📝 轉文字</Text>
             </TouchableOpacity>
           */}
-            {/*  新增這一項：智慧音質 
+                {/*  新增這一項：智慧音質 
             <TouchableOpacity
               style={styles.optionButton}
               onPress={async () => {
@@ -824,177 +897,180 @@ const AudioRecorder = () => {
             </TouchableOpacity>
           */}
 
-            {/* 放在這裡！不要放在 map 循環內部 */}
-            <TouchableOpacity
-              style={styles.optionButton}
-              onPress={async () => {
-                const item = recordings[selectedMainIndex];
-                try {
-                  const trimmedRecording = await trimSilence(item.uri, item.name);
+                {/* 放在這裡！不要放在 map 循環內部 */}
+                <TouchableOpacity
+                  style={styles.optionButton}
+                  onPress={async () => {
+                    closeAllMenus();
+                    const item = recordings[selectedMainIndex];
+                    try {
+                      const trimmedRecording = await trimSilence(item.uri, item.name);
 
-                  // 取得原始與剪輯後的音訊資訊
-                  const originalSound = await Audio.Sound.createAsync({ uri: item.uri });
-                  const trimmedSound = await Audio.Sound.createAsync({ uri: trimmedRecording.uri });
+                      // 取得原始與剪輯後的音訊資訊
+                      const originalSound = await Audio.Sound.createAsync({ uri: item.uri });
+                      const trimmedSound = await Audio.Sound.createAsync({ uri: trimmedRecording.uri });
 
-                  const originalStatus = await originalSound.sound.getStatusAsync();
-                  const trimmedStatus = await trimmedSound.sound.getStatusAsync();
+                      const originalStatus = await originalSound.sound.getStatusAsync();
+                      const trimmedStatus = await trimmedSound.sound.getStatusAsync();
 
-                  if (originalStatus.isLoaded && trimmedStatus.isLoaded) {
-                    const originalSecs = Math.round((originalStatus.durationMillis ?? 0) / 1000);
-                    const trimmedSecs = Math.round((trimmedStatus.durationMillis ?? 0) / 1000);
+                      if (originalStatus.isLoaded && trimmedStatus.isLoaded) {
+                        const originalSecs = Math.round((originalStatus.durationMillis ?? 0) / 1000);
+                        const trimmedSecs = Math.round((trimmedStatus.durationMillis ?? 0) / 1000);
 
-                    await originalSound.sound.unloadAsync();
-                    await trimmedSound.sound.unloadAsync();
+                        await originalSound.sound.unloadAsync();
+                        await trimmedSound.sound.unloadAsync();
 
-                    setRecordings(prev => prev.map((rec, i) =>
-                      i === selectedMainIndex
-                        ? { ...rec, derivedFiles: { ...rec.derivedFiles, trimmed: trimmedRecording } }
-                        : rec
-                    ));
+                        setRecordings(prev => prev.map((rec, i) =>
+                          i === selectedMainIndex
+                            ? { ...rec, derivedFiles: { ...rec.derivedFiles, trimmed: trimmedRecording } }
+                            : rec
+                        ));
 
-                    Alert.alert(
-                      "靜音剪輯完成",
-                      `已為 ${item.name} 創建剪輯版\n原始長度：${originalSecs}s → 剪輯後：${trimmedSecs}s`
-                    );
-                  } else {
-                    Alert.alert("音訊讀取失敗", "無法取得音檔長度");
-                  }
-                } catch (err) {
-                  Alert.alert("剪輯失敗", (err as Error).message);
-                }
-
-                closeAllMenus();
-              }}
-
-            >
-              <Text style={styles.optionText}>✂️ 靜音剪輯</Text>
-            </TouchableOpacity>
-            {/*
-            <TouchableOpacity
-              style={styles.optionButton}
-              onPress={() => {
-                startEditingName(selectedMainIndex);
-                closeAllMenus();
-              }}
-            >
-              <Text style={styles.optionText}>✏️ 重新命名</Text>
-            </TouchableOpacity>
-*/}
-            <TouchableOpacity
-              style={styles.optionButton}
-              onPress={() => {
-                shareRecording(recordings[selectedMainIndex].uri);
-                closeAllMenus();
-              }}
-            >
-              <Text style={styles.optionText}>📤 分享</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.optionButton}
-              onPress={() => {
-                deleteRecording(selectedMainIndex);
-                closeAllMenus();
-              }}
-            >
-              <Text style={styles.optionText}>🗑️ 刪除</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* 放在這裡！不要放在 map 循環內部 */}
-        {selectedDerivedIndex && (
-          <View style={[
-            styles.derivedOptionsMenu,
-            {
-              position: 'absolute',
-              left: (selectedDerivedIndex.position?.x || 0) - 100, // 水平微調
-              top: (selectedDerivedIndex.position?.y || 0) + 30,  // 垂直微調
-              zIndex: 1000,
-              elevation: 1000,
-            }
-          ]}>
-            <TouchableOpacity
-              style={styles.optionButton}
-              onPress={() => {
-                const uri = selectedDerivedIndex.type === 'enhanced'
-                  ? recordings[selectedDerivedIndex.index].derivedFiles!.enhanced!.uri
-                  : recordings[selectedDerivedIndex.index].derivedFiles!.trimmed!.uri;
-                shareRecording(uri);
-                setSelectedDerivedIndex(null);
-              }}
-            >
-              <Text style={styles.optionText}>📤 分享</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.optionButton}
-              onPress={async () => {
-                try {
-                  const uri = selectedDerivedIndex.type === 'enhanced'
-                    ? recordings[selectedDerivedIndex.index].derivedFiles!.enhanced!.uri
-                    : recordings[selectedDerivedIndex.index].derivedFiles!.trimmed!.uri;
-                  await FileSystem.deleteAsync(uri);
-                  setRecordings(prev => prev.map(rec => {
-                    if (rec.uri === recordings[selectedDerivedIndex.index].uri) {
-                      const newDerivedFiles = { ...rec.derivedFiles };
-                      selectedDerivedIndex.type === 'enhanced'
-                        ? delete newDerivedFiles.enhanced
-                        : delete newDerivedFiles.trimmed;
-                      return { ...rec, derivedFiles: newDerivedFiles };
+                        Alert.alert(
+                          "靜音剪輯完成",
+                          `已為 ${item.name} 創建剪輯版\n原始長度：${originalSecs}s → 剪輯後：${trimmedSecs}s`
+                        );
+                      } else {
+                        Alert.alert("音訊讀取失敗", "無法取得音檔長度");
+                      }
+                    } catch (err) {
+                      Alert.alert("剪輯失敗", (err as Error).message);
                     }
-                    return rec;
-                  }));
-                  Alert.alert("刪除成功", "已刪除衍生檔案");
-                } catch (err) {
-                  Alert.alert("刪除失敗", (err as Error).message);
-                }
-                setSelectedDerivedIndex(null);
-              }}
-            >
-              <Text style={styles.optionText}>🗑️ 刪除</Text>
-            </TouchableOpacity>
-          </View>
-        )}
 
-        {/* 放在這裡！不要放在 map 循環內部 */}
-        {speedMenuIndex !== null && speedMenuPosition && (
-          <View style={{
-            position: 'absolute',
-            left: speedMenuPosition.x - 60,
-            top: speedMenuPosition.y + 5,
-            backgroundColor: colors.container,
-            borderRadius: 8,
-            padding: 8,
-            zIndex: 9999,
-            elevation: 10,
-          }}>
-            {[0.75, 1.0, 1.25, 1.5, 2.0].map((rate) => (
-              <TouchableOpacity
-                key={rate}
-                style={[
-                  styles.optionButton,
-                  currentPlaybackRate === rate && { backgroundColor: colors.primary + '20' },
-                ]}
-                onPress={async () => {
-                  await setPlaybackRate(rate);
-                  setSpeedMenuIndex(null);
-                }}
-              >
-                <Text
-                  style={[
-                    styles.optionText,
-                    currentPlaybackRate === rate && { fontWeight: 'bold' },
-                  ]}
+                    closeAllMenus();
+                  }}
+
                 >
-                  {rate}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+                  <Text style={styles.optionText}>✂️ 靜音剪輯</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.optionButton}
+                  onPress={() => {
+                    startEditingName(selectedMainIndex);
+                    closeAllMenus();
+                  }}
+                >
+                  <Text style={styles.optionText}>✏️ 重新命名</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.optionButton}
+                  onPress={() => {
+                    shareRecording(recordings[selectedMainIndex].uri);
+                    closeAllMenus();
+                  }}
+                >
+                  <Text style={styles.optionText}>📤 分享</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.optionButton}
+                  onPress={() => {
+                    deleteRecording(selectedMainIndex);
+                    closeAllMenus();
+                  }}
+                >
+                  <Text style={styles.optionText}>🗑️ 刪除</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* 放在這裡！不要放在 map 循環內部 */}
+            {selectedDerivedIndex && (
+              <View style={[
+                styles.derivedOptionsMenu,
+                {
+                  position: 'absolute',
+                  left: (selectedDerivedIndex.position?.x || 0) - 100, // 水平微調
+                  top: (selectedDerivedIndex.position?.y || 0) + 30,  // 垂直微調
+                  zIndex: 1000,
+                  elevation: 1000,
+                  backgroundColor: colors.container, // ✅ 加這行
+                }
+              ]}>
+                <TouchableOpacity
+                  style={styles.optionButton}
+                  onPress={() => {
+                    const uri = selectedDerivedIndex.type === 'enhanced'
+                      ? recordings[selectedDerivedIndex.index].derivedFiles!.enhanced!.uri
+                      : recordings[selectedDerivedIndex.index].derivedFiles!.trimmed!.uri;
+                    shareRecording(uri);
+                    setSelectedDerivedIndex(null);
+                  }}
+                >
+                  <Text style={styles.optionText}>📤 分享</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.optionButton}
+                  onPress={async () => {
+                    try {
+                      const uri = selectedDerivedIndex.type === 'enhanced'
+                        ? recordings[selectedDerivedIndex.index].derivedFiles!.enhanced!.uri
+                        : recordings[selectedDerivedIndex.index].derivedFiles!.trimmed!.uri;
+                      await FileSystem.deleteAsync(uri);
+                      setRecordings(prev => prev.map(rec => {
+                        if (rec.uri === recordings[selectedDerivedIndex.index].uri) {
+                          const newDerivedFiles = { ...rec.derivedFiles };
+                          selectedDerivedIndex.type === 'enhanced'
+                            ? delete newDerivedFiles.enhanced
+                            : delete newDerivedFiles.trimmed;
+                          return { ...rec, derivedFiles: newDerivedFiles };
+                        }
+                        return rec;
+                      }));
+                      Alert.alert("刪除成功", "已刪除衍生檔案");
+                    } catch (err) {
+                      Alert.alert("刪除失敗", (err as Error).message);
+                    }
+                    setSelectedDerivedIndex(null);
+                  }}
+                >
+                  <Text style={styles.optionText}>🗑️ 刪除</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* 放在這裡！不要放在 map 循環內部 */}
+            {speedMenuIndex !== null && speedMenuPosition && (
+              <View style={{
+                position: 'absolute',
+                left: speedMenuPosition.x - 60,
+                top: speedMenuPosition.y + 5,
+                backgroundColor: colors.container,
+                borderRadius: 8,
+                padding: 8,
+                zIndex: 9999,
+                elevation: 10,
+              }}>
+                {[0.75, 1.0, 1.25, 1.5, 2.0].map((rate) => (
+                  <TouchableOpacity
+                    key={rate}
+                    style={[
+                      styles.optionButton,
+                      currentPlaybackRate === rate && { backgroundColor: colors.primary + '20' },
+                    ]}
+                    onPress={async () => {
+                      await setPlaybackRate(rate);
+                      setSpeedMenuIndex(null);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.optionText,
+                        currentPlaybackRate === rate && { fontWeight: 'bold' },
+                      ]}
+                    >
+                      {rate}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+          </>
         )}
-
-
 
       </SafeAreaView>
     </TouchableWithoutFeedback>

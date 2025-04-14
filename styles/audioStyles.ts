@@ -12,6 +12,28 @@ export const createStyles = (colors: any) => StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.background,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: colors.text,
+  },
+  emptyListContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  emptyListText: {
+    fontSize: 16,
+    color: colors.text,
+    opacity: 0.6,
+  },
   menuButton: {
     paddingTop: 30,
     position: 'absolute',
