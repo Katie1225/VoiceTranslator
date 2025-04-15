@@ -22,8 +22,6 @@ import AudioRecorderPlayer from 'react-native-audio-recorder-player';
 import BackgroundService from 'react-native-background-actions';
 import RNFS from 'react-native-fs';
 
-
-
 import {
   RecordingItem,
   enhanceAudio,
@@ -46,8 +44,9 @@ const AudioRecorder = () => {
   useKeepAwake(); // 保持清醒
   // 核心狀態
   const [recording, setRecording] = useState(false);
-
   const [recordings, setRecordings] = useState<RecordingItem[]>([]);
+  const recordingStartTimestamp = useRef<number | null>(null);
+
   const [currentSound, setCurrentSound] = useState<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playingUri, setPlayingUri] = useState<string | null>(null);
@@ -269,10 +268,40 @@ const AudioRecorder = () => {
   useEffect(() => {
     if (GlobalRecorderState.isRecording) {
       setRecording(true);
+      recordingStartTimestamp.current = Date.now();
       const elapsedSec = Math.floor((Date.now() - GlobalRecorderState.startTime) / 1000);
       setRecordingTime(elapsedSec);
     }
   }, []);
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+
+    if (recording && recordingStartTimestamp.current) {
+      timer = setInterval(() => {
+        const elapsedSec = Math.floor((Date.now() - recordingStartTimestamp.current!) / 1000);
+        setRecordingTime(elapsedSec);
+      }, 1000);
+    }
+
+    return () => clearInterval(timer);
+  }, [recording]);
+
+  useEffect(() => {
+    let dbTimer: NodeJS.Timeout;
+
+    if (recording) {
+      dbTimer = setInterval(() => {
+        const newDb = Array.from({ length: 20 }, () =>
+          -Math.floor(Math.random() * 60 + 40)  // random dB：-40 到 -100
+        );
+        setDbHistory(newDb);
+      }, 500);
+    }
+
+    return () => clearInterval(dbTimer);
+  }, [recording]);
+
 
   // 在組件掛載時載入
   useEffect(() => {
@@ -382,7 +411,7 @@ const AudioRecorder = () => {
       const uri = await audioRecorderPlayer.stopRecorder();
       await audioRecorderPlayer.removeRecordBackListener();
       setRecording(false);
-
+      recordingStartTimestamp.current = null;
       GlobalRecorderState.isRecording = false;
       GlobalRecorderState.filePath = '';
       GlobalRecorderState.startTime = 0;
@@ -408,7 +437,7 @@ const AudioRecorder = () => {
       if (fileInfo.size > 0) {
         const now = new Date();
         const name = uri.split('/').pop() || `rec_${now.getTime()}.m4a`;
-        
+
         // 取得錄音長度（秒）
         let durationText = '?秒';
         try {
@@ -421,14 +450,14 @@ const AudioRecorder = () => {
         } catch (e) {
           console.warn("⚠️ 無法取得音檔長度", e);
         }
-        
+
         // 組合顯示名稱
         const hours = now.getHours().toString().padStart(2, '0');
         const minutes = now.getMinutes().toString().padStart(2, '0');
         const seconds = now.getSeconds().toString().padStart(2, '0');
         const dateStr = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
         const displayName = `${hours}:${minutes}:${seconds}  ${durationText}  ${dateStr}`;
-        
+
 
         const newItem: RecordingItem = {
           uri: normalizedUri,
@@ -611,10 +640,15 @@ const AudioRecorder = () => {
   // 格式化時間
   const formatTime = (ms: number) => {
     const totalSeconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
-    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  
+    return `${hours.toString().padStart(2, '0')}:${minutes
+      .toString()
+      .padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
+  
 
   // 關閉所有彈出菜單
   const closeAllMenus = () => {
@@ -698,56 +732,23 @@ const AudioRecorder = () => {
             )}
 
             {/* 錄音按鈕 & 音量顯示 */}
-            <View style={styles.recordSection}>
-              <TouchableOpacity
-                style={recording ? styles.stopButton : styles.recordButton}
-                onPress={recording ? stopRecording : startRecording}
-              >
-                <Text style={styles.buttonText}>
-                  {recording ? '停止錄音' : '開始錄音'}
-                </Text>
-              </TouchableOpacity>
+            <View style={[styles.recordSection, { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }]}>
+  <Text style={[styles.volumeText, { color: colors.primary, marginRight: 12 }]}>
+    {recording ? `⏱ ${formatTime(recordingTime * 1000)}  ` : 'Voice Notes'}
+  </Text>
 
-              {recording && (
-                <View style={styles.volumeMeter}>
-
-                  <Text style={styles.volumeText}>
-                    {currentDecibels.toFixed(1)} dB
-                  </Text>
-
-                  <View style={styles.volumeAndTimeContainer}>
-                    {/* 分貝條區塊：75% */}
-                    <View style={styles.volumeContainer}>
-                      {dbHistory.map((db, i) => {
-                        const clampedDb = typeof db === 'number' ? Math.min(Math.max(db, -100), 0) : -100;
-                        let height = ((clampedDb + 100) / 100) * 40;
-                        if (height < 1) height = 1;
-                        return (
-                          <View
-                            key={i}
-                            style={{
-                              width: 3,
-                              height,
-                              marginRight: i === dbHistory.length - 1 ? 0 : 1,
-                              marginLeft: 1,
-                              backgroundColor: colors.primary,
-                              borderRadius: 2,
-                            }}
-                          />
-                        );
-                      })}
-                    </View>
-
-                    {/* 錄音時間區塊：25% */}
-                    <View style={styles.timeContainer}>
-                      <Text style={styles.volumeText}>⏱ {recordingTime}s</Text>
-                    </View>
-                  </View>
+  <TouchableOpacity
+    style={recording ? styles.stopButton : styles.recordButton}
+    onPress={recording ? stopRecording : startRecording}
+  >
+    <Text style={styles.buttonText}>
+      {recording ? '停止錄音' : '開始錄音'}
+    </Text>
+  </TouchableOpacity>
+</View>
 
 
-                </View>
-              )}
-            </View>
+
 
             {/* 錄音列表 */}
             <ScrollView style={styles.listContainer}>
