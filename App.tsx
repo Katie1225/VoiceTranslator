@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Platform, PermissionsAndroid } from 'react-native';
 import {
   View,
   Text,
@@ -17,6 +18,9 @@ import * as Sharing from 'expo-sharing';
 //import { FFmpegKit, ReturnCode } from 'ffmpeg-kit-react-native';
 import { useKeepAwake } from 'expo-keep-awake';
 import Slider from '@react-native-community/slider';
+import AudioRecorderPlayer from 'react-native-audio-recorder-player';
+import BackgroundService from 'react-native-background-actions';
+import RNFS from 'react-native-fs';
 
 import {
   RecordingItem,
@@ -27,12 +31,16 @@ import {
 import { createStyles } from './styles/audioStyles';
 import { ANDROID_AUDIO_ENCODERS, ANDROID_OUTPUT_FORMATS } from './constants/AudioConstants';
 import { lightTheme, darkTheme, additionalColors } from './constants/Colors';
+import { Linking } from 'react-native'; // ✅ 正確寫法
+
+
 
 
 const AudioRecorder = () => {
   useKeepAwake(); // 保持清醒
   // 核心狀態
-  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [recording, setRecording] = useState(false);
+
   const [recordings, setRecordings] = useState<RecordingItem[]>([]);
   const [currentSound, setCurrentSound] = useState<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -43,6 +51,7 @@ const AudioRecorder = () => {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editName, setEditName] = useState('');
   const [dbHistory, setDbHistory] = useState<number[]>([]);
+  const audioRecorderPlayer = useRef(new AudioRecorderPlayer()).current;
 
 
   // 音量狀態
@@ -107,7 +116,8 @@ const AudioRecorder = () => {
       bitRate: 320000,
       audioSource: 1,
       enableAcousticEchoCanceler: true,
-      enableNoiseSuppressor: true
+      enableNoiseSuppressor: true,
+      keepAudioSessionAlive: true  // 新增這行
     },
     ios: {
       extension: '.m4a',
@@ -116,7 +126,8 @@ const AudioRecorder = () => {
       sampleRate: 48000,
       numberOfChannels: 1,
       bitRate: 320000,
-      linearPCMBitDepth: 24
+      linearPCMBitDepth: 24,
+      keepAudioSessionAlive: true,  // 新增這行
     },
     isMeteringEnabled: true
   };
@@ -207,6 +218,48 @@ const AudioRecorder = () => {
     }
   };
 
+  const requestPermissions = async (): Promise<boolean> => {
+    const permissions = [PermissionsAndroid.PERMISSIONS.RECORD_AUDIO];
+
+    if (Number(Platform.Version) < 30) {
+      permissions.push(PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE);
+    }
+
+    const granted = await PermissionsAndroid.requestMultiple(permissions);
+
+    const hasAudio = (granted['android.permission.RECORD_AUDIO'] ?? '') === PermissionsAndroid.RESULTS.GRANTED;
+
+    const hasStorage =
+      Number(Platform.Version) < 30
+        ? (granted['android.permission.WRITE_EXTERNAL_STORAGE'] ?? '') === PermissionsAndroid.RESULTS.GRANTED
+        : true;
+
+    if (!hasAudio || !hasStorage) {
+      Alert.alert(
+        "權限不足",
+        "請到手機系統 > 應用程式管理 > 本 App > 權限，開啟「麥克風」與「儲存空間」權限，否則將無法使用錄音功能。",
+        [
+          { text: "取消", style: "cancel" },
+          { text: "前往設置", onPress: () => Linking.openSettings() }
+        ]
+      );
+      return false;
+    }
+
+    return true;
+  };
+
+
+  //掛載時加入權限檢查
+  useEffect(() => {
+    const checkPermissions = async () => {
+      await requestPermissions();
+      loadRecordings();
+    };
+
+    checkPermissions();
+  }, []);
+
   // 在組件掛載時載入
   useEffect(() => {
     loadRecordings();
@@ -233,95 +286,99 @@ const AudioRecorder = () => {
     };
   }, [currentSound]);
 
+
   // 開始錄音（帶音量檢測）
   const startRecording = async () => {
-    closeAllMenus(); // 
+    closeAllMenus();
+
+    // 先檢查權限
+    const hasPermission = await requestPermissions();
+    if (!hasPermission) {
+      return;
+    }
+
     try {
-      await Audio.requestPermissionsAsync();
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: true,  // 確保在後台保持活動
-        shouldDuckAndroid: true,
-        playThroughEarpieceAndroid: false,
+      // 建立檔案路徑
+      const now = new Date();
+      const filename = `rec_${now.getTime()}.m4a`;
+      const filePath = `${RNFS.ExternalDirectoryPath}/${filename}`;
+      //     const filePath = `${RNFS.DocumentDirectoryPath}/${filename}`;
+
+      console.log("📁 錄音儲存路徑:", filePath);
+
+      // 開始錄音
+      await audioRecorderPlayer.startRecorder(filePath, {
+        AudioSourceAndroid: 1,
+        OutputFormatAndroid: 2,
+        AudioEncoderAndroid: 3,
+        AudioSamplingRateAndroid: 48000,
+        AudioChannelsAndroid: 1,
+        AudioEncodingBitRateAndroid: 320000,
       });
 
-      const { recording: newRecording } = await Audio.Recording.createAsync(
-        // @ts-ignore - Expo Audio types are incorrect for createAsync
-        recordingOptions
-      );
-      setRecording(newRecording);
+      // 錄音監聽器
+      audioRecorderPlayer.addRecordBackListener((e) => {
+        const sec = Math.floor(e.currentPosition / 1000);
+        setRecordingTime(sec);
 
-      // 音量監聽
-      const interval = setInterval(async () => {
-        const status = await newRecording.getStatusAsync();
-        if (status.isRecording && status.metering !== undefined) {
-          setCurrentDecibels(status.metering);
-          const clampedDb = Math.min(Math.max(status.metering, -100), 0); // 限制在 -100~0
-          const volume = (clampedDb + 100) / 100; // 轉換為 0~1
+        if (typeof e.currentMetering === 'number') {
+          const clampedDb = Math.min(Math.max(e.currentMetering, -100), 0);
+          const volume = (clampedDb + 100) / 100;
           setCurrentVolume(volume);
-          setRecordingTime(Math.floor((status.durationMillis ?? 0) / 1000));
-          setDbHistory(prev => {
-            const newDb = clampedDb;
-            const next = [...prev.slice(-39), newDb]; // 最多保留 40 筆
-            return next;
-          });
-
+          setDbHistory(prev => [...prev.slice(-39), clampedDb]);
         }
-      }, 50);
+      });
 
-
-      return () => clearInterval(interval);
+      setRecording(true);
     } catch (err) {
-      Alert.alert("錄音失敗", (err as Error).message);
+      console.error("❌ 錄音啟動錯誤：", err);
+      Alert.alert("錄音失敗", (err as Error).message || "請檢查權限或儲存空間");
     }
   };
 
   // 停止錄音
+
   const stopRecording = async () => {
-    if (!recording) return;
-
     try {
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
-      if (uri) {
+      const uri = await audioRecorderPlayer.stopRecorder();
+      await audioRecorderPlayer.removeRecordBackListener();
+      setRecording(false);
+
+      // 確保路徑格式正確
+      const normalizedUri = uri.startsWith('file://') ? uri : `file://${uri}`;
+
+      // 使用 RNFS 檢查檔案
+      const fileExists = await RNFS.exists(uri);
+      if (!fileExists) {
+        Alert.alert(
+          "錄音失敗",
+          "錄音檔案未建立成功，請確認權限已開啟，並將「背景限制」設為不限制。"
+        );
+      }
+
+      const fileInfo = await RNFS.stat(uri);
+      console.log("📄 錄音檔案資訊:", fileInfo);
+
+      if (fileInfo.size > 0) {
         const now = new Date();
-        const hh = now.getHours().toString().padStart(2, '0');
-        const mm = now.getMinutes().toString().padStart(2, '0');
-        const ss = now.getSeconds().toString().padStart(2, '0');
-        const month = (now.getMonth() + 1).toString().padStart(2, '0');
-        const day = now.getDate().toString().padStart(2, '0');
-        const year = now.getFullYear().toString();
-        const status = await recording.getStatusAsync();
-        const secondsOnly = Math.floor((status.durationMillis ?? 0) / 1000);
-        const durationParts = [
-          Math.floor(secondsOnly / 3600) > 0 ? `${Math.floor(secondsOnly / 3600)}小時` : '',
-          Math.floor((secondsOnly % 3600) / 60) > 0 ? `${Math.floor((secondsOnly % 3600) / 60)}分` : '',
-          `${secondsOnly % 60}秒`,
-        ].filter(Boolean).join('');
+        const name = uri.split('/').pop() || `rec_${now.getTime()}.m4a`;
+        const displayName = now.toLocaleTimeString();
 
-        const displayName = `${durationParts} ${hh}:${mm}:${ss} ${month}/${day}/${year}`;
-
-        const defaultName = `rec_${hh}${mm}${ss}_${month}${day}${year}.m4a`;
-
-        const recordingsToAdd: RecordingItem[] = [{
-          uri,
-          name: defaultName,
+        const newItem: RecordingItem = {
+          uri: normalizedUri,
+          name,
           displayName,
-          derivedFiles: {} // 初始化衍生檔案結構
-        }];
+          derivedFiles: {},
+        };
 
-
-        // ✅ 僅儲存原始音檔
-        setRecordings(prev => [...recordingsToAdd, ...prev]);
+        setRecordings(prev => [newItem, ...prev]);
+      } else {
+        Alert.alert("錄音失敗", "錄音檔案為空");
+        await RNFS.unlink(uri); // 刪除空檔案
       }
     } catch (err) {
+      console.error("❌ 停止錄音失敗：", err);
       Alert.alert("停止錄音失敗", (err as Error).message);
-    } finally {
-      setRecording(null);
-      setCurrentVolume(0);
-      setRecordingTime(0); // ✅ 重置錄音秒數
-      setDbHistory([]);
     }
   };
 
@@ -329,6 +386,8 @@ const AudioRecorder = () => {
   // 播放錄音（帶進度更新）
   const playRecording = async (uri: string, index: number) => {
     try {
+
+      const uriForPlayback = uri.startsWith('file://') ? uri : `file://${uri}`;
       if (currentSound && playingUri === uri) {
         if (isPlaying) {
           await currentSound.pauseAsync();
@@ -342,12 +401,14 @@ const AudioRecorder = () => {
       } else {
         if (currentSound) await currentSound.unloadAsync();
 
+        const uriForPlayback = uri.startsWith('file://') ? uri : `file://${uri}`;
+
         const { sound, status } = await Audio.Sound.createAsync(
-          { uri },
+          { uri: uriForPlayback },
           {
             shouldPlay: true,
-            rate: currentPlaybackRate,          // 加這行
-            shouldCorrectPitch: true,           // 很重要，讓音調不變
+            rate: currentPlaybackRate,
+            shouldCorrectPitch: true,
             progressUpdateIntervalMillis: 250
           },
           (status) => {
@@ -356,7 +417,6 @@ const AudioRecorder = () => {
                 setPlaybackDuration(status.durationMillis);
               }
               setPlaybackPosition(status.positionMillis || 0);
-
               if (status.didJustFinish) {
                 setIsPlaying(false);
                 setPlayingUri(null);
@@ -365,6 +425,7 @@ const AudioRecorder = () => {
             }
           }
         );
+
 
         setCurrentSound(sound);
         setPlayingUri(uri);
@@ -566,11 +627,11 @@ const AudioRecorder = () => {
 
               {recording && (
                 <View style={styles.volumeMeter}>
-                  {/*隱藏音量
+
               <Text style={styles.volumeText}> 
                 {currentDecibels.toFixed(1)} dB
               </Text>
-              */}
+
                   <View style={styles.volumeAndTimeContainer}>
                     {/* 分貝條區塊：75% */}
                     <View style={styles.volumeContainer}>
