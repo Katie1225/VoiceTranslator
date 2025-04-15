@@ -22,6 +22,8 @@ import AudioRecorderPlayer from 'react-native-audio-recorder-player';
 import BackgroundService from 'react-native-background-actions';
 import RNFS from 'react-native-fs';
 
+
+
 import {
   RecordingItem,
   enhanceAudio,
@@ -33,7 +35,11 @@ import { ANDROID_AUDIO_ENCODERS, ANDROID_OUTPUT_FORMATS } from './constants/Audi
 import { lightTheme, darkTheme, additionalColors } from './constants/Colors';
 import { Linking } from 'react-native'; // ✅ 正確寫法
 
-
+const GlobalRecorderState = {
+  isRecording: false,
+  filePath: '',
+  startTime: 0,
+};
 
 
 const AudioRecorder = () => {
@@ -260,6 +266,14 @@ const AudioRecorder = () => {
     checkPermissions();
   }, []);
 
+  useEffect(() => {
+    if (GlobalRecorderState.isRecording) {
+      setRecording(true);
+      const elapsedSec = Math.floor((Date.now() - GlobalRecorderState.startTime) / 1000);
+      setRecordingTime(elapsedSec);
+    }
+  }, []);
+
   // 在組件掛載時載入
   useEffect(() => {
     loadRecordings();
@@ -286,55 +300,81 @@ const AudioRecorder = () => {
     };
   }, [currentSound]);
 
+// 錄音工作
+  const task = async (args: any) => {
+    const path = args?.path;
+    if (!path) {
+      console.error("❌ 無錄音路徑");
+      return;
+    }
+  
+    console.log("🎤 開始錄音任務:", path);
+  
+    await audioRecorderPlayer.startRecorder(path, {
+      AudioSourceAndroid: 1,
+      OutputFormatAndroid: 2,
+      AudioEncoderAndroid: 3,
+      AudioSamplingRateAndroid: 48000,
+      AudioChannelsAndroid: 1,
+      AudioEncodingBitRateAndroid: 320000,
+    });
+  
+    audioRecorderPlayer.addRecordBackListener((e) => {
+      const sec = Math.floor(e.currentPosition / 1000);
+      setRecordingTime(sec);
+    });
+  
+    console.log("✅ 錄音任務啟動完成");
+
+      // ✅ 讓任務持續存在（每秒睡一下）
+  await new Promise(async (resolve) => {
+    while (BackgroundService.isRunning()) {
+      await new Promise(res => setTimeout(res, 1000)); // 睡 1 秒
+    }
+    resolve(true);
+  });
+
+  console.log("🛑 背景任務結束");
+  };
+  
+
 
   // 開始錄音（帶音量檢測）
   const startRecording = async () => {
     closeAllMenus();
-
-    // 先檢查權限
+  
     const hasPermission = await requestPermissions();
-    if (!hasPermission) {
-      return;
-    }
-
+    if (!hasPermission) return;
+  
+    const now = new Date();
+    const filename = `rec_${now.getTime()}.m4a`;
+    const filePath = `${RNFS.ExternalDirectoryPath}/${filename}`;
+  
+    console.log("📁 錄音儲存路徑:", filePath);
+  
     try {
-      // 建立檔案路徑
-      const now = new Date();
-      const filename = `rec_${now.getTime()}.m4a`;
-      const filePath = `${RNFS.ExternalDirectoryPath}/${filename}`;
-      //     const filePath = `${RNFS.DocumentDirectoryPath}/${filename}`;
-
-      console.log("📁 錄音儲存路徑:", filePath);
-
-      // 開始錄音
-      await audioRecorderPlayer.startRecorder(filePath, {
-        AudioSourceAndroid: 1,
-        OutputFormatAndroid: 2,
-        AudioEncoderAndroid: 3,
-        AudioSamplingRateAndroid: 48000,
-        AudioChannelsAndroid: 1,
-        AudioEncodingBitRateAndroid: 320000,
-      });
-
-      // 錄音監聽器
-      audioRecorderPlayer.addRecordBackListener((e) => {
-        const sec = Math.floor(e.currentPosition / 1000);
-        setRecordingTime(sec);
-
-        if (typeof e.currentMetering === 'number') {
-          const clampedDb = Math.min(Math.max(e.currentMetering, -100), 0);
-          const volume = (clampedDb + 100) / 100;
-          setCurrentVolume(volume);
-          setDbHistory(prev => [...prev.slice(-39), clampedDb]);
-        }
-      });
-
+      // ✅ 先啟動 BackgroundService，讓它來啟動錄音
+      await BackgroundService.start(task, {
+        taskName: '錄音中',
+        taskTitle: '背景錄音中',
+        taskDesc: '請勿關閉 App，錄音持續中...',
+        taskIcon: {
+          name: 'ic_launcher',
+          type: 'mipmap',
+        },
+        parameters: { path: filePath },
+        allowWhileIdle: true,
+      } as any);
+      GlobalRecorderState.isRecording = true;
+      GlobalRecorderState.filePath = filePath;
+      GlobalRecorderState.startTime = Date.now();
       setRecording(true);
     } catch (err) {
       console.error("❌ 錄音啟動錯誤：", err);
       Alert.alert("錄音失敗", (err as Error).message || "請檢查權限或儲存空間");
     }
   };
+  
 
   // 停止錄音
 
@@ -343,6 +383,13 @@ const AudioRecorder = () => {
       const uri = await audioRecorderPlayer.stopRecorder();
       await audioRecorderPlayer.removeRecordBackListener();
       setRecording(false);
+
+      GlobalRecorderState.isRecording = false;
+GlobalRecorderState.filePath = '';
+GlobalRecorderState.startTime = 0;
+
+        // ✅ 停止前景通知
+  await BackgroundService.stop();
 
       // 確保路徑格式正確
       const normalizedUri = uri.startsWith('file://') ? uri : `file://${uri}`;

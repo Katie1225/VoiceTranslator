@@ -45,6 +45,7 @@
     "react-native": "0.76.7",
     "react-native-audio-recorder-player": "^3.6.12",
     "react-native-background-actions": "^4.0.1",
+    "react-native-foreground-service": "^1.0.0",
     "react-native-fs": "^2.20.0",
     "react-native-gesture-handler": "~2.20.2",
     "react-native-reanimated": "~3.16.1",
