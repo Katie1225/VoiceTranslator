@@ -300,16 +300,16 @@ const AudioRecorder = () => {
     };
   }, [currentSound]);
 
-// 錄音工作
+  // 錄音工作
   const task = async (args: any) => {
     const path = args?.path;
     if (!path) {
       console.error("❌ 無錄音路徑");
       return;
     }
-  
+
     console.log("🎤 開始錄音任務:", path);
-  
+
     await audioRecorderPlayer.startRecorder(path, {
       AudioSourceAndroid: 1,
       OutputFormatAndroid: 2,
@@ -318,40 +318,39 @@ const AudioRecorder = () => {
       AudioChannelsAndroid: 1,
       AudioEncodingBitRateAndroid: 320000,
     });
-  
+
     audioRecorderPlayer.addRecordBackListener((e) => {
       const sec = Math.floor(e.currentPosition / 1000);
       setRecordingTime(sec);
     });
-  
+
     console.log("✅ 錄音任務啟動完成");
+    await new Promise(async (resolve) => {
+      while (BackgroundService.isRunning()) {
+        await new Promise(res => setTimeout(res, 1000)); // 睡 1 秒
+      }
+      resolve(true);
+    });
 
-      // ✅ 讓任務持續存在（每秒睡一下）
-  await new Promise(async (resolve) => {
-    while (BackgroundService.isRunning()) {
-      await new Promise(res => setTimeout(res, 1000)); // 睡 1 秒
-    }
-    resolve(true);
-  });
+    console.log("🛑 背景任務結束");
 
-  console.log("🛑 背景任務結束");
   };
-  
+
 
 
   // 開始錄音（帶音量檢測）
   const startRecording = async () => {
     closeAllMenus();
-  
+
     const hasPermission = await requestPermissions();
     if (!hasPermission) return;
-  
+
     const now = new Date();
     const filename = `rec_${now.getTime()}.m4a`;
     const filePath = `${RNFS.ExternalDirectoryPath}/${filename}`;
-  
+
     console.log("📁 錄音儲存路徑:", filePath);
-  
+
     try {
       // ✅ 先啟動 BackgroundService，讓它來啟動錄音
       await BackgroundService.start(task, {
@@ -374,7 +373,7 @@ const AudioRecorder = () => {
       Alert.alert("錄音失敗", (err as Error).message || "請檢查權限或儲存空間");
     }
   };
-  
+
 
   // 停止錄音
 
@@ -385,11 +384,11 @@ const AudioRecorder = () => {
       setRecording(false);
 
       GlobalRecorderState.isRecording = false;
-GlobalRecorderState.filePath = '';
-GlobalRecorderState.startTime = 0;
+      GlobalRecorderState.filePath = '';
+      GlobalRecorderState.startTime = 0;
 
-        // ✅ 停止前景通知
-  await BackgroundService.stop();
+      // ✅ 停止前景通知
+      await BackgroundService.stop();
 
       // 確保路徑格式正確
       const normalizedUri = uri.startsWith('file://') ? uri : `file://${uri}`;
@@ -409,7 +408,27 @@ GlobalRecorderState.startTime = 0;
       if (fileInfo.size > 0) {
         const now = new Date();
         const name = uri.split('/').pop() || `rec_${now.getTime()}.m4a`;
-        const displayName = now.toLocaleTimeString();
+        
+        // 取得錄音長度（秒）
+        let durationText = '?秒';
+        try {
+          const { sound, status } = await Audio.Sound.createAsync({ uri: normalizedUri });
+          if (status.isLoaded && status.durationMillis != null) {
+            const seconds = Math.round(status.durationMillis / 1000);
+            durationText = `${seconds}秒`;
+          }
+          await sound.unloadAsync();
+        } catch (e) {
+          console.warn("⚠️ 無法取得音檔長度", e);
+        }
+        
+        // 組合顯示名稱
+        const hours = now.getHours().toString().padStart(2, '0');
+        const minutes = now.getMinutes().toString().padStart(2, '0');
+        const seconds = now.getSeconds().toString().padStart(2, '0');
+        const dateStr = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
+        const displayName = `${hours}:${minutes}:${seconds}  ${durationText}  ${dateStr}`;
+        
 
         const newItem: RecordingItem = {
           uri: normalizedUri,
@@ -428,6 +447,23 @@ GlobalRecorderState.startTime = 0;
       Alert.alert("停止錄音失敗", (err as Error).message);
     }
   };
+
+  const togglePlayback = async (uri: string, index: number) => {
+    if (currentSound && playingUri === uri) {
+      if (isPlaying) {
+        await currentSound.pauseAsync();
+        setIsPlaying(false);
+        clearProgressTimer();
+      } else {
+        await currentSound.playAsync();
+        setIsPlaying(true);
+        startProgressTimer();
+      }
+    } else {
+      await playRecording(uri, index);
+    }
+  };
+
 
 
   // 播放錄音（帶進度更新）
@@ -675,9 +711,9 @@ GlobalRecorderState.startTime = 0;
               {recording && (
                 <View style={styles.volumeMeter}>
 
-              <Text style={styles.volumeText}> 
-                {currentDecibels.toFixed(1)} dB
-              </Text>
+                  <Text style={styles.volumeText}>
+                    {currentDecibels.toFixed(1)} dB
+                  </Text>
 
                   <View style={styles.volumeAndTimeContainer}>
                     {/* 分貝條區塊：75% */}
@@ -736,13 +772,14 @@ GlobalRecorderState.startTime = 0;
                             style={styles.playIconContainer}
                             onPress={() => {
                               closeAllMenus();
-                              playRecording(item.uri, index);
+                              togglePlayback(item.uri, index);
                             }}
                           >
                             <Text style={styles.playIcon}>
                               {isCurrentPlaying && isPlaying ? '❚❚' : '▶'}
                             </Text>
                           </TouchableOpacity>
+
 
                           {/* 名稱顯示/編輯 */}
                           <View style={styles.nameContainer}>
@@ -756,13 +793,21 @@ GlobalRecorderState.startTime = 0;
                                 onBlur={() => saveEditedName(index)}
                               />
                             ) : (
-                              <Text
-                                style={[styles.recordingName, playingUri === item.uri && styles.playingText]}
-                                numberOfLines={1}
-                                ellipsizeMode="tail"
+                              <TouchableOpacity
+                                onPress={() => {
+                                  closeAllMenus();
+                                  togglePlayback(item.uri, index);
+                                }}
                               >
-                                {item.displayName || item.name}
-                              </Text>
+                                <Text
+                                  style={[styles.recordingName, playingUri === item.uri && styles.playingText]}
+                                  numberOfLines={1}
+                                  ellipsizeMode="tail"
+                                >
+                                  {item.displayName || item.name}
+                                </Text>
+                              </TouchableOpacity>
+
                             )}
                           </View>
 
