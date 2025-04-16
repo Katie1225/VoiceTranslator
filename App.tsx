@@ -26,7 +26,8 @@ import {
   RecordingItem,
   enhanceAudio,
   trimSilence,
-  transcribeAudio
+  transcribeAudio,
+  summarizeTranscript
 } from './utils/audioHelpers';
 import { createStyles } from './styles/audioStyles';
 import { ANDROID_AUDIO_ENCODERS, ANDROID_OUTPUT_FORMATS } from './constants/AudioConstants';
@@ -92,7 +93,9 @@ const AudioRecorder = () => {
   const [currentPlaybackRate, setCurrentPlaybackRate] = useState(1.0);
   const [speedMenuIndex, setSpeedMenuIndex] = useState<number | null>(null);
   const [speedMenuPosition, setSpeedMenuPosition] = useState<{ x: number; y: number } | null>(null);
-
+  // 轉文字重點摘要
+  const [showTranscriptIndex, setShowTranscriptIndex] = useState<number | null>(null);
+  const [showSummaryIndex, setShowSummaryIndex] = useState<number | null>(null);
 
   const setPlaybackRate = async (rate: number) => {
     setCurrentPlaybackRate(rate); // 儲存當前播放速度
@@ -643,12 +646,12 @@ const AudioRecorder = () => {
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
-  
+
     return `${hours.toString().padStart(2, '0')}:${minutes
       .toString()
       .padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
-  
+
 
   // 關閉所有彈出菜單
   const closeAllMenus = () => {
@@ -690,7 +693,7 @@ const AudioRecorder = () => {
             {/* 漢堡菜單內容 */}
             {menuVisible && (
               <View style={styles.menuContainer}>
-                <Text style={styles.menuItem}>版本: v1.1.1</Text>
+                <Text style={styles.menuItem}>版本: v1.1.4</Text>
 
                 {/* 深淺色切換 */}
                 <TouchableOpacity
@@ -733,19 +736,19 @@ const AudioRecorder = () => {
 
             {/* 錄音按鈕 & 音量顯示 */}
             <View style={[styles.recordSection, { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }]}>
-  <Text style={[styles.volumeText, { color: colors.primary, marginRight: 12 }]}>
-    {recording ? `⏱ ${formatTime(recordingTime * 1000)}  ` : 'Voice Notes'}
-  </Text>
+              <Text style={[styles.volumeText, { color: colors.primary, marginRight: 12 }]}>
+                {recording ? `⏱ ${formatTime(recordingTime * 1000)}  ` : 'Voice Notes'}
+              </Text>
 
-  <TouchableOpacity
-    style={recording ? styles.stopButton : styles.recordButton}
-    onPress={recording ? stopRecording : startRecording}
-  >
-    <Text style={styles.buttonText}>
-      {recording ? '停止錄音' : '開始錄音'}
-    </Text>
-  </TouchableOpacity>
-</View>
+              <TouchableOpacity
+                style={recording ? styles.stopButton : styles.recordButton}
+                onPress={recording ? stopRecording : startRecording}
+              >
+                <Text style={styles.buttonText}>
+                  {recording ? '停止錄音' : '開始錄音'}
+                </Text>
+              </TouchableOpacity>
+            </View>
 
 
 
@@ -761,7 +764,10 @@ const AudioRecorder = () => {
                 recordings.map((item, index) => {
                   const isCurrentPlaying = playingUri === item.uri;
                   const hasDerivedFiles = item.derivedFiles && (item.derivedFiles.enhanced || item.derivedFiles.trimmed);
-
+                  const isTranscriptView = showTranscriptIndex === index;
+                  const isSummaryView = showSummaryIndex === index;
+                  const shouldHideDefaultUI = isTranscriptView || isSummaryView;
+                  
                   return (
                     <View key={index} style={{ position: 'relative', zIndex: selectedDerivedIndex?.index === index ? 999 : 0 }}>
                       {/* 單個錄音項目的完整 UI */}
@@ -836,7 +842,7 @@ const AudioRecorder = () => {
                         </View>
 
                         {/* 播放進度條 */}
-                        {(playingUri === item.uri ||
+                        {!shouldHideDefaultUI && ((playingUri === item.uri ||
                           playingUri === item.derivedFiles?.enhanced?.uri ||
                           playingUri === item.derivedFiles?.trimmed?.uri) && (
                             <View style={styles.progressContainer}>
@@ -873,10 +879,120 @@ const AudioRecorder = () => {
                                 </TouchableOpacity>
                               </View>
                             </View>
-                          )}
+                          ))}
+                        {/* 轉文字 & 重點摘要按鈕 */}
+
+                        <View style={{ flexDirection: 'row', gap: 12, marginTop: 4 }}>
+                          {/* 轉文字按鈕 */}
+                          <TouchableOpacity
+                            style={{
+                              paddingVertical: 6,
+                              paddingHorizontal: 12,
+                              backgroundColor: colors.primary,
+                              borderRadius: 8,
+                              opacity: 1,
+                            }}
+                            onPress={async () => {
+                              try {
+                                const { trimmedRecording, transcript } = await transcribeAudio(item);
+
+                                setRecordings(prev =>
+                                  prev.map((rec, i) =>
+                                    i === index
+                                      ? {
+                                        ...rec,
+                                        derivedFiles: {
+                                          ...rec.derivedFiles,
+                                          trimmed: {
+                                            ...trimmedRecording,
+                                            transcript: transcript,
+                                          },
+                                        },
+                                      }
+                                      : rec
+                                  )
+                                );
+
+                                Alert.alert('✅ 語音轉文字成功', transcript);
+                              } catch (err) {
+                                Alert.alert('❌ 轉文字失敗', (err as Error).message);
+                              }
+                              setShowTranscriptIndex(index);
+                              setShowSummaryIndex(null);
+                            }}
+                          >
+                            <Text style={{ color: 'white', fontSize: 14 }}>轉文字</Text>
+                          </TouchableOpacity>
+
+                          {/* 重點摘要按鈕 */}
+                          <TouchableOpacity
+                            style={{
+                              paddingVertical: 6,
+                              paddingHorizontal: 12,
+                              backgroundColor: colors.primary,
+                              borderRadius: 8,
+                              opacity: item.derivedFiles?.trimmed?.transcript ? 1 : 0.4,
+                            }}
+                            disabled={!item.derivedFiles?.trimmed?.transcript}
+                            onPress={async () => {
+                              if (!item.derivedFiles?.trimmed?.transcript) return;
+
+                              try {
+                                const summary = await summarizeTranscript(item.derivedFiles.trimmed.transcript);
+                                setRecordings(prev =>
+                                  prev.map((rec, i) =>
+                                    i === index
+                                      ? {
+                                        ...rec,
+                                        derivedFiles: {
+                                          ...rec.derivedFiles,
+                                          trimmed: {
+                                            uri: rec.derivedFiles?.trimmed?.uri ?? '',
+                                            name: rec.derivedFiles?.trimmed?.name ?? '',
+                                            displayName: rec.derivedFiles?.trimmed?.displayName,
+                                            transcript: rec.derivedFiles?.trimmed?.transcript,
+                                            summary,
+                                          },
+                                        },
+                                      }
+                                      : rec
+                                  )
+                                );
+
+
+
+
+                                setShowTranscriptIndex(null); // 隱藏轉文字內容
+                                setShowSummaryIndex(index);   // 顯示摘要內容
+                              } catch (err) {
+                                Alert.alert('❌ 摘要失敗', (err as Error).message);
+                              }
+                            }}
+
+                          >
+                            <Text style={{ color: 'white', fontSize: 14 }}>重點摘要</Text>
+                          </TouchableOpacity>
+                        </View>
+                        {showTranscriptIndex === index && (
+                          <View style={styles.transcriptContainer}>
+                            <View style={styles.bar} />
+                            <Text style={styles.transcriptText}>
+                              {item.derivedFiles?.trimmed?.transcript}
+                            </Text>
+                          </View>
+                        )}
+                        
+                        {showSummaryIndex === index && (
+                          <View style={styles.transcriptContainer}>
+                            <View style={styles.bar} />
+                            <Text style={styles.transcriptText}>
+                              {item.derivedFiles?.trimmed?.summary || '（尚未摘要）'}
+                            </Text>
+                          </View>
+                        )}
 
                         {/* 衍生檔案列表 */}
-                        {hasDerivedFiles && (
+                        {!shouldHideDefaultUI && hasDerivedFiles && (
                           <View style={styles.derivedFilesContainer}>
                             {/* 增強音質版本 */}
                             {item.derivedFiles?.enhanced && (

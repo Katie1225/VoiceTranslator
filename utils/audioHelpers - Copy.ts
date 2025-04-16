@@ -13,7 +13,6 @@ export type RecordingItem = {
     trimmed?: {
       uri: string;
       name: string;
-      displayName?: string;
       transcript?: string;
       summary?: string;
       transcriptEdited?: string;
@@ -57,18 +56,6 @@ export const trimSilence = async (uri: string, name: string): Promise<RecordingI
   const outputName = `trim_${baseName}.m4a`;
   const outputPath = `${FileSystem.cacheDirectory}${outputName}`;
 
-    // ✅ 如果檔案已存在，就直接回傳，不重複剪輯
-    const fileInfo = await FileSystem.getInfoAsync(outputPath);
-    if (fileInfo.exists && fileInfo.size > 0) {
-      console.log('✅ 已存在剪輯檔案，略過重新處理：', outputPath);
-      return {
-        uri: outputPath,
-        name: outputName,
-        originalUri: uri,
-        isTrimmed: true,
-      };
-    }
-
   const command = `-i "${uri}" -af silenceremove=start_periods=1:start_silence=0.3:start_threshold=-40dB:stop_periods=-1:stop_silence=0.3:stop_threshold=-40dB -y "${outputPath}"`;
   const session = await FFmpegKit.execute(command);
   const returnCode = await session.getReturnCode();
@@ -81,7 +68,6 @@ export const trimSilence = async (uri: string, name: string): Promise<RecordingI
 };
 
 
-/** 這邊好像是多出來的, 2025/4/16 mark
 
 export const isSmartFile = (name: string): boolean =>
   name.startsWith('smart_');
@@ -91,7 +77,7 @@ export const getOriginalName = (smartName: string) => smartName.replace(/^smart_
 export const getSmartName = (originalName: string): string =>
   isSmartFile(originalName) ? originalName : `smart_${originalName}`;
 
- */
+
 
 
 /**
