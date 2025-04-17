@@ -21,6 +21,7 @@ import Slider from '@react-native-community/slider';
 import AudioRecorderPlayer from 'react-native-audio-recorder-player';
 import BackgroundService from 'react-native-background-actions';
 import RNFS from 'react-native-fs';
+import { AppState } from 'react-native';
 
 import {
   RecordingItem,
@@ -226,6 +227,30 @@ const AudioRecorder = () => {
     }
   };
 
+  
+  const checkMissingPermissions = async (): Promise<string[]> => {
+    const FOREGROUND_MIC = 'android.permission.FOREGROUND_SERVICE_MICROPHONE';
+  
+    const required: { label: string; key: string; condition?: boolean }[] = [
+      { label: '麥克風', key: PermissionsAndroid.PERMISSIONS.RECORD_AUDIO },
+      { label: '儲存空間', key: PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE, condition: Number(Platform.Version) < 30 },
+      { label: '背景錄音', key: FOREGROUND_MIC, condition: Number(Platform.Version) >= 34 },
+    ];
+  
+    const missing: string[] = [];
+  
+    for (const { label, key, condition = true } of required) {
+      if (!condition) continue;
+      const granted = await PermissionsAndroid.check(key as any);
+      if (!granted) {
+        missing.push(label);
+      }
+    }
+  
+    return missing;
+  };
+  
+
   const requestPermissions = async (): Promise<boolean> => {
     const FOREGROUND_MIC = 'android.permission.FOREGROUND_SERVICE_MICROPHONE';
     const permissions = [PermissionsAndroid.PERMISSIONS.RECORD_AUDIO];
@@ -233,9 +258,21 @@ const AudioRecorder = () => {
     if (Number(Platform.Version) < 30) {
       permissions.push(PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE);
     }
-  
     if (Number(Platform.Version) >= 34) {
       permissions.push(FOREGROUND_MIC as any);
+    }
+  
+    // 🧠 檢查缺少哪些權限
+    const missing = await checkMissingPermissions();
+    if (missing.length > 0) {
+      Alert.alert(
+        '權限不足',
+        `請開啟以下權限以啟用錄音功能：\n${missing.join('、')}`,
+        [
+          { text: '取消', style: 'cancel' },
+          { text: '前往設定', onPress: () => Linking.openSettings() }
+        ]
+      );
     }
   
     const granted = await PermissionsAndroid.requestMultiple(permissions);
@@ -254,31 +291,43 @@ const AudioRecorder = () => {
         : true;
   
     if (!hasAudio || !hasStorage || !hasForegroundMic) {
-      Alert.alert(
-        "權限不足",
-        "請到手機系統 > 應用程式管理 > 本 App > 權限，開啟「麥克風」與「儲存空間」權限，否則將無法使用錄音功能。",
-        [
-          { text: "取消", style: "cancel" },
-          { text: "前往設置", onPress: () => Linking.openSettings() }
-        ]
-      );
       return false;
     }
   
     return true;
   };
   
+  
 
 
   //掛載時加入權限檢查
   useEffect(() => {
     const checkPermissions = async () => {
-      await requestPermissions();
-      loadRecordings();
+      const granted = await requestPermissions();
+      if (granted) {
+        loadRecordings(); // 只在權限通過時才載入錄音
+      }
+      
     };
 
     checkPermissions();
   }, []);
+
+  //開啟權限後自動跳出
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', async (nextState) => {
+      if (nextState === 'active') {
+        const granted = await requestPermissions();
+        if (granted) {
+          console.log("✅ 使用者設定後權限已開啟");
+          // 你可以在這裡更新任何與權限有關的狀態
+        }
+      }
+    });
+  
+    return () => subscription.remove();
+  }, []);
+  
 
   useEffect(() => {
     if (GlobalRecorderState.isRecording) {
@@ -705,7 +754,7 @@ const AudioRecorder = () => {
             {/* 漢堡菜單內容 */}
             {menuVisible && (
               <View style={styles.menuContainer}>
-                <Text style={styles.menuItem}>版本: v1.1.6</Text>
+                <Text style={styles.menuItem}>版本: v1.1.7</Text>
 
                 {/* 深淺色切換 */}
                 <TouchableOpacity
