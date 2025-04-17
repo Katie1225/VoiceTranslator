@@ -151,12 +151,18 @@ export const transcribeAudio = async (item: RecordingItem) => {
   try {
     // 1. 剪掉靜音
     const trimmedRecording = await trimSilence(item.uri, item.name);
+    console.log("✂️ trimmedRecording", trimmedRecording);
+
 
     // 2. 加速播放到 1.25x
     const spedUpUri = await speedUpAudio(trimmedRecording.uri, 1.25);
+    console.log("⏩ spedUpUri", spedUpUri);
+
 
     // 3. 轉為 .wav（Whisper 用）
     const wavUri = await convertToWav(spedUpUri);
+    console.log("🎵 wavUri", wavUri);
+
 
     // 4. 上傳到 Whisper API
     const formData = new FormData();
@@ -165,6 +171,8 @@ export const transcribeAudio = async (item: RecordingItem) => {
       name: 'audio.wav',
       type: 'audio/wav',
     } as any);
+    console.log("📤 formData ready");
+
 
     const response = await fetch('http://192.168.1.106:3000/transcribe', {
       method: 'POST',
@@ -174,6 +182,8 @@ export const transcribeAudio = async (item: RecordingItem) => {
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || '轉文字失敗');
 
+    console.log("📝 result from Whisper API", result);
+    
     return {
       transcript: result,
     }

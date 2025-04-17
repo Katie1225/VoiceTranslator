@@ -304,13 +304,15 @@ const AudioRecorder = () => {
     const checkPermissions = async () => {
       const granted = await requestPermissions();
       if (granted) {
-        loadRecordings(); // 只在權限通過時才載入錄音
+        await loadRecordings();  // ⬅ 加 await
+      } else {
+        setIsLoading(false);     // ⬅ 加這行
       }
-
     };
-
+  
     checkPermissions();
   }, []);
+  
 
   //開啟權限後自動跳出
   useEffect(() => {
@@ -319,13 +321,16 @@ const AudioRecorder = () => {
         const granted = await requestPermissions();
         if (granted) {
           console.log("✅ 使用者設定後權限已開啟");
-          // 你可以在這裡更新任何與權限有關的狀態
+          // 👉 應該補上重新載入
+          await loadRecordings();     // ⬅ 建議加上這行
+          setIsLoading(false);        // ⬅ 確保畫面恢復
         }
       }
     });
-
+  
     return () => subscription.remove();
   }, []);
+  
 
 
   useEffect(() => {
@@ -955,25 +960,26 @@ const AudioRecorder = () => {
                             onPress={async () => {
                               try {
                                 const { transcript } = await transcribeAudio(item);
-
+                            
                                 setRecordings(prev =>
                                   prev.map((rec, i) =>
                                     i === index
                                       ? {
-                                        ...rec,
-                                        transcript,
-                                      }
+                                          ...rec,
+                                          transcript: transcript.text, // ✅ 儲存純文字
+                                        }
                                       : rec
                                   )
                                 );
-
-                                Alert.alert('✅ 語音轉文字成功', transcript);
+                            
+                                Alert.alert('✅ 語音轉文字成功', transcript.text); // ✅ 顯示純文字
                               } catch (err) {
                                 Alert.alert('❌ 轉文字失敗', (err as Error).message);
                               }
                               setShowTranscriptIndex(index);
                               setShowSummaryIndex(null);
                             }}
+                            
                           >
                             <Text style={{ color: 'white', fontSize: 14 }}>轉文字</Text>
                           </TouchableOpacity>
