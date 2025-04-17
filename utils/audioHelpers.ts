@@ -8,16 +8,18 @@ export type RecordingItem = {
   originalUri?: string;
   isEnhanced?: boolean;
   isTrimmed?: boolean;
+
+  transcript?: string;
+  summary?: string;
+  transcriptEdited?: string;
+  summaryEdited?: string;
+
   derivedFiles?: {
     enhanced?: RecordingItem;
     trimmed?: {
       uri: string;
       name: string;
       displayName?: string;
-      transcript?: string;
-      summary?: string;
-      transcriptEdited?: string;
-      summaryEdited?: string;
     };
   };
 };
@@ -55,12 +57,12 @@ export const enhanceAudio = async (inputUri: string, originalName: string): Prom
 export const trimSilence = async (uri: string, name: string): Promise<RecordingItem> => {
   const baseName = name.replace(/\.(m4a|wav)$/, '');
   const outputName = `trim_${baseName}.m4a`;
-  const outputPath = `${FileSystem.cacheDirectory}${outputName}`;
+  const outputPath = `${FileSystem.documentDirectory}${outputName}`;
 
-    // ✅ 如果檔案已存在，就直接回傳，不重複剪輯
+  // 如果剪過就直接回傳
     const fileInfo = await FileSystem.getInfoAsync(outputPath);
     if (fileInfo.exists && fileInfo.size > 0) {
-      console.log('✅ 已存在剪輯檔案，略過重新處理：', outputPath);
+    console.log(`⚠️ 剪輯檔已存在：${outputName}`);
       return {
         uri: outputPath,
         name: outputName,
@@ -69,6 +71,7 @@ export const trimSilence = async (uri: string, name: string): Promise<RecordingI
       };
     }
 
+  console.log(`✂️ 開始剪輯：${outputName}`);
   const command = `-i "${uri}" -af silenceremove=start_periods=1:start_silence=0.3:start_threshold=-40dB:stop_periods=-1:stop_silence=0.3:stop_threshold=-40dB -y "${outputPath}"`;
   const session = await FFmpegKit.execute(command);
   const returnCode = await session.getReturnCode();
@@ -81,17 +84,6 @@ export const trimSilence = async (uri: string, name: string): Promise<RecordingI
 };
 
 
-/** 這邊好像是多出來的, 2025/4/16 mark
-
-export const isSmartFile = (name: string): boolean =>
-  name.startsWith('smart_');
-
-export const getOriginalName = (smartName: string) => smartName.replace(/^smart_/, '');
-
-export const getSmartName = (originalName: string): string =>
-  isSmartFile(originalName) ? originalName : `smart_${originalName}`;
-
- */
 
 
 /**
@@ -154,10 +146,8 @@ export const speedUpAudio = async (
 
 
 
-export const transcribeAudio = async (item: RecordingItem): Promise<{
-  trimmedRecording: RecordingItem;
-  transcript: string;
-}> => {
+export const transcribeAudio = async (item: RecordingItem) => {
+
   try {
     // 1. 剪掉靜音
     const trimmedRecording = await trimSilence(item.uri, item.name);
@@ -185,9 +175,8 @@ export const transcribeAudio = async (item: RecordingItem): Promise<{
     if (!response.ok) throw new Error(result.error || '轉文字失敗');
 
     return {
-      trimmedRecording,
-      transcript: result.text,
-    };
+      transcript: result,
+    }
   } catch (err) {
     console.error('轉文字錯誤', err);
     throw err;
@@ -197,7 +186,7 @@ export const transcribeAudio = async (item: RecordingItem): Promise<{
 
 export const summarizeTranscript = async (transcript: string): Promise<string> => {
   try {
-    const res = await fetch('http://192.168.1.106:3000/summarize', {
+    const res = await fetch('https://192.168.1.106:3000/summarize', {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

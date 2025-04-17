@@ -10,7 +10,8 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
-  TouchableWithoutFeedback
+  TouchableWithoutFeedback,
+  AppState
 } from 'react-native';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
@@ -21,7 +22,7 @@ import Slider from '@react-native-community/slider';
 import AudioRecorderPlayer from 'react-native-audio-recorder-player';
 import BackgroundService from 'react-native-background-actions';
 import RNFS from 'react-native-fs';
-import { AppState } from 'react-native';
+
 
 import {
   RecordingItem,
@@ -41,7 +42,6 @@ const GlobalRecorderState = {
   startTime: 0,
 };
 
-
 const AudioRecorder = () => {
   useKeepAwake(); // 保持清醒
   // 核心狀態
@@ -59,7 +59,6 @@ const AudioRecorder = () => {
   const [editName, setEditName] = useState('');
   const [dbHistory, setDbHistory] = useState<number[]>([]);
   const audioRecorderPlayer = useRef(new AudioRecorderPlayer()).current;
-
 
   // 音量狀態
   const [currentVolume, setCurrentVolume] = useState(0);
@@ -227,18 +226,18 @@ const AudioRecorder = () => {
     }
   };
 
-  
+
   const checkMissingPermissions = async (): Promise<string[]> => {
     const FOREGROUND_MIC = 'android.permission.FOREGROUND_SERVICE_MICROPHONE';
-  
+
     const required: { label: string; key: string; condition?: boolean }[] = [
       { label: '麥克風', key: PermissionsAndroid.PERMISSIONS.RECORD_AUDIO },
       { label: '儲存空間', key: PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE, condition: Number(Platform.Version) < 30 },
       { label: '背景錄音', key: FOREGROUND_MIC, condition: Number(Platform.Version) >= 34 },
     ];
-  
+
     const missing: string[] = [];
-  
+
     for (const { label, key, condition = true } of required) {
       if (!condition) continue;
       const granted = await PermissionsAndroid.check(key as any);
@@ -246,22 +245,22 @@ const AudioRecorder = () => {
         missing.push(label);
       }
     }
-  
+
     return missing;
   };
-  
+
 
   const requestPermissions = async (): Promise<boolean> => {
     const FOREGROUND_MIC = 'android.permission.FOREGROUND_SERVICE_MICROPHONE';
     const permissions = [PermissionsAndroid.PERMISSIONS.RECORD_AUDIO];
-  
+
     if (Number(Platform.Version) < 30) {
       permissions.push(PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE);
     }
     if (Number(Platform.Version) >= 34) {
       permissions.push(FOREGROUND_MIC as any);
     }
-  
+
     // 🧠 檢查缺少哪些權限
     const missing = await checkMissingPermissions();
     if (missing.length > 0) {
@@ -274,30 +273,30 @@ const AudioRecorder = () => {
         ]
       );
     }
-  
+
     const granted = await PermissionsAndroid.requestMultiple(permissions);
-  
+
     const hasAudio =
       (granted['android.permission.RECORD_AUDIO'] ?? '') === PermissionsAndroid.RESULTS.GRANTED;
-  
+
     const hasStorage =
       Number(Platform.Version) < 30
         ? (granted['android.permission.WRITE_EXTERNAL_STORAGE'] ?? '') === PermissionsAndroid.RESULTS.GRANTED
         : true;
-  
+
     const hasForegroundMic =
       Number(Platform.Version) >= 34
         ? ((granted as Record<string, string>)[FOREGROUND_MIC] ?? '') === PermissionsAndroid.RESULTS.GRANTED
         : true;
-  
+
     if (!hasAudio || !hasStorage || !hasForegroundMic) {
       return false;
     }
-  
+
     return true;
   };
-  
-  
+
+
 
 
   //掛載時加入權限檢查
@@ -307,7 +306,7 @@ const AudioRecorder = () => {
       if (granted) {
         loadRecordings(); // 只在權限通過時才載入錄音
       }
-      
+
     };
 
     checkPermissions();
@@ -324,10 +323,10 @@ const AudioRecorder = () => {
         }
       }
     });
-  
+
     return () => subscription.remove();
   }, []);
-  
+
 
   useEffect(() => {
     if (GlobalRecorderState.isRecording) {
@@ -828,7 +827,7 @@ const AudioRecorder = () => {
                   const isTranscriptView = showTranscriptIndex === index;
                   const isSummaryView = showSummaryIndex === index;
                   const shouldHideDefaultUI = isTranscriptView || isSummaryView;
-                  
+
                   return (
                     <View key={index} style={{ position: 'relative', zIndex: selectedDerivedIndex?.index === index ? 999 : 0 }}>
                       {/* 單個錄音項目的完整 UI */}
@@ -955,20 +954,14 @@ const AudioRecorder = () => {
                             }}
                             onPress={async () => {
                               try {
-                                const { trimmedRecording, transcript } = await transcribeAudio(item);
+                                const { transcript } = await transcribeAudio(item);
 
                                 setRecordings(prev =>
                                   prev.map((rec, i) =>
                                     i === index
                                       ? {
                                         ...rec,
-                                        derivedFiles: {
-                                          ...rec.derivedFiles,
-                                          trimmed: {
-                                            ...trimmedRecording,
-                                            transcript: transcript,
-                                          },
-                                        },
+                                        transcript,
                                       }
                                       : rec
                                   )
@@ -992,39 +985,31 @@ const AudioRecorder = () => {
                               paddingHorizontal: 12,
                               backgroundColor: colors.primary,
                               borderRadius: 8,
-                              opacity: item.derivedFiles?.trimmed?.transcript ? 1 : 0.4,
+                              opacity: item.transcript ? 1 : 0.4,
                             }}
-                            disabled={!item.derivedFiles?.trimmed?.transcript}
+                            disabled={!item.transcript}
                             onPress={async () => {
-                              if (!item.derivedFiles?.trimmed?.transcript) return;
+                              if (!item.transcript) {
+                                Alert.alert('⚠️ 無法摘要', '請先執行「轉文字」功能');
+                                return;
+                              }
 
                               try {
-                                const summary = await summarizeTranscript(item.derivedFiles.trimmed.transcript);
+                                const summary = await summarizeTranscript(item.transcript);
+
                                 setRecordings(prev =>
                                   prev.map((rec, i) =>
                                     i === index
                                       ? {
                                         ...rec,
-                                        derivedFiles: {
-                                          ...rec.derivedFiles,
-                                          trimmed: {
-                                            uri: rec.derivedFiles?.trimmed?.uri ?? '',
-                                            name: rec.derivedFiles?.trimmed?.name ?? '',
-                                            displayName: rec.derivedFiles?.trimmed?.displayName,
-                                            transcript: rec.derivedFiles?.trimmed?.transcript,
-                                            summary,
-                                          },
-                                        },
+                                        summary, // ✅ 儲存到主層
                                       }
                                       : rec
                                   )
                                 );
 
-
-
-
-                                setShowTranscriptIndex(null); // 隱藏轉文字內容
-                                setShowSummaryIndex(index);   // 顯示摘要內容
+                                setShowTranscriptIndex(null);
+                                setShowSummaryIndex(index);
                               } catch (err) {
                                 Alert.alert('❌ 摘要失敗', (err as Error).message);
                               }
@@ -1038,19 +1023,20 @@ const AudioRecorder = () => {
                           <View style={styles.transcriptContainer}>
                             <View style={styles.bar} />
                             <Text style={styles.transcriptText}>
-                              {item.derivedFiles?.trimmed?.transcript}
+                              {item.transcript}
                             </Text>
                           </View>
                         )}
-                        
+
                         {showSummaryIndex === index && (
                           <View style={styles.transcriptContainer}>
                             <View style={styles.bar} />
                             <Text style={styles.transcriptText}>
-                              {item.derivedFiles?.trimmed?.summary || '（尚未摘要）'}
+                              {item.summary || '（尚未摘要）'}
                             </Text>
                           </View>
                         )}
+
 
                         {/* 衍生檔案列表 */}
                         {!shouldHideDefaultUI && hasDerivedFiles && (
@@ -1097,7 +1083,7 @@ const AudioRecorder = () => {
                             )}
 
                             {/* 靜音剪輯版本 */}
-                            {item.derivedFiles?.trimmed && (
+{item.isTrimmed && item.derivedFiles?.trimmed && (
                               <View style={styles.derivedFileRow}>
                                 <TouchableOpacity
                                   style={[styles.derivedFileItem, { flex: 1 }]}
@@ -1138,11 +1124,11 @@ const AudioRecorder = () => {
                             )}
 
                             {/* 文字轉錄內容 */}
-                            {typeof item.derivedFiles?.trimmed?.transcript === 'string' && (
+                            {typeof item.transcript === 'string' && (
                               <View style={styles.transcriptContainer}>
                                 <View style={styles.bar} />
                                 <Text style={styles.transcriptText}>
-                                  {item.derivedFiles.trimmed.transcript}
+                                  {item.transcript}
                                 </Text>
                               </View>
                             )}
@@ -1250,12 +1236,19 @@ const AudioRecorder = () => {
 
                         await originalSound.sound.unloadAsync();
                         await trimmedSound.sound.unloadAsync();
-
                         setRecordings(prev => prev.map((rec, i) =>
                           i === selectedMainIndex
-                            ? { ...rec, derivedFiles: { ...rec.derivedFiles, trimmed: trimmedRecording } }
+                            ? {
+                                ...rec,
+                                isTrimmed: true, // ✅ 標記是手動剪過
+                                derivedFiles: {
+                                  ...rec.derivedFiles,
+                                  trimmed: trimmedRecording
+                                }
+                              }
                             : rec
-                        ));
+                        ))
+                        
 
                         Alert.alert(
                           "靜音剪輯完成",
