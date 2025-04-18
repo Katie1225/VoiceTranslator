@@ -249,70 +249,82 @@ const AudioRecorder = () => {
     return missing;
   };
 
-
   const requestPermissions = async (): Promise<boolean> => {
-    const FOREGROUND_MIC = 'android.permission.FOREGROUND_SERVICE_MICROPHONE';
-    const permissions = [PermissionsAndroid.PERMISSIONS.RECORD_AUDIO];
+    try {
+      const FOREGROUND_MIC = 'android.permission.FOREGROUND_SERVICE_MICROPHONE';
+      const permissions = [PermissionsAndroid.PERMISSIONS.RECORD_AUDIO];
 
-    if (Number(Platform.Version) < 30) {
-      permissions.push(PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE);
-    }
-    if (Number(Platform.Version) >= 34) {
-      permissions.push(FOREGROUND_MIC as any);
-    }
+      if (Number(Platform.Version) < 30) {
+        permissions.push(PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE);
+      }
+      if (Number(Platform.Version) >= 34) {
+        permissions.push(FOREGROUND_MIC as any);
+      }
 
-    // 🧠 檢查缺少哪些權限
-    const missing = await checkMissingPermissions();
-    if (missing.length > 0) {
-      Alert.alert(
-        '權限不足',
-        `請開啟以下權限以啟用錄音功能：\n${missing.join('、')}`,
-        [
-          { text: '取消', style: 'cancel' },
-          { text: '前往設定', onPress: () => Linking.openSettings() }
-        ]
-      );
-    }
+      const granted = await PermissionsAndroid.requestMultiple(permissions);
 
-    const granted = await PermissionsAndroid.requestMultiple(permissions);
-
-    const hasAudio =
-      (granted['android.permission.RECORD_AUDIO'] ?? '') === PermissionsAndroid.RESULTS.GRANTED;
-
-    const hasStorage =
-      Number(Platform.Version) < 30
-        ? (granted['android.permission.WRITE_EXTERNAL_STORAGE'] ?? '') === PermissionsAndroid.RESULTS.GRANTED
+      const hasAudio = granted['android.permission.RECORD_AUDIO'] === PermissionsAndroid.RESULTS.GRANTED;
+      const hasStorage = Number(Platform.Version) < 30
+        ? granted['android.permission.WRITE_EXTERNAL_STORAGE'] === PermissionsAndroid.RESULTS.GRANTED
+        : true;
+      const hasForegroundMic = Number(Platform.Version) >= 34
+        ? (granted as Record<string, string>)[FOREGROUND_MIC] === PermissionsAndroid.RESULTS.GRANTED
         : true;
 
-    const hasForegroundMic =
-      Number(Platform.Version) >= 34
-        ? ((granted as Record<string, string>)[FOREGROUND_MIC] ?? '') === PermissionsAndroid.RESULTS.GRANTED
-        : true;
+      if (!hasAudio || !hasStorage || !hasForegroundMic) {
+        const missing = [];
+        if (!hasAudio) missing.push('麥克風');
+        if (!hasStorage) missing.push('儲存空間');
+        if (!hasForegroundMic) missing.push('背景錄音');
 
-    if (!hasAudio || !hasStorage || !hasForegroundMic) {
+        Alert.alert(
+          '權限不足',
+          `請開啟以下權限以啟用錄音功能：\n${missing.join('、')}`,
+          [
+            { text: '取消', style: 'cancel' },
+            { text: '前往設定', onPress: () => Linking.openSettings() }
+          ]
+        );
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error("權限請求錯誤:", error);
       return false;
     }
-
-    return true;
   };
 
 
 
-
   //掛載時加入權限檢查
+  // 修改後的 useEffect 部分
   useEffect(() => {
-    const checkPermissions = async () => {
-      const granted = await requestPermissions();
-      if (granted) {
-        await loadRecordings();  // ⬅ 加 await
-      } else {
-        setIsLoading(false);     // ⬅ 加這行
+    let isMounted = true;
+
+    const initializeApp = async () => {
+      try {
+        const granted = await requestPermissions();
+        if (granted && isMounted) {
+          await loadRecordings();
+        }
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setIsLoading(false);
+          console.error("初始化失敗:", error);
+        }
       }
     };
-  
-    checkPermissions();
-  }, []);
-  
+
+    initializeApp();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []); // 空依賴數組，只在組件掛載時執行一次
 
   //開啟權限後自動跳出
   useEffect(() => {
@@ -321,16 +333,18 @@ const AudioRecorder = () => {
         const granted = await requestPermissions();
         if (granted) {
           console.log("✅ 使用者設定後權限已開啟");
-          // 👉 應該補上重新載入
-          await loadRecordings();     // ⬅ 建議加上這行
-          setIsLoading(false);        // ⬅ 確保畫面恢復
+          // 不需要再次設置 isLoading，因為這只是權限更新
         }
       }
     });
-  
+
     return () => subscription.remove();
   }, []);
-  
+
+
+
+
+
 
 
   useEffect(() => {
@@ -737,12 +751,10 @@ const AudioRecorder = () => {
       <SafeAreaView style={styles.container}>
         {isLoading ? (
           <View style={styles.loadingContainer}>
-            {/* 使用 ActivityIndicator 作為載入動畫 */}
-            <ActivityIndicator
-              size="large"
-              color={colors.primary}
-            />
-            <Text style={styles.loadingText}>載入錄音列表中...</Text>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.loadingText}>
+              {Platform.OS === 'android' ? '正在檢查權限...' : '載入錄音列表中...'}
+            </Text>
           </View>
         ) : (
           <>
@@ -758,7 +770,7 @@ const AudioRecorder = () => {
             {/* 漢堡菜單內容 */}
             {menuVisible && (
               <View style={styles.menuContainer}>
-                <Text style={styles.menuItem}>版本: v1.1.8</Text>
+                <Text style={styles.menuItem}>版本: v1.1.9</Text>
 
                 {/* 深淺色切換 */}
                 <TouchableOpacity
@@ -960,18 +972,18 @@ const AudioRecorder = () => {
                             onPress={async () => {
                               try {
                                 const { transcript } = await transcribeAudio(item);
-                            
+
                                 setRecordings(prev =>
                                   prev.map((rec, i) =>
                                     i === index
                                       ? {
-                                          ...rec,
-                                          transcript: transcript.text, // ✅ 儲存純文字
-                                        }
+                                        ...rec,
+                                        transcript: transcript.text, // ✅ 儲存純文字
+                                      }
                                       : rec
                                   )
                                 );
-                            
+
                                 Alert.alert('✅ 語音轉文字成功', transcript.text); // ✅ 顯示純文字
                               } catch (err) {
                                 Alert.alert('❌ 轉文字失敗', (err as Error).message);
@@ -979,7 +991,7 @@ const AudioRecorder = () => {
                               setShowTranscriptIndex(index);
                               setShowSummaryIndex(null);
                             }}
-                            
+
                           >
                             <Text style={{ color: 'white', fontSize: 14 }}>轉文字</Text>
                           </TouchableOpacity>
@@ -1089,7 +1101,7 @@ const AudioRecorder = () => {
                             )}
 
                             {/* 靜音剪輯版本 */}
-{item.isTrimmed && item.derivedFiles?.trimmed && (
+                            {item.isTrimmed && item.derivedFiles?.trimmed && (
                               <View style={styles.derivedFileRow}>
                                 <TouchableOpacity
                                   style={[styles.derivedFileItem, { flex: 1 }]}
@@ -1245,16 +1257,16 @@ const AudioRecorder = () => {
                         setRecordings(prev => prev.map((rec, i) =>
                           i === selectedMainIndex
                             ? {
-                                ...rec,
-                                isTrimmed: true, // ✅ 標記是手動剪過
-                                derivedFiles: {
-                                  ...rec.derivedFiles,
-                                  trimmed: trimmedRecording
-                                }
+                              ...rec,
+                              isTrimmed: true, // ✅ 標記是手動剪過
+                              derivedFiles: {
+                                ...rec.derivedFiles,
+                                trimmed: trimmedRecording
                               }
+                            }
                             : rec
                         ))
-                        
+
 
                         Alert.alert(
                           "靜音剪輯完成",
