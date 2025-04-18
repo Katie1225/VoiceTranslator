@@ -249,72 +249,74 @@ const AudioRecorder = () => {
     return missing;
   };
 
-  const requestPermissions = async (): Promise<boolean> => {
+  const requestPermissions = async (silent = false): Promise<boolean> => {
     try {
-      const FOREGROUND_MIC = 'android.permission.FOREGROUND_SERVICE_MICROPHONE';
-      const permissions = [PermissionsAndroid.PERMISSIONS.RECORD_AUDIO];
+      const requiredPermissions = [
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+        ...(Number(Platform.Version) < 30
+          ? [PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE]
+          : []),
+        ...(Number(Platform.Version) >= 34
+          ? ['android.permission.FOREGROUND_SERVICE_MICROPHONE' as any]
+          : [])
+      ];
 
-      if (Number(Platform.Version) < 30) {
-        permissions.push(PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE);
-      }
-      if (Number(Platform.Version) >= 34) {
-        permissions.push(FOREGROUND_MIC as any);
-      }
+      const results = await PermissionsAndroid.requestMultiple(requiredPermissions);
+      console.log('🔍 權限請求結果:', results);
 
-      const granted = await PermissionsAndroid.requestMultiple(permissions);
 
-      const hasAudio = granted['android.permission.RECORD_AUDIO'] === PermissionsAndroid.RESULTS.GRANTED;
-      const hasStorage = Number(Platform.Version) < 30
-        ? granted['android.permission.WRITE_EXTERNAL_STORAGE'] === PermissionsAndroid.RESULTS.GRANTED
-        : true;
-      const hasForegroundMic = Number(Platform.Version) >= 34
-        ? (granted as Record<string, string>)[FOREGROUND_MIC] === PermissionsAndroid.RESULTS.GRANTED
-        : true;
+    // ✅ 只強制檢查錄音權限，其他權限允許 fallback
+    const audioGranted = results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === PermissionsAndroid.RESULTS.GRANTED;
 
-      if (!hasAudio || !hasStorage || !hasForegroundMic) {
-        const missing = [];
-        if (!hasAudio) missing.push('麥克風');
-        if (!hasStorage) missing.push('儲存空間');
-        if (!hasForegroundMic) missing.push('背景錄音');
+    const optionalDenied: string[] = Object.entries(results)
+      .filter(([key, result]) => result !== PermissionsAndroid.RESULTS.GRANTED && key !== PermissionsAndroid.PERMISSIONS.RECORD_AUDIO)
+      .map(([key]) => key);
 
+      if (!audioGranted && !silent) {
         Alert.alert(
           '權限不足',
-          `請開啟以下權限以啟用錄音功能：\n${missing.join('、')}`,
+          '需要麥克風和儲存權限才能錄音',
           [
             { text: '取消', style: 'cancel' },
-            { text: '前往設定', onPress: () => Linking.openSettings() }
+            {
+              text: '前往設定',
+              onPress: () => Linking.openSettings()
+            }
           ]
         );
-        return false;
       }
 
-      return true;
+      return audioGranted;
     } catch (error) {
-      console.error("權限請求錯誤:", error);
+      console.error('權限請求錯誤:', error);
+      if (!silent) {
+        Alert.alert('錯誤', '檢查權限時發生錯誤');
+      }
       return false;
     }
   };
+  // 在狀態中添加權限狀態
+  const [permissionStatus, setPermissionStatus] = useState<'checking' | 'granted' | 'denied'>('checking');
 
 
-
-  //掛載時加入權限檢查
-  // 修改後的 useEffect 部分
+  // 修改初始化邏輯
   useEffect(() => {
     let isMounted = true;
 
     const initializeApp = async () => {
       try {
-        const granted = await requestPermissions();
-        if (granted && isMounted) {
+        setIsLoading(true);
+        const granted = await requestPermissions(true); // 使用靜默模式檢查
+        setPermissionStatus(granted ? 'granted' : 'denied');
+
+        if (granted) {
           await loadRecordings();
         }
-        if (isMounted) {
-          setIsLoading(false);
-        }
       } catch (error) {
+        console.error("初始化失敗:", error);
+      } finally {
         if (isMounted) {
           setIsLoading(false);
-          console.error("初始化失敗:", error);
         }
       }
     };
@@ -324,27 +326,22 @@ const AudioRecorder = () => {
     return () => {
       isMounted = false;
     };
-  }, []); // 空依賴數組，只在組件掛載時執行一次
+  }, []);
 
-  //開啟權限後自動跳出
+  // 修改 AppState 監聽
   useEffect(() => {
     const subscription = AppState.addEventListener('change', async (nextState) => {
       if (nextState === 'active') {
-        const granted = await requestPermissions();
-        if (granted) {
-          console.log("✅ 使用者設定後權限已開啟");
-          // 不需要再次設置 isLoading，因為這只是權限更新
+        // 只在權限被拒絕時重新檢查，避免不必要的閃爍
+        if (permissionStatus === 'denied') {
+          const granted = await requestPermissions(true);
+          setPermissionStatus(granted ? 'granted' : 'denied');
         }
       }
     });
 
     return () => subscription.remove();
-  }, []);
-
-
-
-
-
+  }, [permissionStatus]); // 添加依賴
 
 
   useEffect(() => {
@@ -392,11 +389,10 @@ const AudioRecorder = () => {
 
   // 在錄音列表變更時自動儲存
   useEffect(() => {
-    if (!isLoading && recordings.length > 0) {
+    if (!isLoading) {
       saveRecordings(recordings);
     }
-  }, [recordings, isLoading]);
-
+  }, [recordings]);
 
 
   // 清理資源
@@ -453,16 +449,30 @@ const AudioRecorder = () => {
   const startRecording = async () => {
     closeAllMenus();
 
-    const hasPermission = await requestPermissions();
-    if (!hasPermission) return;
+    // 如果權限已被拒絕，直接顯示提示
+    if (permissionStatus === 'denied') {
+      Alert.alert(
+        '權限不足',
+        '需要麥克風和儲存權限才能錄音',
+        [
+          { text: '取消', style: 'cancel' },
+          {
+            text: '前往設定',
+            onPress: () => Linking.openSettings()
+          }
+        ]
+      );
+      return;
+    }
 
-    const now = new Date();
-    const filename = `rec_${now.getTime()}.m4a`;
-    const filePath = `${RNFS.ExternalDirectoryPath}/${filename}`;
-
-    console.log("📁 錄音儲存路徑:", filePath);
 
     try {
+      const now = new Date();
+      const filename = `rec_${now.getTime()}.m4a`;
+      const filePath = `${RNFS.ExternalDirectoryPath}/${filename}`;
+
+      console.log("📁 錄音儲存路徑:", filePath);
+
       // ✅ 先啟動 BackgroundService，讓它來啟動錄音
       await BackgroundService.start(task, {
         taskName: '錄音中',
@@ -475,13 +485,16 @@ const AudioRecorder = () => {
         parameters: { path: filePath },
         allowWhileIdle: true,
       } as any);
+
       GlobalRecorderState.isRecording = true;
       GlobalRecorderState.filePath = filePath;
       GlobalRecorderState.startTime = Date.now();
       setRecording(true);
+
     } catch (err) {
       console.error("❌ 錄音啟動錯誤：", err);
       Alert.alert("錄音失敗", (err as Error).message || "請檢查權限或儲存空間");
+      setRecording(false);
     }
   };
 
@@ -746,6 +759,22 @@ const AudioRecorder = () => {
     }
   };
 
+  if (!isLoading && permissionStatus === 'denied') {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>⚠️ 請開啟錄音與儲存權限才能使用此 App</Text>
+          <TouchableOpacity onPress={async () => {
+            const granted = await requestPermissions(); // silent 預設 false
+            setPermissionStatus(granted ? 'granted' : 'denied');
+          }}>
+            <Text style={[styles.loadingText, { color: colors.primary, marginTop: 12 }]}>重新檢查權限</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <TouchableWithoutFeedback onPress={closeAllMenus}>
       <SafeAreaView style={styles.container}>
@@ -770,7 +799,7 @@ const AudioRecorder = () => {
             {/* 漢堡菜單內容 */}
             {menuVisible && (
               <View style={styles.menuContainer}>
-                <Text style={styles.menuItem}>版本: v1.1.9</Text>
+                <Text style={styles.menuItem}>版本: v1.2.1</Text>
 
                 {/* 深淺色切換 */}
                 <TouchableOpacity

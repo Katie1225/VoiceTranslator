@@ -2,7 +2,7 @@
   "expo": {
     "name": "audio-recorder-mvp",
     "slug": "audio-recorder-mvp",
-    "version": "1.1.9",
+    "version": "1.2.1",
     "orientation": "portrait",
     "icon": "./assets/images/VoiceClamp.png",
     "scheme": "myapp",
@@ -11,16 +11,20 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "UIBackgroundModes": ["audio"]
+        "UIBackgroundModes": [
+          "audio"
+        ]
       }
     },
     "android": {
       "permissions": [
         "RECORD_AUDIO",
         "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_MICROPHONE", 
+        "WRITE_EXTERNAL_STORAGE",
         "WAKE_LOCK"
       ],
-      "versionCode": 6,           
+      "versionCode": 6,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/VoiceClamp.png",
         "backgroundColor": "#ffffff"
