@@ -758,7 +758,7 @@ const AudioRecorder = () => {
             {/* 漢堡菜單內容 */}
             {menuVisible && (
               <View style={styles.menuContainer}>
-                <Text style={styles.menuItem}>版本: v1.1.7</Text>
+                <Text style={styles.menuItem}>版本: v1.1.8</Text>
 
                 {/* 深淺色切換 */}
                 <TouchableOpacity
