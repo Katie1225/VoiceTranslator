@@ -174,7 +174,7 @@ export const transcribeAudio = async (item: RecordingItem) => {
     console.log("📤 formData ready");
 
 
-    const response = await fetch('http://192.168.1.106:3000/transcribe', {
+    const response = await fetch('http://57.180.48.96:3000/transcribe', {
       method: 'POST',
       body: formData,
     });
@@ -196,7 +196,7 @@ export const transcribeAudio = async (item: RecordingItem) => {
 
 export const summarizeTranscript = async (transcript: string): Promise<string> => {
   try {
-    const res = await fetch('http://192.168.1.106:3000/summarize', {
+    const res = await fetch('http://57.180.48.96:3000/summarize', {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

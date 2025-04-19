@@ -59,6 +59,7 @@ const AudioRecorder = () => {
   const [editName, setEditName] = useState('');
   const [dbHistory, setDbHistory] = useState<number[]>([]);
   const audioRecorderPlayer = useRef(new AudioRecorderPlayer()).current;
+  const [isTranscribingIndex, setIsTranscribingIndex] = useState<number | null>(null);
 
   // 音量狀態
   const [currentVolume, setCurrentVolume] = useState(0);
@@ -265,12 +266,12 @@ const AudioRecorder = () => {
       console.log('🔍 權限請求結果:', results);
 
 
-    // ✅ 只強制檢查錄音權限，其他權限允許 fallback
-    const audioGranted = results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === PermissionsAndroid.RESULTS.GRANTED;
+      // ✅ 只強制檢查錄音權限，其他權限允許 fallback
+      const audioGranted = results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === PermissionsAndroid.RESULTS.GRANTED;
 
-    const optionalDenied: string[] = Object.entries(results)
-      .filter(([key, result]) => result !== PermissionsAndroid.RESULTS.GRANTED && key !== PermissionsAndroid.PERMISSIONS.RECORD_AUDIO)
-      .map(([key]) => key);
+      const optionalDenied: string[] = Object.entries(results)
+        .filter(([key, result]) => result !== PermissionsAndroid.RESULTS.GRANTED && key !== PermissionsAndroid.PERMISSIONS.RECORD_AUDIO)
+        .map(([key]) => key);
 
       if (!audioGranted && !silent) {
         Alert.alert(
@@ -490,6 +491,17 @@ const AudioRecorder = () => {
       GlobalRecorderState.filePath = filePath;
       GlobalRecorderState.startTime = Date.now();
       setRecording(true);
+      setRecordingTime(0);
+
+      //測試版用開始
+      setTimeout(() => {
+        if (GlobalRecorderState.isRecording) {
+          stopRecording();
+          Alert.alert("⏱ 錄音已達上限", "每段最多錄音 10 分鐘");
+        }
+      }, 10 * 60 * 1000);
+      // 測試版用結束
+
 
     } catch (err) {
       console.error("❌ 錄音啟動錯誤：", err);
@@ -799,7 +811,7 @@ const AudioRecorder = () => {
             {/* 漢堡菜單內容 */}
             {menuVisible && (
               <View style={styles.menuContainer}>
-                <Text style={styles.menuItem}>版本: v1.2.1</Text>
+                <Text style={styles.menuItem}>版本: v1.2.2</Text>
 
                 {/* 深淺色切換 */}
                 <TouchableOpacity
@@ -998,7 +1010,9 @@ const AudioRecorder = () => {
                               borderRadius: 8,
                               opacity: 1,
                             }}
+
                             onPress={async () => {
+                              setIsTranscribingIndex(index); // 開始轉文字中，顯示提示
                               try {
                                 const { transcript } = await transcribeAudio(item);
 
@@ -1012,18 +1026,18 @@ const AudioRecorder = () => {
                                       : rec
                                   )
                                 );
+                                setShowTranscriptIndex(index);
+                                setShowSummaryIndex(null);
 
-                                Alert.alert('✅ 語音轉文字成功', transcript.text); // ✅ 顯示純文字
                               } catch (err) {
                                 Alert.alert('❌ 轉文字失敗', (err as Error).message);
+                              }finally {
+                                setIsTranscribingIndex(null); // 無論成功失敗，都清除轉文字狀態
                               }
-                              setShowTranscriptIndex(index);
-                              setShowSummaryIndex(null);
                             }}
-
                           >
                             <Text style={{ color: 'white', fontSize: 14 }}>轉文字</Text>
-                          </TouchableOpacity>
+                          </TouchableOpacity>                          
 
                           {/* 重點摘要按鈕 */}
                           <TouchableOpacity
@@ -1066,6 +1080,11 @@ const AudioRecorder = () => {
                             <Text style={{ color: 'white', fontSize: 14 }}>重點摘要</Text>
                           </TouchableOpacity>
                         </View>
+                        {/*放這裡才能放在下一行*/}
+                        {isTranscribingIndex === index && (
+                          <Text style={{ marginTop: 6, color: colors.primary }}>⏳ 轉文字處理中...</Text>
+                        )}
+
                         {showTranscriptIndex === index && (
                           <View style={styles.transcriptContainer}>
                             <View style={styles.bar} />
@@ -1201,66 +1220,7 @@ const AudioRecorder = () => {
                 }
               ]}>
 
-                {/* 新增這一項：轉文字 
-            <TouchableOpacity
-              style={styles.optionButton}
-              onPress={async () => {
-                const item = recordings[selectedMainIndex];
-                try {
-                  const { trimmedRecording, transcript } = await transcribeAudio(item);
-
-                  // 更新 recordings 陣列
-                  setRecordings(prev =>
-                    prev.map((rec, i) =>
-                      i === selectedMainIndex
-                        ? {
-                          ...rec,
-                          derivedFiles: {
-                            ...rec.derivedFiles,
-                            trimmed: {
-                              ...trimmedRecording,
-                              transcript: transcript,
-                            },
-                          },
-                        }
-                        : rec
-                    )
-                  );
-
-                  Alert.alert('轉文字完成', '已顯示在靜音剪輯下方');
-                } catch (err) {
-                  Alert.alert('轉文字失敗', (err as Error).message);
-                } finally {
-                  closeAllMenus();
-                }
-              }}
-            >
-              <Text style={styles.optionText}>📝 轉文字</Text>
-            </TouchableOpacity>
-          */}
-                {/*  新增這一項：智慧音質 
-            <TouchableOpacity
-              style={styles.optionButton}
-              onPress={async () => {
-                const item = recordings[selectedMainIndex];
-                try {
-                  const enhancedRecording = await enhanceAudio(item.uri, item.name);
-                  setRecordings(prev => prev.map((rec, i) =>
-                    i === selectedMainIndex
-                      ? { ...rec, derivedFiles: { ...rec.derivedFiles, enhanced: enhancedRecording } }
-                      : rec
-                  ));
-                  Alert.alert("智慧音質強化完成", `已為 ${item.name} 創建強化版`);
-                } catch (err) {
-                  Alert.alert("強化失敗", (err as Error).message);
-                }
-                closeAllMenus();
-              }}
-            >
-              <Text style={styles.optionText}>✨ 智慧音質</Text>
-            </TouchableOpacity>
-          */}
-
+                
                 {/* 放在這裡！不要放在 map 循環內部 */}
                 <TouchableOpacity
                   style={styles.optionButton}
