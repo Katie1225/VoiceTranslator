@@ -811,7 +811,7 @@ const AudioRecorder = () => {
             {/* 漢堡菜單內容 */}
             {menuVisible && (
               <View style={styles.menuContainer}>
-                <Text style={styles.menuItem}>版本: v1.2.2</Text>
+                <Text style={styles.menuItem}>版本: v1.2.4</Text>
 
                 {/* 深淺色切換 */}
                 <TouchableOpacity
@@ -1036,7 +1036,7 @@ const AudioRecorder = () => {
                               }
                             }}
                           >
-                            <Text style={{ color: 'white', fontSize: 14 }}>轉文字</Text>
+                            <Text style={{ color: 'white', fontSize: 14 }}>錄音筆記</Text>
                           </TouchableOpacity>                          
 
                           {/* 重點摘要按鈕 */}
