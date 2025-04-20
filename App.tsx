@@ -175,57 +175,88 @@ const AudioRecorder = () => {
   // 儲存錄音列表到本地檔案
   const saveRecordings = async (items: RecordingItem[]) => {
     try {
+      // 寫入 App 內部儲存
       await FileSystem.writeAsStringAsync(
         `${FileSystem.documentDirectory}recordings.json`,
         JSON.stringify(items)
       );
+  
+      // ✅ 額外備份一份到外部儲存
+      const backupPath = `${RNFS.ExternalDirectoryPath}/recordings_backup.json`;
+      await RNFS.writeFile(backupPath, JSON.stringify(items), 'utf8');
+  
     } catch (err) {
       console.error('儲存錄音列表失敗:', err);
     }
   };
+  
 
   // 從本地檔案載入錄音列表
   const loadRecordings = async () => {
     try {
-      const path = `${FileSystem.documentDirectory}recordings.json`;
-      const fileInfo = await FileSystem.getInfoAsync(path);
-
-      if (fileInfo.exists) {
-        const content = await FileSystem.readAsStringAsync(path);
-        const loadedRecordings = JSON.parse(content);
-
-        // 驗證每個錄音檔是否仍然存在
-        const validRecordings = [];
-        for (const item of loadedRecordings) {
-          const fileInfo = await FileSystem.getInfoAsync(item.uri);
-          if (fileInfo.exists) {
-            validRecordings.push(item);
-          } else {
-            // 如果主檔案不存在，嘗試刪除其衍生檔案
-            if (item.derivedFiles?.enhanced?.uri) {
-              try {
-                await FileSystem.deleteAsync(item.derivedFiles.enhanced.uri, { idempotent: true });
-              } catch (e) { }
-            }
-            if (item.derivedFiles?.trimmed?.uri) {
-              try {
-                await FileSystem.deleteAsync(item.derivedFiles.trimmed.uri, { idempotent: true });
-              } catch (e) { }
-            }
-          }
-        }
-
-        setRecordings(validRecordings);
-        if (loadedRecordings.length !== validRecordings.length) {
-          await saveRecordings(validRecordings); // 更新儲存檔
+      const internalPath = `${FileSystem.documentDirectory}recordings.json`;
+      const backupPath = `${RNFS.ExternalDirectoryPath}/recordings_backup.json`;
+  
+      let existingData: RecordingItem[] = [];
+  
+      // 嘗試讀取內部 JSON
+      const internalInfo = await FileSystem.getInfoAsync(internalPath);
+      if (internalInfo.exists) {
+        const content = await FileSystem.readAsStringAsync(internalPath);
+        existingData = JSON.parse(content);
+      } else {
+        // 若內部檔不存在，改讀取外部備份
+        const backupExists = await RNFS.exists(backupPath);
+        if (backupExists) {
+          const backupContent = await RNFS.readFile(backupPath, 'utf8');
+          existingData = JSON.parse(backupContent);
+          console.log('✅ 從外部備份還原 recordings.json');
         }
       }
+  
+      // 掃描實體音檔
+      const audioFiles = await RNFS.readDir(RNFS.ExternalDirectoryPath);
+      const m4aFiles = audioFiles.filter(file =>
+        /\.(m4a)$/i.test(file.name)
+      );
+      
+      console.log('📂 掃描到的 .m4a 檔案：');
+      m4aFiles.forEach(file => {
+        console.log('🎧', file.name);
+      });
+      
+  
+      // 合併：保留原資料，補回新音檔
+      const merged: RecordingItem[] = [
+        ...existingData,
+        ...m4aFiles
+          .map(file => {
+            const fileUri = `file://${file.path}`;
+            const matched = existingData.find(item =>
+              item.uri.replace(/^file:\/\//, '') === file.path
+            );
+            return matched
+              ? null
+              : {
+                  uri: fileUri,
+                  name: file.name, 
+                  displayName: file.name,
+                  derivedFiles: {},
+                };
+          })
+          .filter(Boolean) as RecordingItem[]
+      ];
+           
+  
+      setRecordings(merged);
+      await saveRecordings(merged); // 寫回最新 JSON 與備份
     } catch (err) {
-      console.error('載入錄音列表失敗:', err);
+      console.error('🔴 載入錄音列表失敗:', err);
     } finally {
       setIsLoading(false);
     }
   };
+  
 
 
   const checkMissingPermissions = async (): Promise<string[]> => {
@@ -435,7 +466,7 @@ const AudioRecorder = () => {
     console.log("✅ 錄音任務啟動完成");
     await new Promise(async (resolve) => {
       while (BackgroundService.isRunning()) {
-        await new Promise(res => setTimeout(res, 1000)); // 睡 1 秒
+        await new Promise(res => setTimeout(res, 1000)); // 睡 1 秒 
       }
       resolve(true);
     });
@@ -563,7 +594,8 @@ const AudioRecorder = () => {
         const minutes = now.getMinutes().toString().padStart(2, '0');
         const seconds = now.getSeconds().toString().padStart(2, '0');
         const dateStr = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
-        const displayName = `${hours}:${minutes}:${seconds}  ${durationText}  ${dateStr}`;
+        const displayName = `[錄音] ${durationText} ${hours}:${minutes}:${seconds} ${now.getMonth() + 1}/${now.getDate()}`;
+
 
 
         const newItem: RecordingItem = {
@@ -811,7 +843,7 @@ const AudioRecorder = () => {
             {/* 漢堡菜單內容 */}
             {menuVisible && (
               <View style={styles.menuContainer}>
-                <Text style={styles.menuItem}>版本: v1.2.4</Text>
+                <Text style={styles.menuItem}>版本: v1.2.6</Text>
 
                 {/* 深淺色切換 */}
                 <TouchableOpacity
