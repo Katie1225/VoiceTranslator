@@ -2,7 +2,7 @@
   "expo": {
     "name": "audio-recorder-mvp",
     "slug": "audio-recorder-mvp",
-    "version": "1.2.6",
+    "version": "1.2.7",
     "orientation": "portrait",
     "icon": "./assets/images/VoiceClamp.png",
     "scheme": "myapp",

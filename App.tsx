@@ -11,7 +11,8 @@ import {
   Alert,
   ActivityIndicator,
   TouchableWithoutFeedback,
-  AppState
+  AppState,
+  Share
 } from 'react-native';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
@@ -35,14 +36,7 @@ import { ANDROID_AUDIO_ENCODERS, ANDROID_OUTPUT_FORMATS } from './constants/Audi
 import { lightTheme, darkTheme, additionalColors } from './constants/Colors';
 import { Linking } from 'react-native'; // ✅ 正確寫法
 import { Keyboard } from 'react-native';
-//import ShareMenu from 'react-native-share-menu';
-/*
-type SharedItem = {
-  mimeType: string;
-  data: string;
-  extraData?: Record<string, any>;
-};
-*/
+
 const GlobalRecorderState = {
   isRecording: false,
   filePath: '',
@@ -106,9 +100,27 @@ const AudioRecorder = () => {
   const [showSummaryIndex, setShowSummaryIndex] = useState<number | null>(null);
 
   const [editingTranscriptIndex, setEditingTranscriptIndex] = useState<number | null>(null);
-const [editTranscript, setEditTranscript] = useState('');
+  const [editTranscript, setEditTranscript] = useState('');
+
+  const [editingSummaryIndex, setEditingSummaryIndex] = useState<number | null>(null);
+  const [editSummary, setEditSummary] = useState('');
 
 
+
+const shareText = async (text: string) => {
+  if (!text || text.trim() === '') {
+    Alert.alert('無法分享', '內容為空');
+    return;
+  }
+
+  try {
+    await Share.share({ message: text });
+  } catch (err) {
+    Alert.alert('分享失敗', (err as Error).message);
+  }
+};
+
+  
   const setPlaybackRate = async (rate: number) => {
     setCurrentPlaybackRate(rate); // 儲存當前播放速度
     if (currentSound) {
@@ -124,6 +136,7 @@ const [editTranscript, setEditTranscript] = useState('');
     }
   };
 
+  
 
   // WAV錄音配置
   const recordingOptions = {
@@ -201,6 +214,7 @@ const [editTranscript, setEditTranscript] = useState('');
     }
   };
 
+  
 
   // 從本地檔案載入錄音列表
   const loadRecordings = async () => {
@@ -274,32 +288,32 @@ const [editTranscript, setEditTranscript] = useState('');
     setRecordings(updated);
     await saveRecordings(updated);
   };
+
+
+  /* 2025/4/21 封存
   
-
-/* 2025/4/21 封存
-
-  const checkMissingPermissions = async (): Promise<string[]> => {
-    const FOREGROUND_MIC = 'android.permission.FOREGROUND_SERVICE_MICROPHONE';
-
-    const required: { label: string; key: string; condition?: boolean }[] = [
-      { label: '麥克風', key: PermissionsAndroid.PERMISSIONS.RECORD_AUDIO },
-      { label: '儲存空間', key: PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE, condition: Number(Platform.Version) < 30 },
-      { label: '背景錄音', key: FOREGROUND_MIC, condition: Number(Platform.Version) >= 34 },
-    ];
-
-    const missing: string[] = [];
-
-    for (const { label, key, condition = true } of required) {
-      if (!condition) continue;
-      const granted = await PermissionsAndroid.check(key as any);
-      if (!granted) {
-        missing.push(label);
+    const checkMissingPermissions = async (): Promise<string[]> => {
+      const FOREGROUND_MIC = 'android.permission.FOREGROUND_SERVICE_MICROPHONE';
+  
+      const required: { label: string; key: string; condition?: boolean }[] = [
+        { label: '麥克風', key: PermissionsAndroid.PERMISSIONS.RECORD_AUDIO },
+        { label: '儲存空間', key: PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE, condition: Number(Platform.Version) < 30 },
+        { label: '背景錄音', key: FOREGROUND_MIC, condition: Number(Platform.Version) >= 34 },
+      ];
+  
+      const missing: string[] = [];
+  
+      for (const { label, key, condition = true } of required) {
+        if (!condition) continue;
+        const granted = await PermissionsAndroid.check(key as any);
+        if (!granted) {
+          missing.push(label);
+        }
       }
-    }
-
-    return missing;
-  };
-*/
+  
+      return missing;
+    };
+  */
   const requestPermissions = async (silent = false): Promise<boolean> => {
     try {
       const requiredPermissions = [
@@ -479,101 +493,7 @@ const [editTranscript, setEditTranscript] = useState('');
       }
     };
   }, [currentSound]);
-  /*
-    // 新增处理 file:// URI 的函数
-  const handleFileUri = async (fileUri: string, sourceLabel: string) => {
-    try {
-      // 检查文件是否存在
-      const fileExists = await RNFS.exists(fileUri.replace('file://', ''));
-      if (!fileExists) {
-        throw new Error('分享的文件不存在');
-      }
-  
-      // 创建目标路径
-      const now = new Date();
-      const filename = `shared_${now.getTime()}${fileUri.substring(fileUri.lastIndexOf('.'))}`;
-      const destPath = `${RNFS.ExternalDirectoryPath}/${filename}`;
-  
-      // 复制文件到应用目录
-      await RNFS.copyFile(fileUri, destPath);
-  
-      // 添加到录音列表
-      const newItem: RecordingItem = {
-        uri: `file://${destPath}`,
-        name: filename,
-        displayName: `[分享] ${sourceLabel} ${filename}`,
-        derivedFiles: {},
-      };
-  
-      setRecordings(prev => [newItem, ...prev]);
-    } catch (err) {
-      console.error('处理 file:// URI 失败:', err);
-      Alert.alert('分享错误', '无法处理此文件分享');
-      throw err;
-    }
-  };
-  
-  // 強化 handleSharedFile 函數
-  const handleSharedFile = async (item: SharedItem) => {
-    try {
-      if (!item.data) {
-        console.log('無效的分享內容');
-        return;
-      }
-  
-      // 處理不同分享來源
-      if (item.data.startsWith('content://')) {
-        // Android 內容 URI
-        await handleContentUri(item.data, '[分享音檔]');
-      } else if (item.data.startsWith('file://')) {
-        // 直接檔案路徑
-        await handleFileUri(item.data, '[檔案分享]');
-      } else {
-        console.log('不支援的分享格式:', item);
-      }
-    } catch (err) {
-      console.error('處理分享失敗:', err);
-      Alert.alert('分享錯誤', '無法處理此分享內容');
-    }
-  };
-  
-  // 新增處理函數
-  const handleContentUri = async (uri: string, sourceLabel: string) => {
-    try {
-      // 檢查權限
-      const granted = await PermissionsAndroid.check(
-        PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE
-      );
-      
-      if (!granted) {
-        const result = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE
-        );
-        if (result !== 'granted') throw new Error('儲存權限被拒絕');
-      }
-  
-      // 複製檔案到應用目錄
-      const now = new Date();
-      const filename = `shared_${now.getTime()}.${uri.endsWith('.mp3') ? 'mp3' : 'm4a'}`;
-      const destPath = `${RNFS.ExternalDirectoryPath}/${filename}`;
-  
-      await RNFS.copyFile(uri, destPath);
-  
-      // 添加到錄音列表
-      const newItem: RecordingItem = {
-        uri: `file://${destPath}`,
-        name: filename,
-        displayName: `[分享] ${sourceLabel} ${filename}`,
-        derivedFiles: {},
-      };
-  
-      setRecordings(prev => [newItem, ...prev]);
-    } catch (err) {
-      console.error('處理 content:// URI 失敗:', err);
-      throw err;
-    }
-  };
-  */
+
 
   // 錄音工作
   const task = async (args: any) => {
@@ -1005,10 +925,18 @@ const [editTranscript, setEditTranscript] = useState('');
     setSelectedDerivedIndex(null);
     setSelectedMainIndex(null);
     setMainMenuPosition(null);
+    // 退出名稱編輯
+    setEditName('');
+    setEditingIndex(null);
 
-    if (editingIndex !== null) {
-      saveEditedName(editingIndex);
-    }
+    // 退出 transcript 編輯
+    setEditTranscript('');
+    setEditingTranscriptIndex(null);
+
+    // 退出 summary 編輯
+    setEditSummary('');
+    setEditingSummaryIndex(null);
+
   };
 
   if (!isLoading && permissionStatus === 'denied') {
@@ -1051,7 +979,7 @@ const [editTranscript, setEditTranscript] = useState('');
             {/* 漢堡菜單內容 */}
             {menuVisible && (
               <View style={styles.menuContainer}>
-                <Text style={styles.menuItem}>版本: v1.2.6</Text>
+                <Text style={styles.menuItem}>版本: v1.2.7</Text>
 
                 {/* 深淺色切換 */}
                 <TouchableOpacity
@@ -1126,46 +1054,70 @@ const [editTranscript, setEditTranscript] = useState('');
                   const isSummaryView = showSummaryIndex === index;
                   const shouldHideDefaultUI = isTranscriptView || isSummaryView;
 
+                  const hasAnyContent = item.transcript || item.summary;
+                  const isVisible = showTranscriptIndex === index || showSummaryIndex === index;
+                  const canHide = hasAnyContent && isVisible;
+
+
                   return (
                     <View key={index} style={{ position: 'relative', zIndex: selectedDerivedIndex?.index === index ? 999 : 0 }}>
                       {/* 單個錄音項目的完整 UI */}
                       <View style={styles.recordingItem}>
                         {/* 名稱行 */}
                         <View style={styles.nameRow}>
-                          {/* 播放按鈕 */}
-                          <TouchableOpacity
-                            style={styles.playIconContainer}
-                            onPress={() => {
-                              closeAllMenus();
-                              togglePlayback(item.uri, index);
-                            }}
-                          >
-                            <Text style={styles.playIcon}>
-                              {isCurrentPlaying && isPlaying ? '❚❚' : '▶'}
-                            </Text>
-                          </TouchableOpacity>
 
 
                           {/* 名稱顯示/編輯 */}
                           <View style={styles.nameContainer}>
                             {editingIndex === index ? (
-                              <TextInput
-                                style={styles.nameInput}
-                                value={editName}
-                                onChangeText={setEditName}
-                                onSubmitEditing={() => saveEditedName(index)}
-                                autoFocus
-                                onBlur={() => saveEditedName(index)}
-                              />
+                              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <TextInput
+                                  style={[styles.nameInput, { flex: 1 }]}
+                                  value={editName}
+                                  onChangeText={setEditName}
+                                  autoFocus
+                                />
+                                <View style={{ flexDirection: 'row', gap: 16 }}>
+                                  <TouchableOpacity
+                                    onPress={() => {
+                                      if (editName.trim()) {
+                                        const updated = recordings.map((rec, i) =>
+                                          i === index ? { ...rec, displayName: editName } : rec
+                                        );
+                                        setRecordings(updated);
+                                        saveRecordings(updated);
+                                      }
+                                      setEditingIndex(null);
+                                    }}
+                                  >
+                                    <Text style={styles.transcriptActionButton}>💾</Text>
+                                  </TouchableOpacity>
+                                  <TouchableOpacity
+                                    onPress={() => {
+                                      setEditName('');
+                                      setEditingIndex(null);
+                                    }}
+                                  >
+                                    <Text style={styles.transcriptActionButton}>✖️</Text>
+                                  </TouchableOpacity>
+                                </View>
+                              </View>
                             ) : (
                               <TouchableOpacity
                                 onPress={() => {
                                   closeAllMenus();
                                   togglePlayback(item.uri, index);
                                 }}
+                                style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
                               >
+                                <Text style={styles.playIcon}>
+                                  {playingUri === item.uri && isPlaying ? '❚❚' : '▶'}
+                                </Text>
                                 <Text
-                                  style={[styles.recordingName, playingUri === item.uri && styles.playingText]}
+                                  style={[
+                                    styles.recordingName,
+                                    playingUri === item.uri && styles.playingText
+                                  ]}
                                   numberOfLines={1}
                                   ellipsizeMode="tail"
                                 >
@@ -1174,10 +1126,11 @@ const [editTranscript, setEditTranscript] = useState('');
                               </TouchableOpacity>
 
                             )}
+
                           </View>
 
                           {/* 更多按鈕 */}
-                          {(isCurrentPlaying || !isPlaying) && (
+                          {(isCurrentPlaying || !isPlaying) && editingIndex !== index && (
                             <TouchableOpacity
                               style={styles.moreButton}
                               onPress={(e) => {
@@ -1258,17 +1211,17 @@ const [editTranscript, setEditTranscript] = useState('');
                                 setShowSummaryIndex(null);
                                 return;
                               }
-                            
+
                               setIsTranscribingIndex(index);
                               try {
                                 const { transcript } = await transcribeAudio(item);
-                            
+
                                 const updated = recordings.map((rec, i) =>
                                   i === index ? { ...rec, transcript: transcript.text } : rec
                                 );
                                 setRecordings(updated);
                                 await saveRecordings(updated); // ✅ 寫入本地 JSON
-                            
+
                                 setShowTranscriptIndex(index);
                                 setShowSummaryIndex(null);
                               } catch (err) {
@@ -1277,7 +1230,7 @@ const [editTranscript, setEditTranscript] = useState('');
                                 setIsTranscribingIndex(null);
                               }
                             }}
-                            
+
                           >
                             <Text style={{ color: 'white', fontSize: 14 }}>錄音筆記</Text>
                           </TouchableOpacity>
@@ -1297,22 +1250,22 @@ const [editTranscript, setEditTranscript] = useState('');
                                 Alert.alert('⚠️ 無法摘要', '請先執行「轉文字」功能');
                                 return;
                               }
-                            
+
                               if (item.summary) {
                                 setShowTranscriptIndex(null);
                                 setShowSummaryIndex(index);
                                 return;
                               }
-                            
+
                               try {
                                 const summary = await summarizeTranscript(item.transcript);
-                            
+
                                 const updated = recordings.map((rec, i) =>
                                   i === index ? { ...rec, summary } : rec
                                 );
                                 setRecordings(updated);
                                 await saveRecordings(updated); // ✅ 寫入本地 JSON
-                            
+
                                 setShowTranscriptIndex(null);
                                 setShowSummaryIndex(index);
                               } catch (err) {
@@ -1322,6 +1275,22 @@ const [editTranscript, setEditTranscript] = useState('');
                           >
                             <Text style={{ color: 'white', fontSize: 14 }}>重點摘要</Text>
                           </TouchableOpacity>
+                          {/* 隱藏按鈕（只有已顯示 transcript 或 summary 才能點） */}
+                          <TouchableOpacity
+                            disabled={!canHide}
+                            onPress={() => {
+                              setShowTranscriptIndex(null);
+                              setShowSummaryIndex(null);
+                            }}
+                            style={{
+                              paddingVertical: 6,
+                              paddingHorizontal: 12,
+                              backgroundColor: canHide ? colors.primary : '#ccc',
+                              borderRadius: 8
+                            }}
+                          >
+                            <Text style={{ color: 'white', fontSize: 14 }}>隱藏</Text>
+                          </TouchableOpacity>
                         </View>
                         {/*放這裡才能放在下一行*/}
                         {isTranscribingIndex === index && (
@@ -1329,82 +1298,158 @@ const [editTranscript, setEditTranscript] = useState('');
                         )}
 
 
-{showTranscriptIndex === index && (
-  <View style={styles.transcriptContainer}>
-    <View style={styles.bar} />
+                        {showTranscriptIndex === index && (
+                          <View style={styles.transcriptContainer}>
+                            <View style={styles.bar} />
 
-    {editingTranscriptIndex === index ? (
-      <>
-        <TextInput
-          style={styles.transcriptTextInput}
-          value={editTranscript}
-          onChangeText={setEditTranscript}
-          multiline
-          autoFocus
-        />
-<View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 16, marginTop: 8 }}>
-  <TouchableOpacity
-    onPress={async () => {
-      Keyboard.dismiss(); // ✅ 先關鍵盤
-      const updated = recordings.map((rec, i) =>
-        i === index ? { ...rec, transcript: editTranscript } : rec
-      );
-      setRecordings(updated);
-      await saveRecordings(updated);
-      setEditingTranscriptIndex(null);
-    }}
-  >
-    <Text style={[styles.transcriptActionButton, { color: colors.primary }]}>💾 儲存</Text>
-  </TouchableOpacity>
+                            {editingTranscriptIndex === index ? (
+                              <>
+                                <TextInput
+                                  style={styles.transcriptTextInput}
+                                  value={editTranscript}
+                                  onChangeText={setEditTranscript}
+                                  multiline
+                                  autoFocus
+                                />
+                                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 16, marginTop: 8 }}>
+                                  <TouchableOpacity
+                                    onPress={async () => {
+                                      Keyboard.dismiss(); // ✅ 先關鍵盤
+                                      const updated = recordings.map((rec, i) =>
+                                        i === index ? { ...rec, transcript: editTranscript } : rec
+                                      );
+                                      setRecordings(updated);
+                                      await saveRecordings(updated);
+                                      setEditingTranscriptIndex(null);
+                                    }}
+                                  >
+                                    <Text style={[styles.transcriptActionButton, { color: colors.primary }]}>💾 儲存</Text>
+                                  </TouchableOpacity>
 
-  <TouchableOpacity
-    onPress={() => {
-      Keyboard.dismiss();                 // ✅ 關鍵盤
-      setEditTranscript('');             // ✅ 清空暫存
-      setEditingTranscriptIndex(null);   // ✅ 關閉編輯模式
-    }}
-  >
-    <Text style={[styles.transcriptActionButton]}>✖️ 取消</Text>
-  </TouchableOpacity>
-</View>
+                                  <TouchableOpacity
+                                    onPress={() => {
+                                      Keyboard.dismiss();                 // ✅ 關鍵盤
+                                      setEditTranscript('');             // ✅ 清空暫存
+                                      setEditingTranscriptIndex(null);   // ✅ 關閉編輯模式
+                                    }}
+                                  >
+                                    <Text style={[styles.transcriptActionButton]}>✖️ 取消</Text>
+                                  </TouchableOpacity>
+                                </View>
 
-      </>
-    ) : (
-      <>
-        <Text style={styles.transcriptText}>{item.transcript}</Text>
-        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 8 }}>
-          <TouchableOpacity onPress={() => {
-            setEditTranscript(item.transcript || '');
-            setEditingTranscriptIndex(index);
-          }}>
-            <Text style={styles.transcriptActionButton}>✏️ 修改</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => {
-              if (item.transcript) {
-                Sharing.shareAsync(item.transcript);
-              } else {
-                Alert.alert('無法分享', '找不到轉文字內容');
-              }
-            }}
-          >
-            <Text style={styles.transcriptActionButton}>📤 轉發</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={async () => {
-            const updated = recordings.map((rec, i) =>
-              i === index ? { ...rec, transcript: undefined } : rec
-            );
-            setRecordings(updated);
-            await saveRecordings(updated);
-            setShowTranscriptIndex(null);
-          }}>
-            <Text style={styles.transcriptActionButton}>🗑️ 刪除</Text>
-          </TouchableOpacity>
-        </View>
-      </>
-    )}
-  </View>
-)}
+                              </>
+                            ) : (
+                              <>
+                                <Text style={styles.transcriptText}>{item.transcript}</Text>
+                                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 8 }}>
+                                  <TouchableOpacity onPress={() => {
+                                    setEditTranscript(item.transcript || '');
+                                    setEditingTranscriptIndex(index);
+                                  }}>
+                                    <Text style={styles.transcriptActionButton}>✏️ 修改</Text>
+                                  </TouchableOpacity>
+
+<TouchableOpacity
+onPress={() => {
+  shareText(item.transcript || '');
+}}
+>
+<Text style={styles.transcriptActionButton}>📤 轉發</Text>
+</TouchableOpacity>
+
+
+                                  <TouchableOpacity onPress={async () => {
+                                    const updated = recordings.map((rec, i) =>
+                                      i === index ? { ...rec, transcript: undefined } : rec
+                                    );
+                                    setRecordings(updated);
+                                    await saveRecordings(updated);
+                                    setShowTranscriptIndex(null);
+                                  }}>
+                                    <Text style={styles.transcriptActionButton}>🗑️ 刪除</Text>
+                                  </TouchableOpacity>
+                                </View>
+                              </>
+                            )}
+                          </View>
+                        )}
+                        {showSummaryIndex === index && item.summary && (
+                          <View style={styles.transcriptContainer}>
+                            <View style={styles.bar} />
+
+                            {editingSummaryIndex === index ? (
+                              <>
+                                <TextInput
+                                  style={styles.transcriptTextInput}
+                                  value={editSummary}
+                                  onChangeText={setEditSummary}
+                                  multiline
+                                  autoFocus
+                                />
+                                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 16, marginTop: 8 }}>
+                                  <TouchableOpacity
+                                    onPress={async () => {
+                                      Keyboard.dismiss();
+                                      const updated = recordings.map((rec, i) =>
+                                        i === index ? { ...rec, summary: editSummary } : rec
+                                      );
+                                      setRecordings(updated);
+                                      await saveRecordings(updated);
+                                      setEditingSummaryIndex(null);
+                                    }}
+                                  >
+                                    <Text style={[styles.transcriptActionButton, { color: colors.primary }]}>💾 儲存</Text>
+                                  </TouchableOpacity>
+
+                                  <TouchableOpacity
+                                    onPress={() => {
+                                      Keyboard.dismiss();
+                                      setEditSummary('');
+                                      setEditingSummaryIndex(null);
+                                    }}
+                                  >
+                                    <Text style={styles.transcriptActionButton}>✖️ 取消</Text>
+                                  </TouchableOpacity>
+                                </View>
+                              </>
+                            ) : (
+                              <>
+                                <Text style={styles.transcriptText}>{item.summary}</Text>
+                                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 8 }}>
+                                  <TouchableOpacity
+                                    onPress={() => {
+                                      setEditSummary(item.summary || '');
+                                      setEditingSummaryIndex(index);
+                                    }}
+                                  >
+                                    <Text style={styles.transcriptActionButton}>✏️ 修改</Text>
+                                  </TouchableOpacity>
+                                  <TouchableOpacity
+  onPress={() => {
+    shareText(item.summary || '');
+  }}
+>
+  <Text style={styles.transcriptActionButton}>📤 轉發</Text>
+</TouchableOpacity>
+
+
+                                  <TouchableOpacity
+                                    onPress={async () => {
+                                      const updated = recordings.map((rec, i) =>
+                                        i === index ? { ...rec, summary: undefined } : rec
+                                      );
+                                      setRecordings(updated);
+                                      await saveRecordings(updated);
+                                      setShowSummaryIndex(null);
+                                    }}
+                                  >
+                                    <Text style={styles.transcriptActionButton}>🗑️ 刪除</Text>
+                                  </TouchableOpacity>
+                                </View>
+                              </>
+                            )}
+                          </View>
+                        )}
 
 
                         {/* 衍生檔案列表 */}
@@ -1581,9 +1626,12 @@ const [editTranscript, setEditTranscript] = useState('');
                 <TouchableOpacity
                   style={styles.optionButton}
                   onPress={() => {
-                    startEditingName(selectedMainIndex);
-                    closeAllMenus();
+                    closeAllMenus(); // ✅ 先關選單
+                    setTimeout(() => {
+                      startEditingName(selectedMainIndex); // ✅ 再進入編輯（延遲避免立即被清掉）
+                    }, 0);
                   }}
+                  
                 >
                   <Text style={styles.optionText}>✏️ 重新命名</Text>
                 </TouchableOpacity>
