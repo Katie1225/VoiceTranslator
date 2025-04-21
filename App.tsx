@@ -34,6 +34,7 @@ import { createStyles } from './styles/audioStyles';
 import { ANDROID_AUDIO_ENCODERS, ANDROID_OUTPUT_FORMATS } from './constants/AudioConstants';
 import { lightTheme, darkTheme, additionalColors } from './constants/Colors';
 import { Linking } from 'react-native'; // ✅ 正確寫法
+import { Keyboard } from 'react-native';
 //import ShareMenu from 'react-native-share-menu';
 /*
 type SharedItem = {
@@ -740,6 +741,10 @@ const [editTranscript, setEditTranscript] = useState('');
           derivedFiles: {},
         };
 
+        setShowTranscriptIndex(null);   // 🔧 錄音完後，確保不會自動顯示 transcript
+        setShowSummaryIndex(null);      // 🔧 順便清掉 summary 展開
+        setEditingTranscriptIndex(null); // 🔧 清除編輯狀態（如果你有保留 transcript 編輯功能）
+
         setRecordings(prev => [newItem, ...prev]);
       } else {
         Alert.alert("錄音失敗", "錄音檔案為空");
@@ -1329,68 +1334,77 @@ const [editTranscript, setEditTranscript] = useState('');
     <View style={styles.bar} />
 
     {editingTranscriptIndex === index ? (
-      <TextInput
-        style={styles.transcriptTextInput}
-        value={editTranscript}
-        onChangeText={setEditTranscript}
-        multiline
-        autoFocus
-        onBlur={async () => {
-          const updated = recordings.map((rec, i) =>
-            i === index ? { ...rec, transcript: editTranscript } : rec
-          );
-          setRecordings(updated);
-          await saveRecordings(updated);
-          setEditingTranscriptIndex(null);
-        }}
-      />
-    ) : (
-      <Text style={styles.transcriptText}>{item.transcript}</Text>
-    )}
+      <>
+        <TextInput
+          style={styles.transcriptTextInput}
+          value={editTranscript}
+          onChangeText={setEditTranscript}
+          multiline
+          autoFocus
+        />
+<View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 16, marginTop: 8 }}>
+  <TouchableOpacity
+    onPress={async () => {
+      Keyboard.dismiss(); // ✅ 先關鍵盤
+      const updated = recordings.map((rec, i) =>
+        i === index ? { ...rec, transcript: editTranscript } : rec
+      );
+      setRecordings(updated);
+      await saveRecordings(updated);
+      setEditingTranscriptIndex(null);
+    }}
+  >
+    <Text style={[styles.transcriptActionButton, { color: colors.primary }]}>💾 儲存</Text>
+  </TouchableOpacity>
 
-    {/* 右下角操作列 */}
-    <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8 }}>
-      <TouchableOpacity onPress={() => {
-        setEditTranscript(item.transcript || '');
-        setEditingTranscriptIndex(index);
-      }}>
-        <Text style={[styles.transcriptActionButton]}>✏️ 修改</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-  onPress={() => {
-    if (item.transcript) {
-      Sharing.shareAsync(item.transcript);
-    } else {
-      Alert.alert('無法分享', '找不到轉文字內容');
-    }
-  }}
->
-  <Text style={styles.transcriptActionButton}>📤 轉發</Text>
-</TouchableOpacity>
-      <TouchableOpacity onPress={async () => {
-        const updated = recordings.map((rec, i) =>
-          i === index ? { ...rec, transcript: undefined } : rec
-        );
-        setRecordings(updated);
-        await saveRecordings(updated);
-        setShowTranscriptIndex(null);
-      }}>
-        <Text style={[styles.transcriptActionButton]}>🗑️ 刪除</Text>
-      </TouchableOpacity>
-    </View>
+  <TouchableOpacity
+    onPress={() => {
+      Keyboard.dismiss();                 // ✅ 關鍵盤
+      setEditTranscript('');             // ✅ 清空暫存
+      setEditingTranscriptIndex(null);   // ✅ 關閉編輯模式
+    }}
+  >
+    <Text style={[styles.transcriptActionButton]}>✖️ 取消</Text>
+  </TouchableOpacity>
+</View>
+
+      </>
+    ) : (
+      <>
+        <Text style={styles.transcriptText}>{item.transcript}</Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 8 }}>
+          <TouchableOpacity onPress={() => {
+            setEditTranscript(item.transcript || '');
+            setEditingTranscriptIndex(index);
+          }}>
+            <Text style={styles.transcriptActionButton}>✏️ 修改</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              if (item.transcript) {
+                Sharing.shareAsync(item.transcript);
+              } else {
+                Alert.alert('無法分享', '找不到轉文字內容');
+              }
+            }}
+          >
+            <Text style={styles.transcriptActionButton}>📤 轉發</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={async () => {
+            const updated = recordings.map((rec, i) =>
+              i === index ? { ...rec, transcript: undefined } : rec
+            );
+            setRecordings(updated);
+            await saveRecordings(updated);
+            setShowTranscriptIndex(null);
+          }}>
+            <Text style={styles.transcriptActionButton}>🗑️ 刪除</Text>
+          </TouchableOpacity>
+        </View>
+      </>
+    )}
   </View>
 )}
-
-
- {/*  2025/4/21
-                      {showSummaryIndex === index && (
-                          <View style={styles.transcriptContainer}>
-                            <View style={styles.bar} />
-                            <Text style={styles.transcriptText}>
-                              {item.summary || '（尚未摘要）'}
-                            </Text>
-                          </View>
-                        )} */}
 
 
                         {/* 衍生檔案列表 */}
