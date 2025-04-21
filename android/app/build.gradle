@@ -81,19 +81,21 @@ def enableProguardInReleaseBuilds = (findProperty('android.enableProguardInRelea
 def jscFlavor = 'org.webkit:android-jsc:+'
 
 android {
+    compileSdkVersion 33
     ndkVersion rootProject.ext.ndkVersion
 
-    buildToolsVersion rootProject.ext.buildToolsVersion
+   buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
     namespace 'com.katiehuang.audiorecordermvp'
-    defaultConfig {
-        applicationId 'com.katiehuang.audiorecordermvp'
-        minSdkVersion rootProject.ext.minSdkVersion
-        targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 6
-        versionName "1.1.4"
-    }
+  defaultConfig {
+        namespace 'com.katiehuang.audiorecordermvp'
+    applicationId "com.katiehuang.audiorecordermvp"
+    minSdkVersion 24
+    targetSdkVersion 33
+    versionCode 1
+    versionName "1.0"
+  }
     signingConfigs {
         debug {
             storeFile file('debug.keystore')

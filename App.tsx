@@ -23,7 +23,6 @@ import AudioRecorderPlayer from 'react-native-audio-recorder-player';
 import BackgroundService from 'react-native-background-actions';
 import RNFS from 'react-native-fs';
 
-
 import {
   RecordingItem,
   enhanceAudio,
@@ -35,7 +34,14 @@ import { createStyles } from './styles/audioStyles';
 import { ANDROID_AUDIO_ENCODERS, ANDROID_OUTPUT_FORMATS } from './constants/AudioConstants';
 import { lightTheme, darkTheme, additionalColors } from './constants/Colors';
 import { Linking } from 'react-native'; // ✅ 正確寫法
-
+//import ShareMenu from 'react-native-share-menu';
+/*
+type SharedItem = {
+  mimeType: string;
+  data: string;
+  extraData?: Record<string, any>;
+};
+*/
 const GlobalRecorderState = {
   isRecording: false,
   filePath: '',
@@ -97,6 +103,10 @@ const AudioRecorder = () => {
   // 轉文字重點摘要
   const [showTranscriptIndex, setShowTranscriptIndex] = useState<number | null>(null);
   const [showSummaryIndex, setShowSummaryIndex] = useState<number | null>(null);
+
+  const [editingTranscriptIndex, setEditingTranscriptIndex] = useState<number | null>(null);
+const [editTranscript, setEditTranscript] = useState('');
+
 
   const setPlaybackRate = async (rate: number) => {
     setCurrentPlaybackRate(rate); // 儲存當前播放速度
@@ -180,25 +190,25 @@ const AudioRecorder = () => {
         `${FileSystem.documentDirectory}recordings.json`,
         JSON.stringify(items)
       );
-  
+
       // ✅ 額外備份一份到外部儲存
       const backupPath = `${RNFS.ExternalDirectoryPath}/recordings_backup.json`;
       await RNFS.writeFile(backupPath, JSON.stringify(items), 'utf8');
-  
+
     } catch (err) {
       console.error('儲存錄音列表失敗:', err);
     }
   };
-  
+
 
   // 從本地檔案載入錄音列表
   const loadRecordings = async () => {
     try {
       const internalPath = `${FileSystem.documentDirectory}recordings.json`;
       const backupPath = `${RNFS.ExternalDirectoryPath}/recordings_backup.json`;
-  
+
       let existingData: RecordingItem[] = [];
-  
+
       // 嘗試讀取內部 JSON
       const internalInfo = await FileSystem.getInfoAsync(internalPath);
       if (internalInfo.exists) {
@@ -213,19 +223,19 @@ const AudioRecorder = () => {
           console.log('✅ 從外部備份還原 recordings.json');
         }
       }
-  
+
       // 掃描實體音檔
       const audioFiles = await RNFS.readDir(RNFS.ExternalDirectoryPath);
       const m4aFiles = audioFiles.filter(file =>
         /\.(m4a)$/i.test(file.name)
       );
-      
+
       console.log('📂 掃描到的 .m4a 檔案：');
       m4aFiles.forEach(file => {
         console.log('🎧', file.name);
       });
-      
-  
+
+
       // 合併：保留原資料，補回新音檔
       const merged: RecordingItem[] = [
         ...existingData,
@@ -238,16 +248,15 @@ const AudioRecorder = () => {
             return matched
               ? null
               : {
-                  uri: fileUri,
-                  name: file.name, 
-                  displayName: file.name,
-                  derivedFiles: {},
-                };
+                uri: fileUri,
+                name: file.name,
+                displayName: file.name,
+                derivedFiles: {},
+              };
           })
           .filter(Boolean) as RecordingItem[]
       ];
-           
-  
+
       setRecordings(merged);
       await saveRecordings(merged); // 寫回最新 JSON 與備份
     } catch (err) {
@@ -256,8 +265,17 @@ const AudioRecorder = () => {
       setIsLoading(false);
     }
   };
+
+  const updateRecordingAtIndex = async (index: number, updates: Partial<RecordingItem>) => {
+    const updated = recordings.map((item, i) =>
+      i === index ? { ...item, ...updates } : item
+    );
+    setRecordings(updated);
+    await saveRecordings(updated);
+  };
   
 
+/* 2025/4/21 封存
 
   const checkMissingPermissions = async (): Promise<string[]> => {
     const FOREGROUND_MIC = 'android.permission.FOREGROUND_SERVICE_MICROPHONE';
@@ -280,7 +298,7 @@ const AudioRecorder = () => {
 
     return missing;
   };
-
+*/
   const requestPermissions = async (silent = false): Promise<boolean> => {
     try {
       const requiredPermissions = [
@@ -290,7 +308,10 @@ const AudioRecorder = () => {
           : []),
         ...(Number(Platform.Version) >= 34
           ? ['android.permission.FOREGROUND_SERVICE_MICROPHONE' as any]
-          : [])
+          : []),
+        ...(Number(Platform.Version) >= 33
+          ? [PermissionsAndroid.PERMISSIONS.READ_MEDIA_AUDIO]
+          : [PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE]),
       ];
 
       const results = await PermissionsAndroid.requestMultiple(requiredPermissions);
@@ -425,7 +446,26 @@ const AudioRecorder = () => {
       saveRecordings(recordings);
     }
   }, [recordings]);
-
+  /*
+    // 接收外部音檔  
+    useEffect(() => {
+      const handleShare = (sharedItem: SharedItem | null) => {
+        if (sharedItem) {
+          console.log('收到分享內容:', sharedItem);
+          handleSharedFile(sharedItem);
+        }
+      };
+  
+      // 初始化監聽
+      ShareMenu.getInitialShare(handleShare);
+      const listener = ShareMenu.addNewShareListener(handleShare);
+    
+      return () => {
+        listener.remove();
+      };
+    }, []);
+    
+    */
 
   // 清理資源
   useEffect(() => {
@@ -438,6 +478,101 @@ const AudioRecorder = () => {
       }
     };
   }, [currentSound]);
+  /*
+    // 新增处理 file:// URI 的函数
+  const handleFileUri = async (fileUri: string, sourceLabel: string) => {
+    try {
+      // 检查文件是否存在
+      const fileExists = await RNFS.exists(fileUri.replace('file://', ''));
+      if (!fileExists) {
+        throw new Error('分享的文件不存在');
+      }
+  
+      // 创建目标路径
+      const now = new Date();
+      const filename = `shared_${now.getTime()}${fileUri.substring(fileUri.lastIndexOf('.'))}`;
+      const destPath = `${RNFS.ExternalDirectoryPath}/${filename}`;
+  
+      // 复制文件到应用目录
+      await RNFS.copyFile(fileUri, destPath);
+  
+      // 添加到录音列表
+      const newItem: RecordingItem = {
+        uri: `file://${destPath}`,
+        name: filename,
+        displayName: `[分享] ${sourceLabel} ${filename}`,
+        derivedFiles: {},
+      };
+  
+      setRecordings(prev => [newItem, ...prev]);
+    } catch (err) {
+      console.error('处理 file:// URI 失败:', err);
+      Alert.alert('分享错误', '无法处理此文件分享');
+      throw err;
+    }
+  };
+  
+  // 強化 handleSharedFile 函數
+  const handleSharedFile = async (item: SharedItem) => {
+    try {
+      if (!item.data) {
+        console.log('無效的分享內容');
+        return;
+      }
+  
+      // 處理不同分享來源
+      if (item.data.startsWith('content://')) {
+        // Android 內容 URI
+        await handleContentUri(item.data, '[分享音檔]');
+      } else if (item.data.startsWith('file://')) {
+        // 直接檔案路徑
+        await handleFileUri(item.data, '[檔案分享]');
+      } else {
+        console.log('不支援的分享格式:', item);
+      }
+    } catch (err) {
+      console.error('處理分享失敗:', err);
+      Alert.alert('分享錯誤', '無法處理此分享內容');
+    }
+  };
+  
+  // 新增處理函數
+  const handleContentUri = async (uri: string, sourceLabel: string) => {
+    try {
+      // 檢查權限
+      const granted = await PermissionsAndroid.check(
+        PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE
+      );
+      
+      if (!granted) {
+        const result = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE
+        );
+        if (result !== 'granted') throw new Error('儲存權限被拒絕');
+      }
+  
+      // 複製檔案到應用目錄
+      const now = new Date();
+      const filename = `shared_${now.getTime()}.${uri.endsWith('.mp3') ? 'mp3' : 'm4a'}`;
+      const destPath = `${RNFS.ExternalDirectoryPath}/${filename}`;
+  
+      await RNFS.copyFile(uri, destPath);
+  
+      // 添加到錄音列表
+      const newItem: RecordingItem = {
+        uri: `file://${destPath}`,
+        name: filename,
+        displayName: `[分享] ${sourceLabel} ${filename}`,
+        derivedFiles: {},
+      };
+  
+      setRecordings(prev => [newItem, ...prev]);
+    } catch (err) {
+      console.error('處理 content:// URI 失敗:', err);
+      throw err;
+    }
+  };
+  */
 
   // 錄音工作
   const task = async (args: any) => {
@@ -632,6 +767,44 @@ const AudioRecorder = () => {
     }
   };
 
+  // 接收外部音檔
+  const handleImportedAudio = async (importedPath: string, sourceText?: string) => {
+    const now = new Date();
+    const filename = `shared_${now.getTime()}.m4a`;
+    const destPath = `${RNFS.ExternalDirectoryPath}/${filename}`;
+
+    try {
+      await RNFS.copyFile(importedPath, destPath);
+
+      // 取得音檔長度
+      const { sound, status } = await Audio.Sound.createAsync({ uri: `file://${destPath}` }, { shouldPlay: false });
+      const duration = status.isLoaded && status.durationMillis ? Math.round(status.durationMillis / 1000) : '?';
+      await sound.unloadAsync();
+
+      const hours = now.getHours().toString().padStart(2, '0');
+      const minutes = now.getMinutes().toString().padStart(2, '0');
+      const seconds = now.getSeconds().toString().padStart(2, '0');
+      const dateStr = `${now.getMonth() + 1}/${now.getDate()}`;
+
+      let sourceLabel = '轉入';
+      if (sourceText?.toLowerCase().includes('line')) sourceLabel = 'line';
+      else if (sourceText?.toLowerCase().includes('whatsapp')) sourceLabel = 'whatsapp';
+
+      const displayName = `[${sourceLabel}] ${duration}秒 ${hours}:${minutes}:${seconds} ${dateStr}`;
+
+      const newItem: RecordingItem = {
+        uri: `file://${destPath}`,
+        name: filename,
+        displayName,
+        derivedFiles: {},
+      };
+
+      setRecordings(prev => [newItem, ...prev]); // ✅ 加入清單
+    } catch (err) {
+      console.error("❌ 匯入音檔失敗", err);
+    }
+  };
+
 
 
   // 播放錄音（帶進度更新）
@@ -726,6 +899,34 @@ const AudioRecorder = () => {
     setEditingIndex(null);
   };
 
+  // 刪除錄音前確認步驟
+  const safeDeleteFile = async (uri: string) => {
+    try {
+      // 確保只留一個斜線前綴
+      const path = uri.replace(/^file:\/+/, '/');
+
+      const exists = await RNFS.exists(path);
+      if (!exists) {
+        console.warn("⚠️ 檔案不存在，略過刪除:", path);
+        return;
+      }
+
+      // 改用「包含目錄」來判斷是外部資料夾
+      if (path.includes('/Android/data/') || path.startsWith(RNFS.ExternalDirectoryPath)) {
+        await RNFS.unlink(path);
+      } else {
+        await FileSystem.deleteAsync(uri, { idempotent: true });
+      }
+
+    } catch (err) {
+      console.error("❌ safeDeleteFile 刪除失敗:", err);
+      Alert.alert("刪除失敗", (err as Error).message);
+      throw err;
+    }
+  };
+
+
+
   // 刪除錄音
   const deleteRecording = async (index: number) => {
     Alert.alert(
@@ -740,14 +941,16 @@ const AudioRecorder = () => {
             try {
               const item = recordings[index];
               // 刪除主檔案
-              await FileSystem.deleteAsync(item.uri, { idempotent: true });
+              await safeDeleteFile(item.uri);
+
               // 刪除衍生檔案
               if (item.derivedFiles?.enhanced?.uri) {
-                await FileSystem.deleteAsync(item.derivedFiles.enhanced.uri, { idempotent: true });
+                await safeDeleteFile(item.derivedFiles.enhanced.uri);
               }
               if (item.derivedFiles?.trimmed?.uri) {
-                await FileSystem.deleteAsync(item.derivedFiles.trimmed.uri, { idempotent: true });
+                await safeDeleteFile(item.derivedFiles.trimmed.uri);
               }
+
 
               const newRecordings = [...recordings];
               newRecordings.splice(index, 1);
@@ -1044,32 +1247,35 @@ const AudioRecorder = () => {
                             }}
 
                             onPress={async () => {
-                              setIsTranscribingIndex(index); // 開始轉文字中，顯示提示
-                              try {
-                                const { transcript } = await transcribeAudio(item);
-
-                                setRecordings(prev =>
-                                  prev.map((rec, i) =>
-                                    i === index
-                                      ? {
-                                        ...rec,
-                                        transcript: transcript.text, // ✅ 儲存純文字
-                                      }
-                                      : rec
-                                  )
-                                );
+                              if (item.transcript) {
+                                // 已轉過文字就直接顯示，不重複呼叫 API
                                 setShowTranscriptIndex(index);
                                 setShowSummaryIndex(null);
-
+                                return;
+                              }
+                            
+                              setIsTranscribingIndex(index);
+                              try {
+                                const { transcript } = await transcribeAudio(item);
+                            
+                                const updated = recordings.map((rec, i) =>
+                                  i === index ? { ...rec, transcript: transcript.text } : rec
+                                );
+                                setRecordings(updated);
+                                await saveRecordings(updated); // ✅ 寫入本地 JSON
+                            
+                                setShowTranscriptIndex(index);
+                                setShowSummaryIndex(null);
                               } catch (err) {
                                 Alert.alert('❌ 轉文字失敗', (err as Error).message);
-                              }finally {
-                                setIsTranscribingIndex(null); // 無論成功失敗，都清除轉文字狀態
+                              } finally {
+                                setIsTranscribingIndex(null);
                               }
                             }}
+                            
                           >
                             <Text style={{ color: 'white', fontSize: 14 }}>錄音筆記</Text>
-                          </TouchableOpacity>                          
+                          </TouchableOpacity>
 
                           {/* 重點摘要按鈕 */}
                           <TouchableOpacity
@@ -1086,28 +1292,28 @@ const AudioRecorder = () => {
                                 Alert.alert('⚠️ 無法摘要', '請先執行「轉文字」功能');
                                 return;
                               }
-
+                            
+                              if (item.summary) {
+                                setShowTranscriptIndex(null);
+                                setShowSummaryIndex(index);
+                                return;
+                              }
+                            
                               try {
                                 const summary = await summarizeTranscript(item.transcript);
-
-                                setRecordings(prev =>
-                                  prev.map((rec, i) =>
-                                    i === index
-                                      ? {
-                                        ...rec,
-                                        summary, // ✅ 儲存到主層
-                                      }
-                                      : rec
-                                  )
+                            
+                                const updated = recordings.map((rec, i) =>
+                                  i === index ? { ...rec, summary } : rec
                                 );
-
+                                setRecordings(updated);
+                                await saveRecordings(updated); // ✅ 寫入本地 JSON
+                            
                                 setShowTranscriptIndex(null);
                                 setShowSummaryIndex(index);
                               } catch (err) {
                                 Alert.alert('❌ 摘要失敗', (err as Error).message);
                               }
                             }}
-
                           >
                             <Text style={{ color: 'white', fontSize: 14 }}>重點摘要</Text>
                           </TouchableOpacity>
@@ -1117,23 +1323,74 @@ const AudioRecorder = () => {
                           <Text style={{ marginTop: 6, color: colors.primary }}>⏳ 轉文字處理中...</Text>
                         )}
 
-                        {showTranscriptIndex === index && (
-                          <View style={styles.transcriptContainer}>
-                            <View style={styles.bar} />
-                            <Text style={styles.transcriptText}>
-                              {item.transcript}
-                            </Text>
-                          </View>
-                        )}
 
-                        {showSummaryIndex === index && (
+{showTranscriptIndex === index && (
+  <View style={styles.transcriptContainer}>
+    <View style={styles.bar} />
+
+    {editingTranscriptIndex === index ? (
+      <TextInput
+        style={styles.transcriptTextInput}
+        value={editTranscript}
+        onChangeText={setEditTranscript}
+        multiline
+        autoFocus
+        onBlur={async () => {
+          const updated = recordings.map((rec, i) =>
+            i === index ? { ...rec, transcript: editTranscript } : rec
+          );
+          setRecordings(updated);
+          await saveRecordings(updated);
+          setEditingTranscriptIndex(null);
+        }}
+      />
+    ) : (
+      <Text style={styles.transcriptText}>{item.transcript}</Text>
+    )}
+
+    {/* 右下角操作列 */}
+    <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8 }}>
+      <TouchableOpacity onPress={() => {
+        setEditTranscript(item.transcript || '');
+        setEditingTranscriptIndex(index);
+      }}>
+        <Text style={[styles.transcriptActionButton]}>✏️ 修改</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+  onPress={() => {
+    if (item.transcript) {
+      Sharing.shareAsync(item.transcript);
+    } else {
+      Alert.alert('無法分享', '找不到轉文字內容');
+    }
+  }}
+>
+  <Text style={styles.transcriptActionButton}>📤 轉發</Text>
+</TouchableOpacity>
+      <TouchableOpacity onPress={async () => {
+        const updated = recordings.map((rec, i) =>
+          i === index ? { ...rec, transcript: undefined } : rec
+        );
+        setRecordings(updated);
+        await saveRecordings(updated);
+        setShowTranscriptIndex(null);
+      }}>
+        <Text style={[styles.transcriptActionButton]}>🗑️ 刪除</Text>
+      </TouchableOpacity>
+    </View>
+  </View>
+)}
+
+
+ {/*  2025/4/21
+                      {showSummaryIndex === index && (
                           <View style={styles.transcriptContainer}>
                             <View style={styles.bar} />
                             <Text style={styles.transcriptText}>
                               {item.summary || '（尚未摘要）'}
                             </Text>
                           </View>
-                        )}
+                        )} */}
 
 
                         {/* 衍生檔案列表 */}
@@ -1252,7 +1509,7 @@ const AudioRecorder = () => {
                 }
               ]}>
 
-                
+
                 {/* 放在這裡！不要放在 map 循環內部 */}
                 <TouchableOpacity
                   style={styles.optionButton}
@@ -1372,7 +1629,7 @@ const AudioRecorder = () => {
                       const uri = selectedDerivedIndex.type === 'enhanced'
                         ? recordings[selectedDerivedIndex.index].derivedFiles!.enhanced!.uri
                         : recordings[selectedDerivedIndex.index].derivedFiles!.trimmed!.uri;
-                      await FileSystem.deleteAsync(uri);
+                      await safeDeleteFile(uri);
                       setRecordings(prev => prev.map(rec => {
                         if (rec.uri === recordings[selectedDerivedIndex.index].uri) {
                           const newDerivedFiles = { ...rec.derivedFiles };

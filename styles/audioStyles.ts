@@ -204,17 +204,7 @@ export const createStyles = (colors: any) => StyleSheet.create({
     elevation: 5,
     minWidth: 120,
   },
-  transcriptContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    paddingLeft: 12,
-    paddingVertical: 6,
-    marginTop: 4,
-    marginBottom: 8,
-    backgroundColor: '#f9f9f9',
-    borderRadius: 6,
-    marginHorizontal: 6,
-  },
+
   bar: {
     width: 4,
     backgroundColor: '#3b64ce',
@@ -222,12 +212,7 @@ export const createStyles = (colors: any) => StyleSheet.create({
     borderRadius: 4,
     marginTop: 3,
   },
-  transcriptText: {
-    flex: 1,
-    fontSize: 14,
-    color: '#333',
-    lineHeight: 20,
-  },
+
   volumeAndTimeContainer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -344,5 +329,45 @@ export const createStyles = (colors: any) => StyleSheet.create({
     shadowRadius: 4,
     zIndex: 10,
   },
+  transcriptContainer: {
+    backgroundColor: '#fff',
+    padding: 12,
+    borderRadius: 12,
+    marginTop: 10,
+    elevation: 2,
+  },
+  
+  transcriptText: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: '#333',
+    paddingRight: 8, // 保留操作列空間
+  },
+  
+  transcriptTextInput: {
+    fontSize: 14,
+    color: '#333',
+    padding: 8,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 8,
+    minHeight: 100,
+    textAlignVertical: 'top',
+    width: '100%',
+  },
+  
+  transcriptActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    marginTop: 12,
+    gap: 12
+  },
+  
+  transcriptActionButton: {
+    fontSize: 13,
+    color: '#666',
+  }
+  
+  
 });
 
