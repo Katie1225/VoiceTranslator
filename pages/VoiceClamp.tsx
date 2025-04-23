@@ -82,10 +82,10 @@ const RecorderPageVoiceClamp = () => {
     };
     const styles = createStyles(colors);
 
-    const [selectedDerivedIndex, setSelectedDerivedIndex] = useState<{
-        type: 'enhanced' | 'trimmed';
+    const [selectedContext, setSelectedContext] = useState<{
+        type: 'main' | 'enhanced' | 'trimmed';
         index: number;
-        position?: { x: number; y: number }; // 添加這個可選屬性
+        position: { x: number; y: number };
     } | null>(null);
 
     const [selectedMainIndex, setSelectedMainIndex] = useState<number | null>(null);
@@ -119,11 +119,11 @@ const RecorderPageVoiceClamp = () => {
     const [recordings, setRecordings] = useState<RecordingItem[]>([]);
 
     const {
-      isLoading,
-      loadRecordings,
-      saveRecordings,
-      safeDeleteFile,
-      updateRecordingAtIndex
+        isLoading,
+        loadRecordings,
+        saveRecordings,
+        safeDeleteFile,
+        updateRecordingAtIndex
     } = useFileStorage(setRecordings);
 
     const {
@@ -137,8 +137,8 @@ const RecorderPageVoiceClamp = () => {
         playRecording,
         togglePlayback,
         setPlaybackPosition
-      } = useAudioPlayer();
-      
+    } = useAudioPlayer();
+
     // WAV錄音配置
     const recordingOptions = {
         android: {
@@ -446,44 +446,45 @@ const RecorderPageVoiceClamp = () => {
         setEditingIndex(null);
     };
 
+
     // 刪除錄音
     const deleteRecording = async (index: number) => {
         Alert.alert(
-          "刪除錄音",
-          "確定要刪除這個錄音嗎？",
-          [
-            { text: "取消", style: "cancel" },
-            {
-              text: "刪除",
-              onPress: async () => {
-                closeAllMenus();
-                try {
-                  const item = recordings[index];
-      
-                  // ✅ 使用 hook 中的工具函式刪除主檔與衍生檔案
-                  await safeDeleteFile(item.uri);
-                  if (item.derivedFiles?.enhanced?.uri) {
-                    await safeDeleteFile(item.derivedFiles.enhanced.uri);
-                  }
-                  if (item.derivedFiles?.trimmed?.uri) {
-                    await safeDeleteFile(item.derivedFiles.trimmed.uri);
-                  }
-      
-                  // ✅ 更新 state
-                  const updated = [...recordings];
-                  updated.splice(index, 1);
-                  setRecordings(updated);
-                  await saveRecordings(updated);
-                } catch (err) {
-                  Alert.alert("刪除失敗", (err as Error).message);
+            "刪除錄音",
+            "確定要刪除這個錄音嗎？",
+            [
+                { text: "取消", style: "cancel" },
+                {
+                    text: "刪除",
+                    onPress: async () => {
+                        closeAllMenus();
+                        try {
+                            const item = recordings[index];
+
+                            // ✅ 使用 hook 中的工具函式刪除主檔與衍生檔案
+                            await safeDeleteFile(item.uri);
+                            if (item.derivedFiles?.enhanced?.uri) {
+                                await safeDeleteFile(item.derivedFiles.enhanced.uri);
+                            }
+                            if (item.derivedFiles?.trimmed?.uri) {
+                                await safeDeleteFile(item.derivedFiles.trimmed.uri);
+                            }
+
+                            // ✅ 更新 state
+                            const updated = [...recordings];
+                            updated.splice(index, 1);
+                            setRecordings(updated);
+                            await saveRecordings(updated);
+                        } catch (err) {
+                            Alert.alert("刪除失敗", (err as Error).message);
+                        }
+                    }
                 }
-              }
-            }
-          ]
+            ]
         );
         setSelectedIndex(null);
-      };
-      
+    };
+
 
     // 分享錄音
     const shareRecording = async (uri: string) => {
@@ -499,6 +500,7 @@ const RecorderPageVoiceClamp = () => {
         setSelectedIndex(null); // 關閉菜單
     };
 
+
     // 格式化時間
     const formatTime = (ms: number) => {
         const totalSeconds = Math.floor(ms / 1000);
@@ -512,14 +514,14 @@ const RecorderPageVoiceClamp = () => {
     };
 
 
+
     // 關閉所有彈出菜單
     const closeAllMenus = () => {
         setSelectedIndex(null);
         setMenuVisible(false);
         setSpeedMenuIndex(null);
-        setSelectedDerivedIndex(null);
-        setSelectedMainIndex(null);
-        setMainMenuPosition(null);
+        setSelectedContext(null);
+
         // 退出名稱編輯
         setEditName('');
         setEditingIndex(null);
@@ -536,17 +538,17 @@ const RecorderPageVoiceClamp = () => {
 
     if (!isLoading && permissionStatus === 'denied') {
         return (
-          <SafeAreaView style={styles.container}>
-            <View style={styles.loadingContainer}>
-              <Text style={styles.loadingText}>⚠️ 請開啟錄音與儲存權限才能使用此 App</Text>
-              <TouchableOpacity onPress={() => requestPermissions()}>
-                <Text style={[styles.loadingText, { color: colors.primary, marginTop: 12 }]}>重新檢查權限</Text>
-              </TouchableOpacity>
-            </View>
-          </SafeAreaView>
+            <SafeAreaView style={styles.container}>
+                <View style={styles.loadingContainer}>
+                    <Text style={styles.loadingText}>⚠️ 請開啟錄音與儲存權限才能使用此 App</Text>
+                    <TouchableOpacity onPress={() => requestPermissions()}>
+                        <Text style={[styles.loadingText, { color: colors.primary, marginTop: 12 }]}>重新檢查權限</Text>
+                    </TouchableOpacity>
+                </View>
+            </SafeAreaView>
         );
-      }
-      
+    }
+
 
     return (
         <TouchableWithoutFeedback onPress={closeAllMenus}>
@@ -580,9 +582,10 @@ const RecorderPageVoiceClamp = () => {
                             styles={styles}
                         />
 
+
                         {/* 錄音按鈕 & 音量顯示 */}
                         <RecorderButton
-                             title={title}
+                            title={title}
                             recording={recording}
                             recordingTime={recordingTime}
                             onStart={startRecording}
@@ -590,9 +593,6 @@ const RecorderPageVoiceClamp = () => {
                             styles={styles}
                             colors={colors}
                         />
-
-
-
 
                         {/* 錄音列表 */}
                         <ScrollView style={styles.listContainer}>
@@ -615,7 +615,18 @@ const RecorderPageVoiceClamp = () => {
 
 
                                     return (
-                                        <View key={index} style={{ position: 'relative', zIndex: selectedDerivedIndex?.index === index ? 999 : 0 }}>
+                                        <View
+                                            key={index}
+                                            style={{
+                                                position: 'relative',
+                                                zIndex:
+                                                    selectedContext &&
+                                                        selectedContext.index === index &&
+                                                        selectedContext.type !== 'main'
+                                                        ? 999
+                                                        : 0,
+                                            }}
+                                        >
                                             {/* 單個錄音項目的完整 UI */}
                                             <View style={[styles.recordingItem, { minHeight: 80 }]}>
                                                 {/* 名稱行 */}
@@ -691,14 +702,13 @@ const RecorderPageVoiceClamp = () => {
                                                             onPress={(e) => {
                                                                 e.stopPropagation();
                                                                 closeAllMenus();
-                                                                if (selectedMainIndex === index) {
-                                                                    setSelectedMainIndex(null);
-                                                                    setMainMenuPosition(null);
-                                                                    return;
-                                                                }
+
                                                                 e.target.measureInWindow((x, y, width, height) => {
-                                                                    setMainMenuPosition({ x, y: y + height });
-                                                                    setSelectedMainIndex(index);
+                                                                    setSelectedContext({
+                                                                        type: 'main',
+                                                                        index,
+                                                                        position: { x, y: y + height },
+                                                                    });;
                                                                 });
                                                             }}
                                                         >
@@ -1033,15 +1043,12 @@ const RecorderPageVoiceClamp = () => {
                                                                     onPress={(e) => {
                                                                         e.stopPropagation();
                                                                         closeAllMenus();
-                                                                        if (selectedDerivedIndex?.index === index && selectedDerivedIndex?.type === 'enhanced') {
-                                                                            setSelectedDerivedIndex(null);
-                                                                            return;
-                                                                        }
-                                                                        e.target.measure((x, y, width, height, pageX, pageY) => {
-                                                                            setSelectedDerivedIndex({
+
+                                                                        e.target.measureInWindow((x, y, width, height) => {
+                                                                            setSelectedContext({
                                                                                 type: 'enhanced',
                                                                                 index,
-                                                                                position: { x: pageX, y: pageY }
+                                                                                position: { x, y: y + height },
                                                                             });
                                                                         });
                                                                     }}
@@ -1052,7 +1059,7 @@ const RecorderPageVoiceClamp = () => {
                                                         )}
 
                                                         {/* 靜音剪輯版本 */}
-                                                        {item.isTrimmed && item.derivedFiles?.trimmed && (
+                                                        {item.derivedFiles?.trimmed && (
                                                             <View style={styles.derivedFileRow}>
                                                                 <TouchableOpacity
                                                                     style={[styles.derivedFileItem, { flex: 1 }]}
@@ -1074,15 +1081,12 @@ const RecorderPageVoiceClamp = () => {
                                                                     onPress={(e) => {
                                                                         e.stopPropagation();
                                                                         closeAllMenus();
-                                                                        if (selectedDerivedIndex?.index === index && selectedDerivedIndex?.type === 'trimmed') {
-                                                                            setSelectedDerivedIndex(null);
-                                                                            return;
-                                                                        }
-                                                                        e.target.measure((x, y, width, height, pageX, pageY) => {
-                                                                            setSelectedDerivedIndex({
+
+                                                                        e.target.measureInWindow((x, y, width, height) => {
+                                                                            setSelectedContext({
                                                                                 type: 'trimmed',
                                                                                 index,
-                                                                                position: { x: pageX, y: pageY }
+                                                                                position: { x, y: y + height },
                                                                             });
                                                                         });
                                                                     }}
@@ -1111,116 +1115,88 @@ const RecorderPageVoiceClamp = () => {
                         </ScrollView>
 
                         {/* 三點選單浮動層（全域定位） */}
-                        {selectedMainIndex !== null && mainMenuPosition && (
-  <MoreMenu
-    index={selectedMainIndex}
-    item={recordings[selectedMainIndex]}
-    position={mainMenuPosition}
-    styles={styles}
-    closeAllMenus={closeAllMenus}
-    onRename={(index) => {
-      closeAllMenus();
-      setTimeout(() => {
-        startEditingName(index);
-      }, 0);
-    }}
-    onShare={(uri) => {
-      shareRecording(uri);
-    }}
-    onDelete={(index) => {
-      deleteRecording(index);
-    }}
-    onTrimSilence={async (index) => {
-      const item = recordings[index];
-      try {
-        const trimmed = await trimSilence(item.uri, item.name);
-        const { sound: originalSound } = await Audio.Sound.createAsync({ uri: item.uri });
-        const { sound: trimmedSound } = await Audio.Sound.createAsync({ uri: trimmed.uri });
-        const origStatus = await originalSound.getStatusAsync();
-        const trimStatus = await trimmedSound.getStatusAsync();
-        await originalSound.unloadAsync();
-        await trimmedSound.unloadAsync();
-        if (origStatus.isLoaded && trimStatus.isLoaded) {
-          const origSec = Math.round((origStatus.durationMillis ?? 0) / 1000);
-          const trimSec = Math.round((trimStatus.durationMillis ?? 0) / 1000);
-          setRecordings(prev => prev.map((rec, i) =>
-            i === index
-              ? {
-                  ...rec,
-                  isTrimmed: true,
-                  derivedFiles: {
-                    ...rec.derivedFiles,
-                    trimmed
-                  }
-                }
-              : rec
-          ));
-          Alert.alert('靜音剪輯完成', `${item.name}\n原長：${origSec}s → 剪後：${trimSec}s`);
-        }
-      } catch (err) {
-        Alert.alert('剪輯失敗', (err as Error).message);
-      }
-    }}
-    title={title}
-  />
-)}
-
-
-                        {/* 放在這裡！不要放在 map 循環內部 */}
-                        {selectedDerivedIndex && (
-                            <View style={[
-                                styles.derivedOptionsMenu,
-                                {
-                                    position: 'absolute',
-                                    left: (selectedDerivedIndex.position?.x || 0) - 100, // 水平微調
-                                    top: (selectedDerivedIndex.position?.y || 0) + 30,  // 垂直微調
-                                    zIndex: 1000,
-                                    elevation: 1000,
-                                    backgroundColor: colors.container, // ✅ 加這行
+                        {selectedContext && (
+                            <MoreMenu
+                                index={selectedContext.index}
+                                item={
+                                    selectedContext.type === 'main'
+                                        ? recordings[selectedContext.index]
+                                        : recordings[selectedContext.index].derivedFiles?.[selectedContext.type]!
                                 }
-                            ]}>
-                                <TouchableOpacity
-                                    style={styles.optionButton}
-                                    onPress={() => {
-                                        const uri = selectedDerivedIndex.type === 'enhanced'
-                                            ? recordings[selectedDerivedIndex.index].derivedFiles!.enhanced!.uri
-                                            : recordings[selectedDerivedIndex.index].derivedFiles!.trimmed!.uri;
-                                        shareRecording(uri);
-                                        setSelectedDerivedIndex(null);
-                                    }}
-                                >
-                                    <Text style={styles.optionText}>📤 分享</Text>
-                                </TouchableOpacity>
-
-                                <TouchableOpacity
-                                    style={styles.optionButton}
-                                    onPress={async () => {
-                                        try {
-                                            const uri = selectedDerivedIndex.type === 'enhanced'
-                                                ? recordings[selectedDerivedIndex.index].derivedFiles!.enhanced!.uri
-                                                : recordings[selectedDerivedIndex.index].derivedFiles!.trimmed!.uri;
-                                            await safeDeleteFile(uri);
-                                            setRecordings(prev => prev.map(rec => {
-                                                if (rec.uri === recordings[selectedDerivedIndex.index].uri) {
-                                                    const newDerivedFiles = { ...rec.derivedFiles };
-                                                    selectedDerivedIndex.type === 'enhanced'
-                                                        ? delete newDerivedFiles.enhanced
-                                                        : delete newDerivedFiles.trimmed;
-                                                    return { ...rec, derivedFiles: newDerivedFiles };
-                                                }
-                                                return rec;
+                                isDerived={selectedContext.type !== 'main'}
+                                title={title}
+                                position={selectedContext.position}
+                                styles={styles}
+                                closeAllMenus={() => setSelectedContext(null)}
+                                onRename={(index) => {
+                                    setSelectedContext(null);
+                                    setTimeout(() => {
+                                        startEditingName(index);
+                                    }, 0);
+                                }}
+                                onShare={(uri) => {
+                                    shareRecording(uri);
+                                }}
+                                onDelete={(index) => {
+                                    const isMain = selectedContext.type === 'main';
+                                    if (isMain) {
+                                        deleteRecording(index);
+                                    } else {
+                                        const type = selectedContext.type;
+                                        if (type !== 'enhanced' && type !== 'trimmed') return;
+                                        const uri = recordings[index].derivedFiles?.[type]?.uri;
+                                        if (!uri) return;
+                                        safeDeleteFile(uri).then(() => {
+                                            setRecordings(prev => prev.map((rec, i) => {
+                                                if (i !== index) return rec;
+                                                const newDerivedFiles = { ...rec.derivedFiles };
+                                                delete newDerivedFiles[type];
+                                                return { ...rec, derivedFiles: newDerivedFiles };
                                             }));
+                                            saveRecordings(recordings);
                                             Alert.alert("刪除成功", "已刪除衍生檔案");
-                                        } catch (err) {
+                                        }).catch(err => {
                                             Alert.alert("刪除失敗", (err as Error).message);
+                                        }).finally(() => {
+                                            setSelectedContext(null);
+                                        });
+                                    }
+                                }}
+                                onTrimSilence={async (index) => {
+                                    const item = recordings[index];
+                                    try {
+                                        const trimmed = await trimSilence(item.uri, item.name);
+                                        const { sound: originalSound } = await Audio.Sound.createAsync({ uri: item.uri });
+                                        const { sound: trimmedSound } = await Audio.Sound.createAsync({ uri: trimmed.uri });
+                                        const origStatus = await originalSound.getStatusAsync();
+                                        const trimStatus = await trimmedSound.getStatusAsync();
+                                        await originalSound.unloadAsync();
+                                        await trimmedSound.unloadAsync();
+                                        if (origStatus.isLoaded && trimStatus.isLoaded) {
+                                            const origSec = Math.round((origStatus.durationMillis ?? 0) / 1000);
+                                            const trimSec = Math.round((trimStatus.durationMillis ?? 0) / 1000);
+                                            setRecordings(prev => prev.map((rec, i) =>
+                                                i === index
+                                                    ? {
+                                                        ...rec,
+                                                        isTrimmed: true,
+                                                        derivedFiles: {
+                                                            ...rec.derivedFiles,
+                                                            trimmed,
+                                                        },
+                                                    }
+                                                    : rec
+                                            ));
+                                            Alert.alert('靜音剪輯完成', `${item.name}\n原長：${origSec}s → 剪後：${trimSec}s`);
                                         }
-                                        setSelectedDerivedIndex(null);
-                                    }}
-                                >
-                                    <Text style={styles.optionText}>🗑️ 刪除</Text>
-                                </TouchableOpacity>
-                            </View>
+                                    } catch (err) {
+                                        Alert.alert('剪輯失敗', (err as Error).message);
+                                    }
+                                }}
+                            />
                         )}
+
+
 
                         {/* 放在這裡！不要放在 map 循環內部 */}
                         {speedMenuIndex !== null && speedMenuPosition && (

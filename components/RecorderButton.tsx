@@ -9,7 +9,7 @@ type Props = {
   onStop: () => void;
   styles: any;
   colors: any;
-  title?: string; // ✅ 新增 title prop，預設可選
+  title?: string; 
 };
 
 const formatTime = (ms: number) => {

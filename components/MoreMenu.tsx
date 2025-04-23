@@ -9,11 +9,12 @@ interface MoreMenuProps {
   item: RecordingItem;
   styles: any;
   closeAllMenus: () => void;
-  onRename: (index: number) => void;
+  onRename?: (index: number) => void;
   onDelete: (index: number) => void;
   onShare: (uri: string) => void;
-  onTrimSilence: (index: number) => void;
-  title?: string; 
+  onTrimSilence?: (index: number) => void;
+  title?: string;
+  isDerived?: boolean;
 }
 
 const MoreMenu: React.FC<MoreMenuProps> = ({
@@ -26,7 +27,8 @@ const MoreMenu: React.FC<MoreMenuProps> = ({
   onDelete,
   onShare,
   onTrimSilence,
-  title
+  title,
+  isDerived,
 }) => {
   return (
     <View
@@ -42,29 +44,29 @@ const MoreMenu: React.FC<MoreMenuProps> = ({
       ]}
     >
 
-              {/* ✂️ 靜音剪輯：只有 Voice Clamp 顯示 */}
-      {title === 'Voice Clamp' && (                     // 測試檔可刪這行跟下面的結尾括號
-      <TouchableOpacity
-        style={styles.optionButton}
-        onPress={() => {
-          closeAllMenus();
-          onTrimSilence(index);
-        }}
-      >
-        <Text style={styles.optionText}>✂️ 靜音剪輯</Text>
-      </TouchableOpacity>
-            )}                                 
-
-      <TouchableOpacity
-        style={styles.optionButton}
-        onPress={() => {
-          closeAllMenus();
-          onRename(index);
-        }}
-      >
-        <Text style={styles.optionText}>✏️ 重新命名</Text>
-      </TouchableOpacity>
-
+      {/* ✂️ 靜音剪輯：只有 Voice Clamp 顯示 */}
+      {title === 'Voice Clamp' && !isDerived && (                 // 測試檔可刪這行跟下面的結尾括號
+        <TouchableOpacity
+          style={styles.optionButton}
+          onPress={() => {
+            closeAllMenus();
+            onTrimSilence?.(index);
+          }}
+        >
+          <Text style={styles.optionText}>✂️ 靜音剪輯</Text>
+        </TouchableOpacity>
+      )}
+      {!isDerived && (
+        <TouchableOpacity
+          style={styles.optionButton}
+          onPress={() => {
+            closeAllMenus();
+            onRename?.(index);
+          }}
+        >
+          <Text style={styles.optionText}>✏️ 重新命名</Text>
+        </TouchableOpacity>
+      )}
       <TouchableOpacity
         style={styles.optionButton}
         onPress={() => {
