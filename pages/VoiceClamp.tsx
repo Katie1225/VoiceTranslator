@@ -21,6 +21,8 @@ import Slider from '@react-native-community/slider';
 import AudioRecorderPlayer from 'react-native-audio-recorder-player';
 import BackgroundService from 'react-native-background-actions';
 import RNFS from 'react-native-fs';
+import { Linking } from 'react-native';
+import { Keyboard } from 'react-native';
 
 import {
     RecordingItem,
@@ -37,9 +39,13 @@ import { lightTheme, darkTheme, additionalColors } from '../constants/Colors';
 import RecorderButton from '../components/RecorderButton';
 import HamburgerMenu from '../components/HamburgerMenu';
 import MoreMenu from '../components/MoreMenu';
+import {
+  renderFilename,
+  renderMoreButton,
+  renderNoteBlock
+} from '../components/AudioItem';
 import { uFPermissions } from '../src/hooks/uFPermissions';
-import { Linking } from 'react-native'; // ✅ 正確寫法
-import { Keyboard } from 'react-native';
+
 
 const GlobalRecorderState = {
     isRecording: false,
@@ -166,34 +172,6 @@ const RecorderPageVoiceClamp = () => {
         isMeteringEnabled: true
     };
 
-
-
-    // 儲存原始檔案及其處理版本
-    const processRecording = async (uri: string, name: string) => {
-        try {
-            // 創建原始錄音項目
-            const originalRecording: RecordingItem = {
-                uri,
-                name,
-                derivedFiles: {}
-            };
-
-            // 創建並儲存增強版本
-            const enhancedRecording = await enhanceAudio(uri, name);
-            originalRecording.derivedFiles!.enhanced = enhancedRecording;
-
-            // 創建並儲存剪輯版本
-            const trimmedRecording = await trimSilence(uri, name);
-            originalRecording.derivedFiles!.trimmed = trimmedRecording;
-
-            // 更新 recordings 陣列
-            setRecordings(prev => [originalRecording, ...prev]);
-
-            Alert.alert("處理完成", "已儲存原始檔案與衍生版本");
-        } catch (err) {
-            Alert.alert("處理失敗", (err as Error).message);
-        }
-    };
 
     useEffect(() => {
         if (GlobalRecorderState.isRecording) {
@@ -513,6 +491,132 @@ const RecorderPageVoiceClamp = () => {
             .padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
     };
 
+    // 音檔檔名顯示
+    const renderFilename = (
+        uri: string,
+        name: string,
+        index: number,
+        isDerived: boolean,
+        iconPrefix?: string
+    ) => {
+        const isPlayingThis = playingUri === uri;
+        const label = iconPrefix ? `${iconPrefix} ${name}` : name;
+
+        return (
+            <TouchableOpacity
+                style={[isDerived ? styles.derivedFileItem : styles.nameContainer, { flex: 1 }]}
+                onPress={() => {
+                    closeAllMenus();
+                    playRecording(uri, index);
+                }}
+            >
+                <Text
+                    style={[
+                        isDerived ? styles.derivedFileName : styles.recordingName,
+                        isPlayingThis && styles.playingText,
+                    ]}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                >
+                    {label}
+                </Text>
+            </TouchableOpacity>
+        );
+    };
+
+    // 三點選單顯示
+    const renderMoreButton = (
+        index: number,
+        type: 'main' | 'enhanced' | 'trimmed',
+        style: any
+    ) => (
+        <TouchableOpacity
+            style={style}
+            onPress={(e) => {
+                e.stopPropagation();
+                closeAllMenus();
+                e.target.measureInWindow((x, y, width, height) => {
+                    setSelectedContext({
+                        type,
+                        index,
+                        position: { x, y: y + height },
+                    });
+                });
+            }}
+        >
+            <Text style={styles.moreIcon}>⋯</Text>
+        </TouchableOpacity>
+    );
+     //  錄音筆記重點摘要顯示
+        const renderNoteBlock = (props: {
+          type: 'transcript' | 'summary';
+          index: number;
+          value: string;
+          editingIndex: number | null;
+          editValue: string;
+          onChangeEdit: (text: string) => void;
+          onSave: () => void;
+          onCancel: () => void;
+          onDelete: () => void;
+        }) => {
+          const {
+            type,
+            index,
+            value,
+            editingIndex,
+            editValue,
+            onChangeEdit,
+            onSave,
+            onCancel,
+            onDelete,
+          } = props;
+        
+          const isEditing = editingIndex === index;
+        
+          return (
+            <View style={styles.transcriptContainer}>
+              <View style={styles.bar} />
+        
+              {isEditing ? (
+                <>
+                  <TextInput
+                    style={styles.transcriptTextInput}
+                    value={editValue}
+                    onChangeText={onChangeEdit}
+                    multiline
+                    autoFocus
+                  />
+                  <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 16, marginTop: 8 }}>
+                    <TouchableOpacity onPress={onSave}>
+                      <Text style={[styles.transcriptActionButton, { color: colors.primary }]}>💾 儲存</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={onCancel}>
+                      <Text style={styles.transcriptActionButton}>✖️ 取消</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.transcriptText}>{value}</Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 8 }}>
+                    <TouchableOpacity onPress={() => onChangeEdit(value)}>
+                      <Text style={styles.transcriptActionButton}>✏️ 修改</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => shareText(value)}>
+                      <Text style={styles.transcriptActionButton}>📤 轉發</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={onDelete}>
+                      <Text style={styles.transcriptActionButton}>🗑️ 刪除</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+            </View>
+          );
+        };
+        
+
+
 
 
     // 關閉所有彈出菜單
@@ -696,25 +800,8 @@ const RecorderPageVoiceClamp = () => {
                                                     </View>
 
                                                     {/* 更多按鈕 */}
-                                                    {(isCurrentPlaying || !isPlaying) && editingIndex !== index && (
-                                                        <TouchableOpacity
-                                                            style={styles.moreButton}
-                                                            onPress={(e) => {
-                                                                e.stopPropagation();
-                                                                closeAllMenus();
-
-                                                                e.target.measureInWindow((x, y, width, height) => {
-                                                                    setSelectedContext({
-                                                                        type: 'main',
-                                                                        index,
-                                                                        position: { x, y: y + height },
-                                                                    });;
-                                                                });
-                                                            }}
-                                                        >
-                                                            <Text style={styles.moreIcon}>⋯</Text>
-                                                        </TouchableOpacity>
-                                                    )}
+                                                    {(isCurrentPlaying || !isPlaying) && editingIndex !== index &&
+                                                        renderMoreButton(index, 'main', styles.moreButton)}
                                                 </View>
 
                                                 {/* 播放進度條 */}
@@ -863,158 +950,65 @@ const RecorderPageVoiceClamp = () => {
                                                 )}
 
 
-                                                {showTranscriptIndex === index && (
-                                                    <View style={styles.transcriptContainer}>
-                                                        <View style={styles.bar} />
-
-                                                        {editingTranscriptIndex === index ? (
-                                                            <>
-                                                                <TextInput
-                                                                    style={styles.transcriptTextInput}
-                                                                    value={editTranscript}
-                                                                    onChangeText={setEditTranscript}
-                                                                    multiline
-                                                                    autoFocus
-                                                                />
-                                                                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 16, marginTop: 8 }}>
-                                                                    <TouchableOpacity
-                                                                        onPress={async () => {
-                                                                            Keyboard.dismiss(); // ✅ 先關鍵盤
+{showTranscriptIndex === index &&
+  renderNoteBlock({
+    type: 'transcript',
+    index,
+    value: item.transcript || '',
+    editingIndex: editingTranscriptIndex,
+    editValue: editTranscript,
+    onChangeEdit: setEditTranscript,
+    onSave: async () => {
                                                                             const updated = recordings.map((rec, i) =>
                                                                                 i === index ? { ...rec, transcript: editTranscript } : rec
                                                                             );
                                                                             setRecordings(updated);
                                                                             await saveRecordings(updated);
                                                                             setEditingTranscriptIndex(null);
-                                                                        }}
-                                                                    >
-                                                                        <Text style={[styles.transcriptActionButton, { color: colors.primary }]}>💾 儲存</Text>
-                                                                    </TouchableOpacity>
-
-                                                                    <TouchableOpacity
-                                                                        onPress={() => {
-                                                                            Keyboard.dismiss();                 // ✅ 關鍵盤
-                                                                            setEditTranscript('');             // ✅ 清空暫存
-                                                                            setEditingTranscriptIndex(null);   // ✅ 關閉編輯模式
-                                                                        }}
-                                                                    >
-                                                                        <Text style={[styles.transcriptActionButton]}>✖️ 取消</Text>
-                                                                    </TouchableOpacity>
-                                                                </View>
-
-                                                            </>
-                                                        ) : (
-                                                            <>
-                                                                <Text style={styles.transcriptText}>{item.transcript}</Text>
-                                                                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 8 }}>
-                                                                    <TouchableOpacity onPress={() => {
-                                                                        setEditTranscript(item.transcript || '');
-                                                                        setEditingTranscriptIndex(index);
-                                                                    }}>
-                                                                        <Text style={styles.transcriptActionButton}>✏️ 修改</Text>
-                                                                    </TouchableOpacity>
-
-                                                                    <TouchableOpacity
-                                                                        onPress={() => {
-                                                                            shareText(item.transcript || '');
-                                                                        }}
-                                                                    >
-                                                                        <Text style={styles.transcriptActionButton}>📤 轉發</Text>
-                                                                    </TouchableOpacity>
-
-
-                                                                    <TouchableOpacity onPress={async () => {
+    },
+    onCancel: () => {
+      setEditTranscript('');
+      setEditingTranscriptIndex(null);
+    },
+    onDelete: async () => {
                                                                         const updated = recordings.map((rec, i) =>
                                                                             i === index ? { ...rec, transcript: undefined } : rec
                                                                         );
                                                                         setRecordings(updated);
                                                                         await saveRecordings(updated);
                                                                         setShowTranscriptIndex(null);
-                                                                    }}>
-                                                                        <Text style={styles.transcriptActionButton}>🗑️ 刪除</Text>
-                                                                    </TouchableOpacity>
-                                                                </View>
-                                                            </>
-                                                        )}
-                                                    </View>
-                                                )}
-                                                {showSummaryIndex === index && item.summary && (
-                                                    <View style={styles.transcriptContainer}>
-                                                        <View style={styles.bar} />
+    },
+  })}
 
-                                                        {editingSummaryIndex === index ? (
-                                                            <>
-                                                                <TextInput
-                                                                    style={styles.transcriptTextInput}
-                                                                    value={editSummary}
-                                                                    onChangeText={setEditSummary}
-                                                                    multiline
-                                                                    autoFocus
-                                                                />
-                                                                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 16, marginTop: 8 }}>
-                                                                    <TouchableOpacity
-                                                                        onPress={async () => {
-                                                                            Keyboard.dismiss();
+{showSummaryIndex === index && item.summary &&
+  renderNoteBlock({
+    type: 'summary',
+    index,
+    value: item.summary || '',
+    editingIndex: editingSummaryIndex,
+    editValue: editSummary,
+    onChangeEdit: setEditSummary,
+    onSave: async () => {
                                                                             const updated = recordings.map((rec, i) =>
                                                                                 i === index ? { ...rec, summary: editSummary } : rec
                                                                             );
                                                                             setRecordings(updated);
                                                                             await saveRecordings(updated);
                                                                             setEditingSummaryIndex(null);
-                                                                        }}
-                                                                    >
-                                                                        <Text style={[styles.transcriptActionButton, { color: colors.primary }]}>💾 儲存</Text>
-                                                                    </TouchableOpacity>
-
-                                                                    <TouchableOpacity
-                                                                        onPress={() => {
-                                                                            Keyboard.dismiss();
+    },
+    onCancel: () => {
                                                                             setEditSummary('');
                                                                             setEditingSummaryIndex(null);
-                                                                        }}
-                                                                    >
-                                                                        <Text style={styles.transcriptActionButton}>✖️ 取消</Text>
-                                                                    </TouchableOpacity>
-                                                                </View>
-                                                            </>
-                                                        ) : (
-                                                            <>
-                                                                <Text style={styles.transcriptText}>{item.summary}</Text>
-                                                                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 8 }}>
-                                                                    <TouchableOpacity
-                                                                        onPress={() => {
-                                                                            setEditSummary(item.summary || '');
-                                                                            setEditingSummaryIndex(index);
-                                                                        }}
-                                                                    >
-                                                                        <Text style={styles.transcriptActionButton}>✏️ 修改</Text>
-                                                                    </TouchableOpacity>
-                                                                    <TouchableOpacity
-                                                                        onPress={() => {
-                                                                            shareText(item.summary || '');
-                                                                        }}
-                                                                    >
-                                                                        <Text style={styles.transcriptActionButton}>📤 轉發</Text>
-                                                                    </TouchableOpacity>
-
-
-                                                                    <TouchableOpacity
-                                                                        onPress={async () => {
+    },
+    onDelete: async () => {
                                                                             const updated = recordings.map((rec, i) =>
                                                                                 i === index ? { ...rec, summary: undefined } : rec
                                                                             );
                                                                             setRecordings(updated);
                                                                             await saveRecordings(updated);
                                                                             setShowSummaryIndex(null);
-                                                                        }}
-                                                                    >
-                                                                        <Text style={styles.transcriptActionButton}>🗑️ 刪除</Text>
-                                                                    </TouchableOpacity>
-                                                                </View>
-                                                            </>
-                                                        )}
-                                                    </View>
-                                                )}
+    },
+  })}
 
 
                                                 {/* 衍生檔案列表 */}
@@ -1023,86 +1017,16 @@ const RecorderPageVoiceClamp = () => {
                                                         {/* 增強音質版本 */}
                                                         {item.derivedFiles?.enhanced && (
                                                             <View style={styles.derivedFileRow}>
-                                                                <TouchableOpacity
-                                                                    style={[styles.derivedFileItem, { flex: 1 }]}
-                                                                    onPress={() => playRecording(item.derivedFiles!.enhanced!.uri, index)}
-                                                                >
-                                                                    <Text
-                                                                        style={[
-                                                                            styles.derivedFileName,
-                                                                            playingUri === item.derivedFiles?.enhanced?.uri && styles.playingText
-                                                                        ]}
-                                                                        numberOfLines={1}
-                                                                        ellipsizeMode="tail"
-                                                                    >
-                                                                        🔊 增強音質 {item.derivedFiles.enhanced.name}
-                                                                    </Text>
-                                                                </TouchableOpacity>
-                                                                <TouchableOpacity
-                                                                    style={styles.derivedMoreButton}
-                                                                    onPress={(e) => {
-                                                                        e.stopPropagation();
-                                                                        closeAllMenus();
-
-                                                                        e.target.measureInWindow((x, y, width, height) => {
-                                                                            setSelectedContext({
-                                                                                type: 'enhanced',
-                                                                                index,
-                                                                                position: { x, y: y + height },
-                                                                            });
-                                                                        });
-                                                                    }}
-                                                                >
-                                                                    <Text style={styles.moreIcon}>⋯</Text>
-                                                                </TouchableOpacity>
+                                                                {renderFilename(item.derivedFiles.enhanced.uri, item.derivedFiles.enhanced.name, index, true, '🔊 增強音質')}
+                                                                {renderMoreButton(index, 'enhanced', styles.derivedMoreButton)}
                                                             </View>
                                                         )}
 
                                                         {/* 靜音剪輯版本 */}
                                                         {item.derivedFiles?.trimmed && (
                                                             <View style={styles.derivedFileRow}>
-                                                                <TouchableOpacity
-                                                                    style={[styles.derivedFileItem, { flex: 1 }]}
-                                                                    onPress={() => playRecording(item.derivedFiles!.trimmed!.uri, index)}
-                                                                >
-                                                                    <Text
-                                                                        style={[
-                                                                            styles.derivedFileName,
-                                                                            playingUri === item.derivedFiles?.trimmed?.uri && styles.playingText
-                                                                        ]}
-                                                                        numberOfLines={1}
-                                                                        ellipsizeMode="tail"
-                                                                    >
-                                                                        ✂️ 靜音剪輯 {item.derivedFiles.trimmed.name}
-                                                                    </Text>
-                                                                </TouchableOpacity>
-                                                                <TouchableOpacity
-                                                                    style={styles.derivedMoreButton}
-                                                                    onPress={(e) => {
-                                                                        e.stopPropagation();
-                                                                        closeAllMenus();
-
-                                                                        e.target.measureInWindow((x, y, width, height) => {
-                                                                            setSelectedContext({
-                                                                                type: 'trimmed',
-                                                                                index,
-                                                                                position: { x, y: y + height },
-                                                                            });
-                                                                        });
-                                                                    }}
-                                                                >
-                                                                    <Text style={styles.moreIcon}>⋯</Text>
-                                                                </TouchableOpacity>
-                                                            </View>
-                                                        )}
-
-                                                        {/* 文字轉錄內容 */}
-                                                        {typeof item.transcript === 'string' && (
-                                                            <View style={styles.transcriptContainer}>
-                                                                <View style={styles.bar} />
-                                                                <Text style={styles.transcriptText}>
-                                                                    {item.transcript}
-                                                                </Text>
+                                                                {renderFilename(item.derivedFiles.trimmed.uri, item.derivedFiles.trimmed.name, index, true, '✂️ 靜音剪輯')}
+                                                                {renderMoreButton(index, 'trimmed', styles.derivedMoreButton)}
                                                             </View>
                                                         )}
                                                     </View>
