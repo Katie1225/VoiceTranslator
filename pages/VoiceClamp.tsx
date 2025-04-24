@@ -866,13 +866,14 @@ const RecorderPageVoiceClamp = () => {
 
                                                             setIsTranscribingIndex(index);
                                                             try {
-                                                                const { transcript } = await transcribeAudio(item);
-
-                                                                const updated = recordings.map((rec, i) =>
-                                                                    i === index ? { ...rec, transcript: transcript.text } : rec
-                                                                );
-                                                                setRecordings(updated);
-                                                                await saveRecordings(updated); // ✅ 寫入本地 JSON
+                                                                const { transcript } = await transcribeAudio(item, (updatedTranscript) => {
+                                                                    setRecordings(prev =>
+                                                                      prev.map((rec, i) =>
+                                                                        i === index ? { ...rec, transcript: updatedTranscript } : rec
+                                                                      )
+                                                                    );
+                                                                  });
+                                                                  
 
                                                                 setShowTranscriptIndex(index);
                                                                 setShowSummaryIndex(null);

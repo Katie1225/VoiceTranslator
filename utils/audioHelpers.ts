@@ -1,5 +1,6 @@
 import { FFmpegKit, ReturnCode } from 'ffmpeg-kit-react-native';
 import * as FileSystem from 'expo-file-system';
+import { Audio } from 'expo-av';
 
 export type RecordingItem = {
   uri: string;
@@ -207,6 +208,9 @@ export const transcribeAudio = async (item: RecordingItem) => {
   }
 };
 */
+
+
+
 export const transcribeAudio = async (
   item: RecordingItem,
   onPartial?: (text: string, index: number, total: number) => void
@@ -227,15 +231,35 @@ export const transcribeAudio = async (
       throw new Error('轉換後的檔案不存在或無法取得大小');
     }
 
-    const MAX_SIZE = 20 * 1024 * 1024;
-    const segments = fileInfo.size > MAX_SIZE
-      ? await splitAudioIntoSegments(wavUri, 30)
-      : [wavUri];
+        // 🧠 定義可疑語句
+        const suspiciousPhrases = [
+          '社群提供',
+          '節目由',
+          '贊助',
+          '製作單位',
+          '感謝本集',
+          '請勿模仿',
+          '純屬虛構',
+          '主持人',
+          '歡迎收聽',
+          '觀眾朋友',
+          '網友朋友',
+          '今天的節目',
+          '忽略任何字幕來源',
+          '廣告內容',
+          '請不吝點贊訂閱欄目'
+        ];
+
+        const isSuspicious = (text: string) => {
+          return suspiciousPhrases.some(phrase => text.includes(phrase));
+        };
+
+    const segments = await splitAudioIntoSegments(wavUri, 30);  // 這裡改時間
 
     // ✅ 每段切出來後壓縮：內部函式定義
     const compressSegment = async (uri: string): Promise<string> => {
       const output = uri.replace('.wav', '_small.wav');
-      const command = `-i "${uri}" -ac 1 -ar 16000 -sample_fmt s16 "${output}"`;
+      const command = `-y -i "${uri}" -ac 1 -ar 16000 -sample_fmt s16 "${output}"`;
 
       const session = await FFmpegKit.execute(command);
       const returnCode = await session.getReturnCode();
@@ -247,18 +271,31 @@ export const transcribeAudio = async (
       return output;
     };
 
-    let fullText = '';
+    let accumulated = '';
 
     for (let i = 0; i < segments.length; i++) {
-      const segment = await compressSegment(segments[i]); // ✅ 壓縮後再上傳
+      const segment = segments[i];
 
+  // 檢查分段時長（需實作 getAudioDuration）
+  const { duration } = await getAudioDuration(segment);
+  console.log(`⏱️ 第 ${i + 1} 段時長: ${duration.toFixed(2)}秒`);
+  
+  if (duration < 1) {
+    console.log(`⏭️ 跳過過短分段 (${duration}s)`);
+    continue; // 跳過此段
+  }
+
+      console.log(`📤 上傳第 ${i + 1} 段`);
+    
+      const compressed = await compressSegment(segment);
+    
       const formData = new FormData();
       formData.append('audio', {
-        uri: segment,
+        uri: compressed,
         name: `segment_${i}.wav`,
         type: 'audio/wav',
       } as any);
-
+    
       const response = await fetch('https://katielab.com/transcribe/', {
         method: 'POST',
         headers: {
@@ -267,14 +304,14 @@ export const transcribeAudio = async (
         },
         body: formData,
       });
-
-      raw = await response.text();
-
+    
+      const raw = await response.text();
+    
       if (!response.ok) {
         console.error(`❌ 第 ${i + 1} 段錯誤：`, raw);
         throw new Error(`第 ${i + 1} 段轉文字失敗：HTTP ${response.status}`);
       }
-
+    
       let text = '';
       try {
         const parsed = JSON.parse(raw);
@@ -289,13 +326,33 @@ export const transcribeAudio = async (
         }
       }
 
-      fullText += text + '\n';
-      if (onPartial) {
-        onPartial(text, i + 1, segments.length);
-      }
-    }
+      const originalText = text;
+const sentences = text.split(/(?<=[。！？!?\n])/); // 切句子
+const filteredSentences: string[] = [];
 
-    return { transcript: { text: fullText.trim() } };
+for (const sentence of sentences) {
+  const isSuspect = suspiciousPhrases.some((phrase) => sentence.includes(phrase));
+  if (isSuspect) {
+    console.warn(`🚫 移除可疑句：「${sentence.trim()}」`);
+  } else {
+    filteredSentences.push(sentence);
+  }
+}
+
+text = filteredSentences.join('').trim(); // 保留乾淨的句子
+
+    
+      // ⛔️ 若最後一段是空字串就直接略過，這會導致你 UI 不更新
+      // ✅ 改用累積方式，保證顯示最新內容
+      accumulated += text ? text + '\n' : '';
+    
+      if (onPartial) {
+        // 傳回的是累積內容，不是單段文字
+        onPartial(accumulated.trim(), i + 1, segments.length);
+      }
+    }  
+    
+    return { transcript: { text: accumulated.trim() } };
 
   } catch (err) {
     console.error('❌ transcribeAudio 全域錯誤：', err);
@@ -303,13 +360,37 @@ export const transcribeAudio = async (
   }
 };
 
+export async function getAudioDuration(uri: string): Promise<{ duration: number }> {
+  const { sound, status } = await Audio.Sound.createAsync({ uri }, { shouldPlay: false });
 
+  if (!status.isLoaded) {
+    throw new Error('音訊載入失敗');
+  }
+
+  const duration = status.durationMillis != null ? status.durationMillis / 1000 : 0;
+  await sound.unloadAsync(); // ✅ 記得釋放資源
+
+  return { duration };
+}
 
 // 切段工具
-export const splitAudioIntoSegments = async (uri: string, seconds = 30): Promise<string[]> => {
+export const splitAudioIntoSegments = async (
+  uri: string, 
+  seconds = 30
+): Promise<string[]> => {
   const outputPattern = `${FileSystem.cacheDirectory}segment_%03d.wav`;
-  const command = `-i "${uri}" -f segment -segment_time ${seconds} -c copy "${outputPattern}"`;
 
+  // 清理舊檔案（排除壓縮過的）
+  const allFilesBefore = await FileSystem.readDirectoryAsync(FileSystem.cacheDirectory!);
+  await Promise.all(
+    allFilesBefore
+      .filter(f => f.startsWith('segment_') && f.endsWith('.wav') && !f.includes('_small'))
+      .map(f => FileSystem.deleteAsync(`${FileSystem.cacheDirectory}${f}`))
+  );
+
+  // 強制關鍵幀切割
+  const command = `-i "${uri}" -f segment -segment_time ${seconds} -force_key_frames "expr:gte(n, n_forced*${seconds})" -c copy "${outputPattern}"`;
+  
   const session = await FFmpegKit.execute(command);
   const returnCode = await session.getReturnCode();
 
@@ -317,10 +398,11 @@ export const splitAudioIntoSegments = async (uri: string, seconds = 30): Promise
     throw new Error('切割音檔失敗');
   }
 
+  // 讀取並排序分段檔案
   const allFiles = await FileSystem.readDirectoryAsync(FileSystem.cacheDirectory!);
-
   return allFiles
-    .filter(f => f.startsWith('segment_') && f.endsWith('.wav'))  // ✅ 根據 outputPattern 命名
+    .filter(f => f.startsWith('segment_') && f.endsWith('.wav') && !f.includes('_small'))
+    .sort((a, b) => a.localeCompare(b)) // 確保順序正確
     .map(f => `${FileSystem.cacheDirectory}${f}`);
 };
 
