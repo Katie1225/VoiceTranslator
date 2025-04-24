@@ -27,7 +27,7 @@ const HamburgerMenu = ({
 
   return (
     <View style={styles.menuContainer}>
-      <Text style={styles.menuItem}>版本: v1.2.8</Text>
+      <Text style={styles.menuItem}>版本: v1.2.9</Text>
 
       <TouchableOpacity
         onPress={() => { onClose(); setIsDarkMode(!isDarkMode); }}
