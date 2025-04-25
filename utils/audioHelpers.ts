@@ -157,7 +157,7 @@ export const transcribeAudio = async (
     }
 
     const trimmedRecording = await trimSilence(item.uri, item.name);
-    const spedUpUri = await speedUpAudio(trimmedRecording.uri, 1.25);
+    const spedUpUri = await speedUpAudio(trimmedRecording.uri, 1.5);
     const wavUri = await convertToWav(spedUpUri);
 
     const fileInfo = await FileSystem.getInfoAsync(wavUri);

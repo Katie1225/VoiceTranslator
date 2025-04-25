@@ -4,13 +4,13 @@ import {
     View,
     Text,
     TouchableOpacity,
-    ScrollView,
     SafeAreaView,
     TextInput,
     Alert,
     ActivityIndicator,
     TouchableWithoutFeedback,
-    Share
+    Share,
+    FlatList
 } from 'react-native';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
@@ -68,6 +68,7 @@ const RecorderPageVoiceClamp = () => {
     const [dbHistory, setDbHistory] = useState<number[]>([]);
     const audioRecorderPlayer = useRef(new AudioRecorderPlayer()).current;
     const [isTranscribingIndex, setIsTranscribingIndex] = useState<number | null>(null);
+    const flatListRef = useRef<FlatList>(null);
 
     // 音量狀態
     const [currentVolume, setCurrentVolume] = useState(0);
@@ -524,100 +525,6 @@ const RecorderPageVoiceClamp = () => {
         );
     };
 
-    // 三點選單顯示
-    const renderMoreButton = (
-        index: number,
-        type: 'main' | 'enhanced' | 'trimmed',
-        style: any
-    ) => (
-        <TouchableOpacity
-            style={style}
-            onPress={(e) => {
-                e.stopPropagation();
-                closeAllMenus();
-                e.target.measureInWindow((x, y, width, height) => {
-                    setSelectedContext({
-                        type,
-                        index,
-                        position: { x, y: y + height },
-                    });
-                });
-            }}
-        >
-            <Text style={styles.moreIcon}>⋯</Text>
-        </TouchableOpacity>
-    );
-    //  錄音筆記重點摘要顯示
-    const renderNoteBlock = (props: {
-        type: 'transcript' | 'summary';
-        index: number;
-        value: string;
-        editingIndex: number | null;
-        editValue: string;
-        onChangeEdit: (text: string) => void;
-        onSave: () => void;
-        onCancel: () => void;
-        onDelete: () => void;
-    }) => {
-        const {
-            type,
-            index,
-            value,
-            editingIndex,
-            editValue,
-            onChangeEdit,
-            onSave,
-            onCancel,
-            onDelete,
-        } = props;
-
-        const isEditing = editingIndex === index;
-
-        return (
-            <View style={styles.transcriptContainer}>
-                <View style={styles.bar} />
-
-                {isEditing ? (
-                    <>
-                        <TextInput
-                            style={styles.transcriptTextInput}
-                            value={editValue}
-                            onChangeText={onChangeEdit}
-                            multiline
-                            autoFocus
-                        />
-                        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 16, marginTop: 8 }}>
-                            <TouchableOpacity onPress={onSave}>
-                                <Text style={[styles.transcriptActionButton, { color: colors.primary }]}>💾 儲存</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={onCancel}>
-                                <Text style={styles.transcriptActionButton}>✖️ 取消</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </>
-                ) : (
-                    <>
-                        <Text style={styles.transcriptText}>{value}</Text>
-                        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 8 }}>
-                            <TouchableOpacity onPress={() => onChangeEdit(value)}>
-                                <Text style={styles.transcriptActionButton}>✏️ 修改</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={() => shareText(value)}>
-                                <Text style={styles.transcriptActionButton}>📤 轉發</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={onDelete}>
-                                <Text style={styles.transcriptActionButton}>🗑️ 刪除</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </>
-                )}
-            </View>
-        );
-    };
-
-
-
-
 
     // 關閉所有彈出菜單
     const closeAllMenus = () => {
@@ -652,6 +559,59 @@ const RecorderPageVoiceClamp = () => {
             </SafeAreaView>
         );
     }
+    const renderNoteSection = (index: number, type: 'transcript' | 'summary') => {
+        const isTranscript = type === 'transcript';
+        const editingIndex = isTranscript ? editingTranscriptIndex : editingSummaryIndex;
+        const editValue = isTranscript ? editTranscript : editSummary;
+        const itemValue = isTranscript ? recordings[index]?.transcript : recordings[index]?.summary;
+
+        return renderNoteBlock({
+            type,
+            index,
+            value: itemValue || '',
+            editingIndex,
+            editValue,
+            onChangeEdit: (text: string) => {
+                if (isTranscript) {
+                    setEditTranscript(text);
+                    setEditingTranscriptIndex(index);
+                } else {
+                    setEditSummary(text);
+                    setEditingSummaryIndex(index);
+                }
+            },
+            onSave: async () => {
+                const updated = recordings.map((rec, i) =>
+                    i === index ? { ...rec, [type]: editValue } : rec
+                );
+                setRecordings(updated);
+                await saveRecordings(updated);
+                if (isTranscript) setEditingTranscriptIndex(null);
+                if (type === 'summary') setEditingSummaryIndex(null);
+            },
+            onCancel: () => {
+                if (isTranscript) {
+                    setEditTranscript('');
+                    setEditingTranscriptIndex(null);
+                } else {
+                    setEditSummary('');
+                    setEditingSummaryIndex(null);
+                }
+            },
+            onDelete: async () => {
+                const updated = recordings.map((rec, i) =>
+                    i === index ? { ...rec, [type]: undefined } : rec
+                );
+                setRecordings(updated);
+                await saveRecordings(updated);
+                if (isTranscript) setShowTranscriptIndex(null);
+                else setShowSummaryIndex(null);
+            },
+            styles,
+            colors,
+            shareText,
+        });
+    };
 
 
     return (
@@ -699,14 +659,17 @@ const RecorderPageVoiceClamp = () => {
                         />
 
                         {/* 錄音列表 */}
-                        <ScrollView style={styles.listContainer}>
-                            {recordings.length === 0 ? (
-                                <View style={styles.emptyListContainer}>
-                                    <Text style={styles.emptyListText}>暫無錄音檔案</Text>
-                                </View>
-                            ) : (
-                                // 這裡開始是 recordings.map 的內容
-                                recordings.map((item, index) => {
+                        {recordings.length === 0 ? (
+                            <View style={styles.emptyListContainer}>
+                                <Text style={styles.emptyListText}>暫無錄音檔案</Text>
+                            </View>
+                        ) : (
+                            <FlatList
+                                ref={flatListRef}
+                                style={styles.listContainer}
+                                data={recordings}
+                                keyExtractor={(item, index) => `${index}-${item.name}`}
+                                renderItem={({ item, index }) => {
                                     const isCurrentPlaying = playingUri === item.uri;
                                     const hasDerivedFiles = item.derivedFiles && (item.derivedFiles.enhanced || item.derivedFiles.trimmed);
                                     const isTranscriptView = showTranscriptIndex === index;
@@ -801,7 +764,7 @@ const RecorderPageVoiceClamp = () => {
 
                                                     {/* 更多按鈕 */}
                                                     {(isCurrentPlaying || !isPlaying) && editingIndex !== index &&
-                                                        renderMoreButton(index, 'main', styles.moreButton)}
+                                                        renderMoreButton(index, 'main', styles.moreButton, setSelectedContext, closeAllMenus, styles)}
                                                 </View>
 
                                                 {/* 播放進度條 */}
@@ -868,24 +831,23 @@ const RecorderPageVoiceClamp = () => {
                                                             setIsTranscribingIndex(index);
 
                                                             try {
-                                                              await transcribeAudio(item, (updatedTranscript) => {
-                                                                setRecordings(prev =>
-                                                                  prev.map((rec, i) =>
-                                                                    i === index ? { ...rec, transcript: updatedTranscript } : rec
-                                                                  )
-                                                                );
-                                                            
-                                                                if (showTranscriptIndex !== index) {
-                                                                  setShowTranscriptIndex(index);
-                                                                  setShowSummaryIndex(null); // 可選，不做 summary 也沒差
-                                                                }
-                                                              });
+                                                                await transcribeAudio(item, (updatedTranscript) => {
+                                                                    setRecordings(prev =>
+                                                                        prev.map((rec, i) =>
+                                                                            i === index ? { ...rec, transcript: updatedTranscript } : rec
+                                                                        )
+                                                                    );
+
+                                                                    if (showTranscriptIndex !== index) {
+                                                                        setShowTranscriptIndex(index);
+                                                                        setShowSummaryIndex(null); // 可選，不做 summary 也沒差
+                                                                    }
+                                                                });
                                                             } catch (err) {
-                                                              Alert.alert("❌ 轉文字失敗", (err as Error).message);
+                                                                Alert.alert("❌ 轉文字失敗", (err as Error).message);
                                                             } finally {
-                                                              setIsTranscribingIndex(null);
+                                                                setIsTranscribingIndex(null);
                                                             }
-                                                            
                                                         }}
 
                                                     >
@@ -954,66 +916,8 @@ const RecorderPageVoiceClamp = () => {
                                                     <Text style={{ marginTop: 6, color: colors.primary }}>⏳ 轉文字處理中...</Text>
                                                 )}
 
-
-                                                {showTranscriptIndex === index &&
-                                                    renderNoteBlock({
-                                                        type: 'transcript',
-                                                        index,
-                                                        value: item.transcript || '',
-                                                        editingIndex: editingTranscriptIndex,
-                                                        editValue: editTranscript,
-                                                        onChangeEdit: setEditTranscript,
-                                                        onSave: async () => {
-                                                            const updated = recordings.map((rec, i) =>
-                                                                i === index ? { ...rec, transcript: editTranscript } : rec
-                                                            );
-                                                            setRecordings(updated);
-                                                            await saveRecordings(updated);
-                                                            setEditingTranscriptIndex(null);
-                                                        },
-                                                        onCancel: () => {
-                                                            setEditTranscript('');
-                                                            setEditingTranscriptIndex(null);
-                                                        },
-                                                        onDelete: async () => {
-                                                            const updated = recordings.map((rec, i) =>
-                                                                i === index ? { ...rec, transcript: undefined } : rec
-                                                            );
-                                                            setRecordings(updated);
-                                                            await saveRecordings(updated);
-                                                            setShowTranscriptIndex(null);
-                                                        },
-                                                    })}
-
-                                                {showSummaryIndex === index && item.summary &&
-                                                    renderNoteBlock({
-                                                        type: 'summary',
-                                                        index,
-                                                        value: item.summary || '',
-                                                        editingIndex: editingSummaryIndex,
-                                                        editValue: editSummary,
-                                                        onChangeEdit: setEditSummary,
-                                                        onSave: async () => {
-                                                            const updated = recordings.map((rec, i) =>
-                                                                i === index ? { ...rec, summary: editSummary } : rec
-                                                            );
-                                                            setRecordings(updated);
-                                                            await saveRecordings(updated);
-                                                            setEditingSummaryIndex(null);
-                                                        },
-                                                        onCancel: () => {
-                                                            setEditSummary('');
-                                                            setEditingSummaryIndex(null);
-                                                        },
-                                                        onDelete: async () => {
-                                                            const updated = recordings.map((rec, i) =>
-                                                                i === index ? { ...rec, summary: undefined } : rec
-                                                            );
-                                                            setRecordings(updated);
-                                                            await saveRecordings(updated);
-                                                            setShowSummaryIndex(null);
-                                                        },
-                                                    })}
+                                                {showTranscriptIndex === index && renderNoteSection(index, 'transcript')}
+                                                {showSummaryIndex === index && renderNoteSection(index, 'summary')}
 
 
                                                 {/* 衍生檔案列表 */}
@@ -1023,7 +927,7 @@ const RecorderPageVoiceClamp = () => {
                                                         {item.derivedFiles?.enhanced && (
                                                             <View style={styles.derivedFileRow}>
                                                                 {renderFilename(item.derivedFiles.enhanced.uri, item.derivedFiles.enhanced.name, index, true, '🔊 增強音質')}
-                                                                {renderMoreButton(index, 'enhanced', styles.derivedMoreButton)}
+                                                                {renderMoreButton(index, 'enhanced', styles.derivedMoreButton, setSelectedContext, closeAllMenus, styles)}
                                                             </View>
                                                         )}
 
@@ -1031,7 +935,7 @@ const RecorderPageVoiceClamp = () => {
                                                         {item.derivedFiles?.trimmed && (
                                                             <View style={styles.derivedFileRow}>
                                                                 {renderFilename(item.derivedFiles.trimmed.uri, item.derivedFiles.trimmed.name, index, true, '✂️ 靜音剪輯')}
-                                                                {renderMoreButton(index, 'trimmed', styles.derivedMoreButton)}
+                                                                {renderMoreButton(index, 'trimmed', styles.derivedMoreButton, setSelectedContext, closeAllMenus, styles)}
                                                             </View>
                                                         )}
                                                     </View>
@@ -1039,9 +943,10 @@ const RecorderPageVoiceClamp = () => {
                                             </View>
                                         </View>
                                     );
-                                })
-                            )}
-                        </ScrollView>
+                                }}
+                            />
+                        )}
+
 
                         {/* 三點選單浮動層（全域定位） */}
                         {selectedContext && (
@@ -1107,20 +1012,20 @@ const RecorderPageVoiceClamp = () => {
                                             setShowTranscriptIndex(null);
                                             setShowSummaryIndex(null);
                                             setEditingTranscriptIndex(null);
-                                            
+
                                             setRecordings(prev => prev.map((rec, i) =>
-                                              i === index
-                                                ? {
-                                                    ...rec,
-                                                    isTrimmed: true,
-                                                    derivedFiles: {
-                                                      ...rec.derivedFiles,
-                                                      trimmed,
-                                                    },
-                                                  }
-                                                : rec
+                                                i === index
+                                                    ? {
+                                                        ...rec,
+                                                        isTrimmed: true,
+                                                        derivedFiles: {
+                                                            ...rec.derivedFiles,
+                                                            trimmed,
+                                                        },
+                                                    }
+                                                    : rec
                                             ));
-                                            
+
                                             Alert.alert('靜音剪輯完成', `${item.name}\n原長：${origSec}s → 剪後：${trimSec}s`);
                                         }
                                     } catch (err) {
@@ -1170,6 +1075,27 @@ const RecorderPageVoiceClamp = () => {
                         )}
 
                     </>
+                )}
+                {recordings.length > 10 && (
+                    <TouchableOpacity
+                        onPress={() => flatListRef.current?.scrollToOffset({ animated: true, offset: 0 })}
+                        style={{
+                            position: 'absolute',
+                            bottom: 90,
+                            right: 20,
+                            backgroundColor: colors.primary,
+                            paddingVertical: 10,
+                            paddingHorizontal: 16,
+                            borderRadius: 30,
+                            shadowColor: '#000',
+                            shadowOpacity: 0.2,
+                            shadowOffset: { width: 0, height: 2 },
+                            shadowRadius: 4,
+                            elevation: 5,
+                        }}
+                    >
+                        <Text style={{ color: 'white', fontSize: 18 }}>↑</Text>
+                    </TouchableOpacity>
                 )}
 
             </SafeAreaView>
