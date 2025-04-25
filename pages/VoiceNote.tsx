@@ -867,13 +867,14 @@ const RecorderPageVoiceNote = () => {
 
                               setIsTranscribingIndex(index);
                               try {
-                                const { transcript } = await transcribeAudio(item);
+                                                                const { transcript } = await transcribeAudio(item, (updatedTranscript) => {
+                                                                    setRecordings(prev =>
+                                                                        prev.map((rec, i) =>
+                                                                            i === index ? { ...rec, transcript: updatedTranscript } : rec
+                                                                        )
+                                                                    );
+                                                                });
 
-                                const updated = recordings.map((rec, i) =>
-                                  i === index ? { ...rec, transcript: transcript.text } : rec
-                                );
-                                setRecordings(updated);
-                                await saveRecordings(updated); // ✅ 寫入本地 JSON
 
                                 setShowTranscriptIndex(index);
                                 setShowSummaryIndex(null);

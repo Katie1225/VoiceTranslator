@@ -40,9 +40,9 @@ import RecorderButton from '../components/RecorderButton';
 import HamburgerMenu from '../components/HamburgerMenu';
 import MoreMenu from '../components/MoreMenu';
 import {
-  renderFilename,
-  renderMoreButton,
-  renderNoteBlock
+    renderFilename,
+    renderMoreButton,
+    renderNoteBlock
 } from '../components/AudioItem';
 import { uFPermissions } from '../src/hooks/uFPermissions';
 
@@ -547,19 +547,19 @@ const RecorderPageVoiceClamp = () => {
             <Text style={styles.moreIcon}>⋯</Text>
         </TouchableOpacity>
     );
-     //  錄音筆記重點摘要顯示
-        const renderNoteBlock = (props: {
-          type: 'transcript' | 'summary';
-          index: number;
-          value: string;
-          editingIndex: number | null;
-          editValue: string;
-          onChangeEdit: (text: string) => void;
-          onSave: () => void;
-          onCancel: () => void;
-          onDelete: () => void;
-        }) => {
-          const {
+    //  錄音筆記重點摘要顯示
+    const renderNoteBlock = (props: {
+        type: 'transcript' | 'summary';
+        index: number;
+        value: string;
+        editingIndex: number | null;
+        editValue: string;
+        onChangeEdit: (text: string) => void;
+        onSave: () => void;
+        onCancel: () => void;
+        onDelete: () => void;
+    }) => {
+        const {
             type,
             index,
             value,
@@ -569,52 +569,52 @@ const RecorderPageVoiceClamp = () => {
             onSave,
             onCancel,
             onDelete,
-          } = props;
-        
-          const isEditing = editingIndex === index;
-        
-          return (
+        } = props;
+
+        const isEditing = editingIndex === index;
+
+        return (
             <View style={styles.transcriptContainer}>
-              <View style={styles.bar} />
-        
-              {isEditing ? (
-                <>
-                  <TextInput
-                    style={styles.transcriptTextInput}
-                    value={editValue}
-                    onChangeText={onChangeEdit}
-                    multiline
-                    autoFocus
-                  />
-                  <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 16, marginTop: 8 }}>
-                    <TouchableOpacity onPress={onSave}>
-                      <Text style={[styles.transcriptActionButton, { color: colors.primary }]}>💾 儲存</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={onCancel}>
-                      <Text style={styles.transcriptActionButton}>✖️ 取消</Text>
-                    </TouchableOpacity>
-                  </View>
-                </>
-              ) : (
-                <>
-                  <Text style={styles.transcriptText}>{value}</Text>
-                  <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 8 }}>
-                    <TouchableOpacity onPress={() => onChangeEdit(value)}>
-                      <Text style={styles.transcriptActionButton}>✏️ 修改</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => shareText(value)}>
-                      <Text style={styles.transcriptActionButton}>📤 轉發</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={onDelete}>
-                      <Text style={styles.transcriptActionButton}>🗑️ 刪除</Text>
-                    </TouchableOpacity>
-                  </View>
-                </>
-              )}
+                <View style={styles.bar} />
+
+                {isEditing ? (
+                    <>
+                        <TextInput
+                            style={styles.transcriptTextInput}
+                            value={editValue}
+                            onChangeText={onChangeEdit}
+                            multiline
+                            autoFocus
+                        />
+                        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 16, marginTop: 8 }}>
+                            <TouchableOpacity onPress={onSave}>
+                                <Text style={[styles.transcriptActionButton, { color: colors.primary }]}>💾 儲存</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={onCancel}>
+                                <Text style={styles.transcriptActionButton}>✖️ 取消</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </>
+                ) : (
+                    <>
+                        <Text style={styles.transcriptText}>{value}</Text>
+                        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 8 }}>
+                            <TouchableOpacity onPress={() => onChangeEdit(value)}>
+                                <Text style={styles.transcriptActionButton}>✏️ 修改</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => shareText(value)}>
+                                <Text style={styles.transcriptActionButton}>📤 轉發</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={onDelete}>
+                                <Text style={styles.transcriptActionButton}>🗑️ 刪除</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </>
+                )}
             </View>
-          );
-        };
-        
+        );
+    };
+
 
 
 
@@ -865,23 +865,27 @@ const RecorderPageVoiceClamp = () => {
                                                             }
 
                                                             setIsTranscribingIndex(index);
-                                                            try {
-                                                                const { transcript } = await transcribeAudio(item, (updatedTranscript) => {
-                                                                    setRecordings(prev =>
-                                                                      prev.map((rec, i) =>
-                                                                        i === index ? { ...rec, transcript: updatedTranscript } : rec
-                                                                      )
-                                                                    );
-                                                                  });
-                                                                  
+                                                            setIsTranscribingIndex(index);
 
-                                                                setShowTranscriptIndex(index);
-                                                                setShowSummaryIndex(null);
+                                                            try {
+                                                              await transcribeAudio(item, (updatedTranscript) => {
+                                                                setRecordings(prev =>
+                                                                  prev.map((rec, i) =>
+                                                                    i === index ? { ...rec, transcript: updatedTranscript } : rec
+                                                                  )
+                                                                );
+                                                            
+                                                                if (showTranscriptIndex !== index) {
+                                                                  setShowTranscriptIndex(index);
+                                                                  setShowSummaryIndex(null); // 可選，不做 summary 也沒差
+                                                                }
+                                                              });
                                                             } catch (err) {
-                                                                Alert.alert('❌ 轉文字失敗', (err as Error).message);
+                                                              Alert.alert("❌ 轉文字失敗", (err as Error).message);
                                                             } finally {
-                                                                setIsTranscribingIndex(null);
+                                                              setIsTranscribingIndex(null);
                                                             }
+                                                            
                                                         }}
 
                                                     >
@@ -951,65 +955,65 @@ const RecorderPageVoiceClamp = () => {
                                                 )}
 
 
-{showTranscriptIndex === index &&
-  renderNoteBlock({
-    type: 'transcript',
-    index,
-    value: item.transcript || '',
-    editingIndex: editingTranscriptIndex,
-    editValue: editTranscript,
-    onChangeEdit: setEditTranscript,
-    onSave: async () => {
-                                                                            const updated = recordings.map((rec, i) =>
-                                                                                i === index ? { ...rec, transcript: editTranscript } : rec
-                                                                            );
-                                                                            setRecordings(updated);
-                                                                            await saveRecordings(updated);
-                                                                            setEditingTranscriptIndex(null);
-    },
-    onCancel: () => {
-      setEditTranscript('');
-      setEditingTranscriptIndex(null);
-    },
-    onDelete: async () => {
-                                                                        const updated = recordings.map((rec, i) =>
-                                                                            i === index ? { ...rec, transcript: undefined } : rec
-                                                                        );
-                                                                        setRecordings(updated);
-                                                                        await saveRecordings(updated);
-                                                                        setShowTranscriptIndex(null);
-    },
-  })}
+                                                {showTranscriptIndex === index &&
+                                                    renderNoteBlock({
+                                                        type: 'transcript',
+                                                        index,
+                                                        value: item.transcript || '',
+                                                        editingIndex: editingTranscriptIndex,
+                                                        editValue: editTranscript,
+                                                        onChangeEdit: setEditTranscript,
+                                                        onSave: async () => {
+                                                            const updated = recordings.map((rec, i) =>
+                                                                i === index ? { ...rec, transcript: editTranscript } : rec
+                                                            );
+                                                            setRecordings(updated);
+                                                            await saveRecordings(updated);
+                                                            setEditingTranscriptIndex(null);
+                                                        },
+                                                        onCancel: () => {
+                                                            setEditTranscript('');
+                                                            setEditingTranscriptIndex(null);
+                                                        },
+                                                        onDelete: async () => {
+                                                            const updated = recordings.map((rec, i) =>
+                                                                i === index ? { ...rec, transcript: undefined } : rec
+                                                            );
+                                                            setRecordings(updated);
+                                                            await saveRecordings(updated);
+                                                            setShowTranscriptIndex(null);
+                                                        },
+                                                    })}
 
-{showSummaryIndex === index && item.summary &&
-  renderNoteBlock({
-    type: 'summary',
-    index,
-    value: item.summary || '',
-    editingIndex: editingSummaryIndex,
-    editValue: editSummary,
-    onChangeEdit: setEditSummary,
-    onSave: async () => {
-                                                                            const updated = recordings.map((rec, i) =>
-                                                                                i === index ? { ...rec, summary: editSummary } : rec
-                                                                            );
-                                                                            setRecordings(updated);
-                                                                            await saveRecordings(updated);
-                                                                            setEditingSummaryIndex(null);
-    },
-    onCancel: () => {
-                                                                            setEditSummary('');
-                                                                            setEditingSummaryIndex(null);
-    },
-    onDelete: async () => {
-                                                                            const updated = recordings.map((rec, i) =>
-                                                                                i === index ? { ...rec, summary: undefined } : rec
-                                                                            );
-                                                                            setRecordings(updated);
-                                                                            await saveRecordings(updated);
-                                                                            setShowSummaryIndex(null);
-    },
-  })}
+                                                {showSummaryIndex === index && item.summary &&
+                                                    renderNoteBlock({
+                                                        type: 'summary',
+                                                        index,
+                                                        value: item.summary || '',
+                                                        editingIndex: editingSummaryIndex,
+                                                        editValue: editSummary,
+                                                        onChangeEdit: setEditSummary,
+                                                        onSave: async () => {
+                                                            const updated = recordings.map((rec, i) =>
+                                                                i === index ? { ...rec, summary: editSummary } : rec
+                                                            );
+                                                            setRecordings(updated);
+                                                            await saveRecordings(updated);
+                                                            setEditingSummaryIndex(null);
+                                                        },
+                                                        onCancel: () => {
+                                                            setEditSummary('');
+                                                            setEditingSummaryIndex(null);
+                                                        },
+                                                        onDelete: async () => {
+                                                            const updated = recordings.map((rec, i) =>
+                                                                i === index ? { ...rec, summary: undefined } : rec
+                                                            );
+                                                            setRecordings(updated);
+                                                            await saveRecordings(updated);
+                                                            setShowSummaryIndex(null);
+                                                        },
+                                                    })}
 
 
                                                 {/* 衍生檔案列表 */}
@@ -1100,18 +1104,23 @@ const RecorderPageVoiceClamp = () => {
                                         if (origStatus.isLoaded && trimStatus.isLoaded) {
                                             const origSec = Math.round((origStatus.durationMillis ?? 0) / 1000);
                                             const trimSec = Math.round((trimStatus.durationMillis ?? 0) / 1000);
+                                            setShowTranscriptIndex(null);
+                                            setShowSummaryIndex(null);
+                                            setEditingTranscriptIndex(null);
+                                            
                                             setRecordings(prev => prev.map((rec, i) =>
-                                                i === index
-                                                    ? {
-                                                        ...rec,
-                                                        isTrimmed: true,
-                                                        derivedFiles: {
-                                                            ...rec.derivedFiles,
-                                                            trimmed,
-                                                        },
-                                                    }
-                                                    : rec
+                                              i === index
+                                                ? {
+                                                    ...rec,
+                                                    isTrimmed: true,
+                                                    derivedFiles: {
+                                                      ...rec.derivedFiles,
+                                                      trimmed,
+                                                    },
+                                                  }
+                                                : rec
                                             ));
+                                            
                                             Alert.alert('靜音剪輯完成', `${item.name}\n原長：${origSec}s → 剪後：${trimSec}s`);
                                         }
                                     } catch (err) {
