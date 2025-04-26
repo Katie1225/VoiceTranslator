@@ -117,19 +117,25 @@ const RecorderPageVoiceClamp = () => {
     const [editingSummaryIndex, setEditingSummaryIndex] = useState<number | null>(null);
     const [editSummary, setEditSummary] = useState('');
 
-    const shareText = async (text: string) => {
+    const shareText = async (text: string, type: 'transcript' | 'summary', filename?: string) => {
         if (!text || text.trim() === '') {
             Alert.alert('無法分享', '內容為空');
             return;
         }
-
+    
+        let prefix = '';
+        if (filename) {
+            const label = type === 'transcript' ? '錄音筆記' : '重點整理';
+            prefix = `${filename} - ${label}x\n\n`;
+        }
+    
         try {
-            await Share.share({ message: text });
+            await Share.share({ message: prefix + text });
         } catch (err) {
             Alert.alert('分享失敗', (err as Error).message);
         }
     };
-
+    
     const [recordings, setRecordings] = useState<RecordingItem[]>([]);
 
     const {
@@ -633,7 +639,7 @@ const RecorderPageVoiceClamp = () => {
             },
             styles,
             colors,
-            shareText,
+            shareText: (text) => shareText(text, type, recordings[index]?.displayName || recordings[index]?.name), 
         });
     };
 
@@ -723,6 +729,16 @@ const RecorderPageVoiceClamp = () => {
                                                 zIndex: selectedContext?.index === index ? 999 : 0,
                                             }}
                                         >
+<TouchableOpacity
+    onLongPress={() => {
+      Alert.alert('刪除錄音', '確定要刪除嗎？', [
+        { text: '取消', style: 'cancel' },
+        { text: '刪除', onPress: () => deleteRecording(index) },
+      ]);
+    }}
+    activeOpacity={0.8}
+  >
+
                                             {/* 單個錄音項目的完整 UI */}
                                             <View style={[styles.recordingItem]}>
 
@@ -737,7 +753,7 @@ const RecorderPageVoiceClamp = () => {
                                                     {/* 名稱行 */}
                                                     <View style={styles.nameRow}>
                                                         {/* 左邊：播放＋檔名區塊 */}
-                                                        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                                        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center',  gap: 2, marginLeft: -4  }}>
                                                             <TouchableOpacity
                                                                 onPress={async () => {
                                                                     closeAllMenus();
@@ -778,6 +794,7 @@ const RecorderPageVoiceClamp = () => {
                                                                         value={editName}
                                                                         onChangeText={setEditName}
                                                                         autoFocus
+                                                                        textAlign="center"  
                                                                         onSubmitEditing={() => saveEditedName(index)}
                                                                         onBlur={() => saveEditedName(index)}
                                                                     />
@@ -1042,6 +1059,8 @@ const RecorderPageVoiceClamp = () => {
                                                     </View>
                                                 )}
                                             </View>
+
+                                            </TouchableOpacity>
                                         </View>
                                     );
                                 }}
