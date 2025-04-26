@@ -372,7 +372,13 @@ export const createStyles = (colors: any) => StyleSheet.create({
     color: '#888',
     marginTop: 2,
     lineHeight: 18,
-  } 
+  } ,
+  headerBlock: {
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    //marginBottom: 5,
+  },
   
 });
 

@@ -69,7 +69,9 @@ const RecorderPageVoiceClamp = () => {
     const audioRecorderPlayer = useRef(new AudioRecorderPlayer()).current;
     const [isTranscribingIndex, setIsTranscribingIndex] = useState<number | null>(null);
     const flatListRef = useRef<FlatList>(null);
-    const [itemHeights, setItemHeights] = useState<Record<number, number>>({});
+    const [itemOffsets, setItemOffsets] = useState<Record<number, number>>({});
+    const ITEM_HEIGHT = 80; // 或你設定的高度
+
 
     // 音量狀態
     const [currentVolume, setCurrentVolume] = useState(0);
@@ -382,8 +384,6 @@ const RecorderPageVoiceClamp = () => {
                 const dateStr = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
                 const displayName = `[錄音] ${durationText} ${hours}:${minutes}:${seconds} ${now.getMonth() + 1}/${now.getDate()}`;
 
-
-
                 const newItem: RecordingItem = {
                     uri: normalizedUri,
                     name,
@@ -637,17 +637,17 @@ const RecorderPageVoiceClamp = () => {
                                 onScrollToIndexFailed={(info) => {
                                     // 先滾動到近似位置
                                     flatListRef.current?.scrollToOffset({
-                                      offset: info.averageItemLength * info.index,
-                                      animated: true,
+                                        offset: info.averageItemLength * info.index,
+                                        animated: true,
                                     });
                                     // 100ms 後重試
                                     setTimeout(() => {
-                                      flatListRef.current?.scrollToIndex({
-                                        index: info.index,
-                                        animated: true,
-                                      });
+                                        flatListRef.current?.scrollToIndex({
+                                            index: info.index,
+                                            animated: true,
+                                        });
                                     }, 100);
-                                  }}
+                                }}
                                 style={styles.listContainer}
                                 data={recordings}
                                 keyExtractor={(item) => item.uri}  // 改用 uri 作為 key
@@ -655,13 +655,6 @@ const RecorderPageVoiceClamp = () => {
                                 maxToRenderPerBatch={10}
                                 windowSize={5}
                                 removeClippedSubviews={true}
-                                getItemLayout={(data, index) => ({
-                                    length: itemHeights[index] || 160, // 預設高度 160（未測量時）
-                                    offset: Object.keys(itemHeights)
-                                      .slice(0, index)
-                                      .reduce((sum, i) => sum + (itemHeights[Number(i)] || 160), 0),
-                                    index,
-                                  })}
                                 renderItem={({ item, index }) => {
                                     const isCurrentPlaying = playingUri === item.uri;
                                     const hasDerivedFiles = item.derivedFiles && (item.derivedFiles.enhanced || item.derivedFiles.trimmed);
@@ -676,85 +669,91 @@ const RecorderPageVoiceClamp = () => {
 
                                     return (
                                         <View
-                                        key={index}
-                                        onLayout={(e) => {
-                                          const { height } = e.nativeEvent.layout;
-                                          // 避免重複觸發更新（高度相同時跳過）
-                                          if (itemHeights[index] !== height) {
-                                            setItemHeights(prev => ({ ...prev, [index]: height }));
-                                          }
-                                        }}
-                                        style={{ 
-                                          position: 'relative',
-                                          zIndex: selectedContext?.index === index ? 999 : 0,
-                                        }}
-                                      >
+                                            key={index}
+                                            onLayout={(e) => {
+                                                const { y } = e.nativeEvent.layout;
+                                                setItemOffsets(prev => ({ ...prev, [index]: y }));
+                                            }}
+
+                                            style={{
+                                                position: 'relative',
+                                                zIndex: selectedContext?.index === index ? 999 : 0,
+                                            }}
+                                        >
                                             {/* 單個錄音項目的完整 UI */}
-                                            <View style={[styles.recordingItem, { minHeight: 80 }]}>
-                                                {/* 名稱行 */}
-                                                <View style={styles.nameRow}>
-                                                    {/* 左邊：播放＋檔名區塊 */}
-                                                    <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                                                        <TouchableOpacity
-  onPress={async () => {
-    closeAllMenus();
-    await togglePlayback(item.uri, index);
-    
-    // 自動滾動到該項目（置頂）
-// 等 itemHeights 量好再滾
-setTimeout(() => {
-    if (itemHeights[index]) {
-      flatListRef.current?.scrollToIndex({
-        index,
-        animated: true,
-        viewPosition: 0.1, // 貼到最頂
-      });
-    }
-  }, 100); // 等 100ms 比較穩
-                                                                // 如果有 transcript 則自動展開
-                                                                if (item.transcript) {
-                                                                    setShowTranscriptIndex(index);
-                                                                    setShowSummaryIndex(null);
-                                                                } else {
-                                                                    setShowTranscriptIndex(null);
-                                                                    setShowSummaryIndex(null);
-                                                                }
-                                                            }}
-                                                            style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
-                                                        >
-                                                            <Text style={styles.playIcon}>
-                                                                {playingUri === item.uri && isPlaying ? '❚❚' : '▶'}
-                                                            </Text>
-                                                            <Text
-                                                                style={[
-                                                                    styles.recordingName,
-                                                                    isCurrentPlaying && styles.playingText
-                                                                ]}
-                                                                numberOfLines={1}
-                                                                ellipsizeMode="tail"
+                                            <View style={[styles.recordingItem]}>
+
+                                                <View style={[
+                                                    styles.headerBlock,
+                                                    {
+                                                        height: isCurrentPlaying ? undefined : ITEM_HEIGHT, // ❗固定高度，只有沒播放時
+                                                        justifyContent: 'center',
+                                                    }
+                                                ]}>
+
+                                                    {/* 名稱行 */}
+                                                    <View style={styles.nameRow}>
+                                                        {/* 左邊：播放＋檔名區塊 */}
+                                                        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                                            <TouchableOpacity
+                                                                onPress={async () => {
+                                                                    closeAllMenus();
+                                                                    await togglePlayback(item.uri, index);
+                                                                    const baseDelay = 100; // 基本延遲
+                                                                    const extraDelayPerItem = 20; // 每個錄音項目多加的延遲時間
+                                                                    const delay = baseDelay + (index * extraDelayPerItem);
+                                                                    // 自動滾動到該項目（置頂）
+                                                                    setTimeout(() => {
+                                                                        flatListRef.current?.scrollToOffset({
+                                                                          offset: index * (ITEM_HEIGHT+43)-10,
+                                                                          animated: true,
+                                                                        });
+                                                                      }, delay);
+
+                                                                    // 如果有 transcript 則自動展開
+                                                                    if (item.transcript) {
+                                                                        setShowTranscriptIndex(index);
+                                                                        setShowSummaryIndex(null);
+                                                                    } else {
+                                                                        setShowTranscriptIndex(null);
+                                                                        setShowSummaryIndex(null);
+                                                                    }
+                                                                }}
+                                                                style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
                                                             >
-                                                                {item.displayName || item.name}
-                                                            </Text>
-                                                        </TouchableOpacity>
+                                                                <Text style={styles.playIcon}>
+                                                                    {playingUri === item.uri && isPlaying ? '❚❚' : '▶'}
+                                                                </Text>
+                                                                <Text
+                                                                    style={[
+                                                                        styles.recordingName,
+                                                                        isCurrentPlaying && styles.playingText
+                                                                    ]}
+                                                                    numberOfLines={1}
+                                                                    ellipsizeMode="tail"
+                                                                >
+                                                                    {item.displayName || item.name}
+                                                                </Text>
+                                                            </TouchableOpacity>
+                                                        </View>
+
+                                                        {/* 右邊：三點選單 */}
+                                                        {editingIndex !== index &&
+                                                            renderMoreButton(index, 'main', styles.moreButton, setSelectedContext, closeAllMenus, styles)}
                                                     </View>
 
-                                                    {/* 右邊：三點選單 */}
-                                                    {(isCurrentPlaying || !isPlaying) && editingIndex !== index &&
-                                                        renderMoreButton(index, 'main', styles.moreButton, setSelectedContext, closeAllMenus, styles)}
+                                                    {/* 第二行：兩行小字摘要 */}
+                                                    {(!isCurrentPlaying) && (
+                                                        <Text
+                                                            style={styles.extraLine}
+                                                            numberOfLines={2}
+                                                            ellipsizeMode="tail"
+                                                        >
+                                                            {item.transcript ? item.transcript : '　\n'}
+                                                        </Text>
+
+                                                    )}
                                                 </View>
-
-                                                {/* 第二行：兩行小字摘要 */}
-                                                {(!isCurrentPlaying) && (
-                                                    <Text
-                                                        style={styles.extraLine}
-                                                        numberOfLines={2}
-                                                        ellipsizeMode="tail"
-                                                    >
-                                                        {item.transcript}
-                                                    </Text>
-
-                                                )}
-
 
                                                 {/* 播放進度條 */}
                                                 {isCurrentPlaying && ((playingUri === item.uri ||
