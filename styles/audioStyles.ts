@@ -366,8 +366,13 @@ export const createStyles = (colors: any) => StyleSheet.create({
   transcriptActionButton: {
     fontSize: 13,
     color: '#666',
-  }
-  
+  },
+  extraLine: {
+    fontSize: 12,
+    color: '#888',
+    marginTop: 2,
+    lineHeight: 18,
+  } 
   
 });
 
