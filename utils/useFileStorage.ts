@@ -9,81 +9,185 @@ export const useFileStorage = (setRecordings: React.Dispatch<React.SetStateActio
 
   const saveRecordings = async (items: RecordingItem[]) => {
     try {
+      // 先驗證檔案是否存在
+      const validItems = await Promise.all(
+        items.map(async item => {
+          const path = item.uri.replace(/^file:\/\//, '');
+          const exists = await RNFS.exists(path);
+          return exists ? item : null;
+        })
+      );
+      
+      const filteredItems = validItems.filter(Boolean) as RecordingItem[];
+      
       await FileSystem.writeAsStringAsync(
         `${FileSystem.documentDirectory}recordings.json`,
-        JSON.stringify(items)
+        JSON.stringify(filteredItems)
       );
+      
       const backupPath = `${RNFS.ExternalDirectoryPath}/recordings_backup.json`;
-      await RNFS.writeFile(backupPath, JSON.stringify(items), 'utf8');
+      await RNFS.writeFile(backupPath, JSON.stringify(filteredItems), 'utf8');
     } catch (err) {
       console.error('儲存錄音列表失敗:', err);
     }
   };
- 
 
   // 從本地檔案載入錄音列表
   const loadRecordings = async () => {
     try {
+      const filePath = `${FileSystem.documentDirectory}recordings.json`;
+      const fileExists = await FileSystem.getInfoAsync(filePath);
+  
+      if (fileExists.exists) {
+        const fileContents = await FileSystem.readAsStringAsync(filePath);
+        const parsedData = JSON.parse(fileContents);
+  
+        const validRecordings = [];
+  
+        for (const item of parsedData) {
+          try {
+            const fileInfo = await FileSystem.getInfoAsync(item.uri);
+            if (fileInfo.exists && fileInfo.size && fileInfo.size > 3000) {
+              validRecordings.push(item);
+            } else {
+              console.warn(`⚠️ 找到無效錄音（刪除）: ${item.uri}`);
+            }
+          } catch (err) {
+            console.warn(`⚠️ 檢查錄音失敗: ${item.uri}`, err);
+          }
+        }
+  
+        setRecordings(validRecordings);
+      }
+    } catch (error) {
+      console.error("讀取錄音列表失敗：", error);
+    };
+   
+   
+    try {
       const internalPath = `${FileSystem.documentDirectory}recordings.json`;
       const backupPath = `${RNFS.ExternalDirectoryPath}/recordings_backup.json`;
-
-      let existingData: RecordingItem[] = [];
-
-      // 嘗試讀取內部 JSON
-      const internalInfo = await FileSystem.getInfoAsync(internalPath);
-      if (internalInfo.exists) {
-        const content = await FileSystem.readAsStringAsync(internalPath);
-        existingData = JSON.parse(content);
-      } else {
-        // 若內部檔不存在，改讀取外部備份
-        const backupExists = await RNFS.exists(backupPath);
-        if (backupExists) {
-        const backupContent = await RNFS.readFile(backupPath, 'utf8');
-        existingData = JSON.parse(backupContent);
-          console.log('✅ 從外部備份還原 recordings.json');
-        }
-      }
-
-      // 掃描實體音檔
-      const audioFiles = await RNFS.readDir(RNFS.ExternalDirectoryPath);
-      const m4aFiles = audioFiles.filter(file =>
-        /\.(m4a)$/i.test(file.name)
-      );
-
-      console.log('📂 掃描到的 .m4a 檔案：');
-      m4aFiles.forEach(file => {
-        console.log('🎧', file.name);
-      });
-
-
-      // 合併：保留原資料，補回新音檔
-      const merged: RecordingItem[] = [
-        ...existingData,
-        ...m4aFiles
-          .map(file => {
-            const fileUri = `file://${file.path}`;
-            const matched = existingData.find(item =>
-              item.uri.replace(/^file:\/\//, '') === file.path
-            );
-            return matched
-              ? null
-              : {
-                  uri: fileUri,
-                  name: file.name,
-                  displayName: file.name,
-                  derivedFiles: {},
-                };
-          })
-          .filter(Boolean) as RecordingItem[]
-      ];
-
-      setRecordings(merged);
-      await saveRecordings(merged); // 寫回最新 JSON 與備份
+  
+      // 1. 載入現有記錄（優先從內部儲存，次之從備份）
+      let existingData: RecordingItem[] = await loadExistingRecords(internalPath, backupPath);
+  
+      // 2. 掃描實際音檔
+      const m4aFiles = await scanAudioFiles();
+      
+      // 3. 智能合併與驗證
+      const validatedRecordings = await mergeAndValidateRecords(existingData, m4aFiles);
+  
+      // 4. 更新狀態並保存
+      setRecordings(validatedRecordings);
+      await saveRecordings(validatedRecordings);
+  
+      console.log('✅ 錄音列表載入完成，有效記錄數:', validatedRecordings.length);
     } catch (err) {
       console.error('🔴 載入錄音列表失敗:', err);
     } finally {
       setIsLoading(false);
     }
+  };
+  
+  // 輔助函數 1：載入現有記錄
+  const loadExistingRecords = async (internalPath: string, backupPath: string) => {
+    try {
+      // 優先嘗試讀取內部儲存
+      const internalInfo = await FileSystem.getInfoAsync(internalPath);
+      if (internalInfo.exists) {
+        const content = await FileSystem.readAsStringAsync(internalPath);
+        return JSON.parse(content);
+      }
+  
+      // 次之嘗試讀取外部備份
+      if (await RNFS.exists(backupPath)) {
+        const backupContent = await RNFS.readFile(backupPath, 'utf8');
+        console.log('✅ 從外部備份還原 recordings.json');
+        return JSON.parse(backupContent);
+      }
+  
+      return [];
+    } catch (error) {
+      console.warn('載入現有記錄失敗，將返回空陣列', error);
+      return [];
+    }
+  };
+  
+  // 輔助函數 2：掃描音檔
+  const scanAudioFiles = async () => {
+    try {
+      const audioFiles = await RNFS.readDir(RNFS.ExternalDirectoryPath);
+      const m4aFiles = audioFiles.filter(file => /\.m4a$/i.test(file.name));
+      
+      console.log('📂 掃描到的音檔:');
+      m4aFiles.forEach(file => console.log('🎧', file.name));
+      
+      return m4aFiles;
+    } catch (error) {
+      console.warn('掃描音檔失敗', error);
+      return [];
+    }
+  };
+  
+  // 輔助函數 3：智能合併與驗證
+  const mergeAndValidateRecords = async (
+    existingData: RecordingItem[],
+    m4aFiles: RNFS.ReadDirItem[]
+  ) => {
+    // 正規化路徑比對函數
+    const normalizePath = (path: string) => 
+      path.replace(/^file:\/+/i, '').toLowerCase().replace(/\/+$/, '');
+  
+    // 建立現有記錄的索引（使用正規化路徑）
+    const existingRecordsMap = new Map<string, RecordingItem>();
+    existingData.forEach(item => {
+      existingRecordsMap.set(normalizePath(item.uri), item);
+    });
+  
+    // 合併流程
+    const result: RecordingItem[] = [];
+  
+    // 首先保留所有現有有效記錄
+    for (const item of existingData) {
+      try {
+        const path = normalizePath(item.uri);
+        if (await RNFS.exists(path)) {
+          result.push(item);
+        } else {
+          console.warn('移除不存在檔案的記錄:', item.uri);
+        }
+      } catch (error) {
+        console.warn('驗證記錄時出錯:', item.uri, error);
+      }
+    }
+  
+    // 然後添加新掃描到的未記錄檔案
+    for (const file of m4aFiles) {
+      try {
+        const fileUri = `file://${file.path}`;
+        const normalizedPath = normalizePath(fileUri);
+  
+        if (!existingRecordsMap.has(normalizedPath)) {
+          result.push({
+            uri: fileUri,
+            name: file.name,
+            displayName: file.name.replace(/\.m4a$/i, ''), // 移除副檔名
+            derivedFiles: {},
+            date: (file.mtime ? new Date(file.mtime).toISOString() : new Date().toISOString()), // 添加檔案修改時間
+          });
+          console.log('➕ 新增未記錄音檔:', file.name);
+        }
+      } catch (error) {
+        console.warn('處理新音檔時出錯:', file.name, error);
+      }
+    }
+  
+    // 按修改時間降序排序
+    return result.sort((a, b) => {
+      const dateA = a.date ? new Date(a.date).getTime() : 0;
+      const dateB = b.date ? new Date(b.date).getTime() : 0;
+      return dateB - dateA;
+    });
   };
 
   const safeDeleteFile = async (uri: string) => {

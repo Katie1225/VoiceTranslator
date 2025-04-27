@@ -13,9 +13,11 @@
     background: '#f8f9fa',
     secondary: '#e0e0e0',
     text: '#333',
+    subtext: '#666',
     buttonText: 'white',
     warning: '#F44336',
-    container: 'white'
+    container: 'white',
+        shadow: '#000000'
   };
   
   export const darkTheme = {
@@ -23,7 +25,9 @@
     background: '#121212',
     secondary: '#424242',
     text: '#f5f5f5',
+subtext: '#bbb',
     buttonText: 'white',
     warning: '#D32F2F',
-    container: '#1E1E1E'
+    container: '#1E1E1E',
+    shadow: '#ffffff'
   };

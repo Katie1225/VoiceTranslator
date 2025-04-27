@@ -12,6 +12,54 @@ export const createStyles = (colors: any) => StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  recordingItem: {
+    backgroundColor: colors.container,
+    borderRadius: 10,
+    padding: 15,
+    marginBottom: 12,
+    borderWidth:0.5,
+borderColor: colors.primary,
+
+    minHeight: 100,
+
+    flexDirection: 'column',
+    justifyContent: 'flex-start',
+  },
+  nameRow: {                                   //名稱條
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 30,
+  },
+  
+  transcriptBlock: {                            //小字容器
+    paddingHorizontal: 8,
+    marginTop: 4,
+    height: 50,
+  },
+  
+  transcriptBlockText: {                          //小字文字
+    fontSize: 12,
+    lineHeight: 22,
+    color: colors.subtext,
+    paddingRight: 8, // 保留操作列空間
+  },
+  
+  progressContainer: {                            //進度條
+    flexDirection: 'column',
+    paddingHorizontal: 8,
+    marginTop: 20,
+    height: 30
+  },
+  
+  actionButtons: {                                  //錄音筆記重點摘要隱藏
+    marginTop: 8,
+    height: 50,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -99,12 +147,19 @@ export const createStyles = (colors: any) => StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 24,
     borderRadius: 25,
+    minWidth: 90,         // 🔥新增
+    alignItems: 'center',  // 🔥新增
+    justifyContent: 'center', // 🔥新增
   },
+  
   stopButton: {
-    backgroundColor: colors.warning,
+    backgroundColor: 'red',
     paddingVertical: 12,
     paddingHorizontal: 24,
     borderRadius: 25,
+    minWidth: 90,         // 🔥新增
+    alignItems: 'center',  // 🔥新增
+    justifyContent: 'center', // 🔥新增
   },
   buttonText: {
     color: colors.buttonText,
@@ -131,18 +186,7 @@ export const createStyles = (colors: any) => StyleSheet.create({
     flex: 1,
     padding: 15,
   },
-  recordingItem: {
-    backgroundColor: colors.container,
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 12,
-    elevation: 2,
-  },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
+
   playIconContainer: {
     marginRight: 10,
     width: 24,
@@ -165,6 +209,9 @@ export const createStyles = (colors: any) => StyleSheet.create({
   },
   recordingName: {
     fontSize: 16,
+    lineHeight: 22, // 固定行高
+    textAlignVertical: 'center',
+    overflow: 'hidden',
     color: colors.text,
   },
   playOptionsMenu: {
@@ -241,13 +288,11 @@ export const createStyles = (colors: any) => StyleSheet.create({
     fontSize: 14,
     color: colors.text,
   },
-  
-
-  progressContainer: {
-    marginTop: 8,
-    width: '100%',
+  menuButtonContainer: {
+    alignItems: 'center',  // 水平置中
+    justifyContent: 'center', // 垂直置中（可選）
+    padding: 10, // 按鈕周圍的間距
   },
-  
 
   derivedFileRow: {
     flexDirection: 'row',
@@ -287,7 +332,7 @@ export const createStyles = (colors: any) => StyleSheet.create({
   },
   moreButton: {
     marginLeft: 10,
-    padding: 5,
+    padding: 0,
   },
   moreIcon: {
     fontSize: 20,
@@ -323,39 +368,37 @@ export const createStyles = (colors: any) => StyleSheet.create({
     borderRadius: 8,
     padding: 8,
     elevation: 4,
-    shadowColor: '#000',
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 4,
     zIndex: 10,
   },
-  transcriptContainer: {
-    backgroundColor: '#fff',
+  transcriptContainer: {                           // 錄音筆記跟重點摘要容器
+    backgroundColor: colors.background,
     padding: 12,
     borderRadius: 12,
     marginTop: 10,
     elevation: 2,
   },
-  
-  transcriptText: {
+  transcriptText: {                              // 錄音筆記跟重點摘要顯示文字
     fontSize: 14,
-    lineHeight: 22,
-    color: '#333',
-    paddingRight: 8, // 保留操作列空間
+    color: colors.text,
   },
   
-  transcriptTextInput: {
+ 
+ transcriptTextInput: {                          // 錄音筆記跟重點摘要編輯文字
     fontSize: 14,
-    color: '#333',
+    color: colors.text,
     padding: 8,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.background,
     borderRadius: 8,
     minHeight: 100,
     textAlignVertical: 'top',
     width: '100%',
   },
   
-  transcriptActionsRow: {
+  transcriptActionsRow: {                         // 錄音筆記跟重點摘要編輯文字的儲存與取消按鈕
     flexDirection: 'row',
     justifyContent: 'flex-end',
     alignItems: 'center',
@@ -363,10 +406,10 @@ export const createStyles = (colors: any) => StyleSheet.create({
     gap: 12
   },
   
-  transcriptActionButton: {
-    fontSize: 13,
-    color: '#666',
-  },
+  transcriptActionButton: {                        // 錄音筆記跟重點摘要編輯文字的儲存與取消文字
+    fontSize: 13,  
+    color: colors.subtext,
+  }, 
   extraLine: {
     fontSize: 12,
     color: '#888',

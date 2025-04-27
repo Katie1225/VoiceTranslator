@@ -119,7 +119,7 @@ export const renderNoteBlock = (props: {
                     />
                     <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 16, marginTop: 8 }}>
                         <TouchableOpacity onPress={onSave}>
-                            <Text style={[styles.transcriptActionButton, { color: colors.primary }]}>💾 儲存</Text>
+                            <Text style={styles.transcriptActionButton}>💾 儲存</Text>
                         </TouchableOpacity>
                         <TouchableOpacity onPress={onCancel}>
                             <Text style={styles.transcriptActionButton}>✖️ 取消</Text>

@@ -21,12 +21,13 @@ const formatTime = (ms: number) => {
 };
 
 const RecorderButton = ({ recording, recordingTime, onStart, onStop, styles, colors, title, }: Props) => (
-  <View style={[styles.recordSection, { flexDirection: 'row', alignItems: 'center', justifyContent:  'flex-start' }]}>
-    <Text style={{ color: colors.primary, marginRight: 12 , marginLeft: 12 ,fontSize: 26,fontWeight: '500',fontStyle: 'italic' }}>
-      {recording ? `⏱ ${formatTime(recordingTime * 1000)}` : title}
+  <View style={{ flexDirection: 'row', alignItems: 'center',  justifyContent: 'flex-start',  position: 'relative',     }}>
+
+    <Text style={{ color: colors.primary, marginRight: 12 , marginLeft: 20 ,fontSize: 26,fontWeight: '500',fontStyle: 'italic' }}>
+      {recording ? `  ⏱ ${formatTime(recordingTime * 1000)}` : title}
     </Text>
     <TouchableOpacity
-      style={recording ? styles.stopButton : styles.recordButton}
+    style={recording ? styles.stopButton : styles.recordButton}
       onPress={recording ? onStop : onStart}
     >
       <Text style={styles.buttonText}>

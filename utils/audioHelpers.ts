@@ -14,6 +14,7 @@ export type RecordingItem = {
   summary?: string;
   transcriptEdited?: string;
   summaryEdited?: string;
+  date?: string; 
 
   derivedFiles?: {
     enhanced?: RecordingItem;
@@ -168,6 +169,7 @@ export const transcribeAudio = async (
     // 🧠 定義可疑語句
     const suspiciousPhrases = [
       '社群提供',
+      '社區提供',
       '節目由',
       '贊助',
       '製作單位',
@@ -181,7 +183,8 @@ export const transcribeAudio = async (
       '今天的節目',
       '忽略任何字幕來源',
       '廣告內容',
-      '請不吝點贊訂閱欄目'
+      '請不吝點贊訂閱欄目',
+      '字幕by索蘭婭╰╯╯',
     ];
 
     const isSuspicious = (text: string) => {

@@ -4,21 +4,21 @@ import { View, Text, TouchableOpacity } from 'react-native';
 import { lightTheme, darkTheme, additionalColors } from '../constants/Colors';
 
 type Props = {
-    visible: boolean;
-    onClose: () => void;
-    isDarkMode: boolean;
-    setIsDarkMode: (value: boolean) => void;
-    customPrimaryColor: string | null;
-    setCustomPrimaryColor: (color: string | null) => void;
-    styles: any;
-  };
-  
+  visible: boolean;
+  onClose: () => void;
+  isDarkMode: boolean;
+  toggleTheme: () => void;
+  customPrimaryColor: string | null;
+  setCustomPrimaryColor: (color: string | null) => void;
+  styles: any;
+};
+
 
 const HamburgerMenu = ({
   visible,
   onClose,
   isDarkMode,
-  setIsDarkMode,
+  toggleTheme,
   customPrimaryColor,
   setCustomPrimaryColor,
   styles,
@@ -27,10 +27,10 @@ const HamburgerMenu = ({
 
   return (
     <View style={styles.menuContainer}>
-      <Text style={styles.menuItem}>版本: v1.2.9</Text>
+      <Text style={styles.menuItem}>版本: v1.3.0</Text>
 
       <TouchableOpacity
-        onPress={() => { onClose(); setIsDarkMode(!isDarkMode); }}
+        onPress={() => { onClose();   toggleTheme(); }}
         style={styles.menuItemButton}
       >
         <Text style={styles.menuItem}>
@@ -56,7 +56,7 @@ const HamburgerMenu = ({
               { backgroundColor: color },
               customPrimaryColor === color && styles.selectedColor
             ]}
-            onPress={() => { onClose(); setCustomPrimaryColor(color); }}
+            onPress={() => { onClose();   setCustomPrimaryColor(color); ; }}
           />
         ))}
       </View>
