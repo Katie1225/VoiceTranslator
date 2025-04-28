@@ -70,6 +70,9 @@ const RecorderPageVoiceNote = () => {
   const [dbHistory, setDbHistory] = useState<number[]>([]);
   const audioRecorderPlayer = useRef(new AudioRecorderPlayer()).current;
   const [isTranscribingIndex, setIsTranscribingIndex] = useState<number | null>(null);
+  const [isSummarizingIndex, setIsSummarizingIndex] = useState<number | null>(null);
+  const isAnyProcessing = isTranscribingIndex !== null || isSummarizingIndex !== null;
+
   const flatListRef = useRef<FlatList>(null);
   const [itemOffsets, setItemOffsets] = useState<Record<number, number>>({});
   const [selectedPlayingIndex, setSelectedPlayingIndex] = useState<number | null>(null);
@@ -168,7 +171,7 @@ const RecorderPageVoiceNote = () => {
     let prefix = '';
     if (filename) {
       const label = type === 'transcript' ? '錄音筆記' : '重點整理';
-      prefix = `${filename} - ${label}x\n\n`;
+      prefix = `${filename} - ${label}\n\n`;
     }
 
     try {
@@ -407,18 +410,18 @@ const RecorderPageVoiceNote = () => {
         Alert.alert(
           "錄音失敗",
           "錄音檔案未建立成功，請確認權限已開啟，並將「背景限制」設為不限制。"
-        );       
+        );
         return;
       }
 
       const fileInfo = await RNFS.stat(uri);
 
-    // ✅ 加強判斷：如果檔案太小，就刪除！
-    if (fileInfo.size < 3000) { // 小於 3KB 視為失敗錄音
-      await RNFS.unlink(uri);
-      Alert.alert("錄音失敗", "錄音檔案太小，已自動刪除");
-      return;
-    }
+      // ✅ 加強判斷：如果檔案太小，就刪除！
+      if (fileInfo.size < 3000) { // 小於 3KB 視為失敗錄音
+        await RNFS.unlink(uri);
+        Alert.alert("錄音失敗", "錄音檔案太小，已自動刪除");
+        return;
+      }
 
 
       console.log("📄 錄音檔案資訊:", fileInfo);
@@ -748,6 +751,7 @@ const RecorderPageVoiceNote = () => {
           setRecordings(updated);
           await saveRecordings(updated);
           setShowSummaryIndex(null);
+          setIsSummarizingIndex(null);
         }
       },
       styles,
@@ -809,7 +813,15 @@ const RecorderPageVoiceNote = () => {
                       alignItems: 'center',
                       marginBottom: 0,    // 控制兩個按鈕的距離
                     }}
-                    onPress={() => { closeAllMenus(); setMenuVisible(!menuVisible); }}
+                    onPress={() => {
+                      if (menuVisible) {
+                        // 如果漢堡本來是打開的，再按一次就關掉
+                        setMenuVisible(false);
+                      } else {
+                        closeAllMenus();
+                        setMenuVisible(true);
+                      }
+                    }}
                   >
                     <Text style={{ fontSize: 20, color: colors.primary }}>☰</Text>
                   </TouchableOpacity>
@@ -855,6 +867,7 @@ const RecorderPageVoiceNote = () => {
                 style={styles.listContainer}
                 data={recordings}
                 keyExtractor={(item) => item.uri}  // 改用 uri 作為 key
+                contentContainerStyle={{ paddingBottom: 40 }}
                 initialNumToRender={10}
                 maxToRenderPerBatch={10}
                 windowSize={5}
@@ -897,136 +910,133 @@ const RecorderPageVoiceNote = () => {
                         {/* 單個錄音項目的完整 UI */}
                         <View style={[styles.recordingItem]}>
 
-                        
 
 
-                            {/* 名稱行 */}
-                            <View style={[styles.nameRow, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
-  {/* 左邊播放鍵＋檔名 */}
-  <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1 }}>
-                                <TouchableOpacity
-                                  onPress={async () => {
-                                    closeAllMenus();
-                                    await togglePlayback(item.uri, index);
-                                    setSelectedPlayingIndex(index);
 
-                                    if (item.transcript) {
-                                      setShowTranscriptIndex(index);
-                                      setShowSummaryIndex(null);
-                                    } else {
-                                      setShowTranscriptIndex(null);
-                                      setShowSummaryIndex(null);
-                                    }
-                                  }}
-                                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
-                                >
-                                  <Text style={styles.playIcon}>
-                                    {playingUri === item.uri && isPlaying ? '❚❚' : '▶'}
+                          {/* 名稱行 */}
+                          <View style={[styles.nameRow, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
+                            {/* 左邊播放鍵＋檔名 */}
+                            <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1 }}>
+                              <TouchableOpacity
+                                onPress={async () => {
+                                  closeAllMenus();
+                                  await togglePlayback(item.uri, index);
+                                  setSelectedPlayingIndex(index);
+
+                                  if (item.transcript) {
+                                    setShowTranscriptIndex(index);
+                                    setShowSummaryIndex(null);
+                                  } else {
+                                    setShowTranscriptIndex(null);
+                                    setShowSummaryIndex(null);
+                                  }
+                                }}
+                                style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+                              >
+                                <Text style={styles.playIcon}>
+                                  {playingUri === item.uri && isPlaying ? '❚❚' : '▶'}
+                                </Text>
+
+                                {/* 檔名顯示：正常是 Text，重新命名時是 TextInput */}
+                                {editingIndex === index ? (
+                                  <TextInput
+                                    style={[
+                                      styles.recordingName,
+                                      isCurrentPlaying && styles.playingText,
+                                      { borderBottomWidth: 1, borderColor: colors.primary }
+                                    ]}
+                                    value={editName}
+                                    onChangeText={setEditName}
+                                    autoFocus
+                                    textAlign="center"
+                                    onSubmitEditing={() => saveEditedName(index)}
+                                    onBlur={() => saveEditedName(index)}
+                                  />
+                                ) : (
+                                  <Text
+                                    style={[
+                                      styles.recordingName,
+                                      isCurrentPlaying && styles.playingText
+                                    ]}
+                                    numberOfLines={1}
+                                    ellipsizeMode="tail"
+                                  >
+                                    {item.displayName || item.name}
                                   </Text>
+                                )}
+                              </TouchableOpacity>
+                            </View>
 
-                                  {/* 檔名顯示：正常是 Text，重新命名時是 TextInput */}
-                                  {editingIndex === index ? (
-                                    <TextInput
-                                      style={[
-                                        styles.recordingName,
-                                        isCurrentPlaying && styles.playingText,
-                                        { borderBottomWidth: 1, borderColor: colors.primary }
-                                      ]}
-                                      value={editName}
-                                      onChangeText={setEditName}
-                                      autoFocus
-                                      textAlign="center"
-                                      onSubmitEditing={() => saveEditedName(index)}
-                                      onBlur={() => saveEditedName(index)}
-                                    />
-                                  ) : (
-                                    <Text
-                                      style={[
-                                        styles.recordingName,
-                                        isCurrentPlaying && styles.playingText
-                                      ]}
-                                      numberOfLines={1}
-                                      ellipsizeMode="tail"
-                                    >
-                                      {item.displayName || item.name}
-                                    </Text>
-                                  )}
+                            {/* 右邊：三點選單 or 💾 ✖️ 按鈕 */}
+                            {editingIndex === index ? (
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                <TouchableOpacity onPress={() => saveEditedName(index)}>
+                                  <Text style={[styles.transcriptActionButton, { color: colors.primary }]}>💾</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity onPress={() => {
+                                  setEditingIndex(null);
+                                  setEditName('');
+                                }}>
+                                  <Text style={styles.transcriptActionButton}>✖️</Text>
                                 </TouchableOpacity>
                               </View>
+                            ) : (
+                              renderMoreButton(index, 'main', styles.moreButton, setSelectedContext, closeAllMenus, styles, selectedContext)
+                            )}
+                          </View>
 
-                              {/* 右邊：三點選單 or 💾 ✖️ 按鈕 */}
-                              {editingIndex === index ? (
-                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                                  <TouchableOpacity onPress={() => saveEditedName(index)}>
-                                    <Text style={[styles.transcriptActionButton, { color: colors.primary }]}>💾</Text>
-                                  </TouchableOpacity>
-                                  <TouchableOpacity onPress={() => {
-                                    setEditingIndex(null);
-                                    setEditName('');
-                                  }}>
-                                    <Text style={styles.transcriptActionButton}>✖️</Text>
-                                  </TouchableOpacity>
-                                </View>
-                              ) : (
-                                renderMoreButton(index, 'main', styles.moreButton, setSelectedContext, closeAllMenus, styles)
-                              )}
-                            </View>
+                          {/* 第二行：兩行小字摘要 */}
+                          <View pointerEvents="box-none">
+                            {(!isCurrentPlaying) && (
+                              <TouchableOpacity
+                                onPress={async () => {
+                                  closeAllMenus();
+                                  setSelectedPlayingIndex(index);
 
+                                  if (item.transcript) {
+                                    setShowTranscriptIndex(index);
+                                    setShowSummaryIndex(null);
+                                  } else {
+                                    setShowTranscriptIndex(null);
+                                    setShowSummaryIndex(null);
+                                  }
 
-                            {/* 第二行：兩行小字摘要 */}
-                            <View pointerEvents="box-none">
-                              {(!isCurrentPlaying) && (
-                                <TouchableOpacity
-                                  onPress={async () => {
-                                    closeAllMenus();
-                                    setSelectedPlayingIndex(index);
+                                  const baseDelay = 100;
+                                  const extraDelayPerItem = 20;
+                                  const delay = baseDelay + (index * extraDelayPerItem);
+                                  setTimeout(() => {
+                                    flatListRef.current?.scrollToOffset({
+                                      offset: index * (ITEM_HEIGHT + 43) - 10,
+                                      animated: true,
+                                    });
+                                  }, delay);
 
-                                    if (item.transcript) {
-                                      setShowTranscriptIndex(index);
-                                      setShowSummaryIndex(null);
-                                    } else {
-                                      setShowTranscriptIndex(null);
-                                      setShowSummaryIndex(null);
-                                    }
-
-                                    const baseDelay = 100;
-                                    const extraDelayPerItem = 20;
-                                    const delay = baseDelay + (index * extraDelayPerItem);
-                                    setTimeout(() => {
-                                      flatListRef.current?.scrollToOffset({
-                                        offset: index * (ITEM_HEIGHT + 43) - 10,
-                                        animated: true,
-                                      });
-                                    }, delay);
-
-                                    if (item.transcript) {
-                                      setShowTranscriptIndex(index);
-                                      setShowSummaryIndex(null);
-                                    } else {
-                                      setShowTranscriptIndex(null);
-                                      setShowSummaryIndex(null);
-                                    }
-                                  }}
-                                >
-{/* 小字摘要區塊 */}
-{!isCurrentPlaying && item.transcript && (
-  <View style={styles.transcriptBlock}>
-    <Text
-      style={styles.transcriptBlockText}
-      numberOfLines={2}
-      ellipsizeMode="tail"
-    >
-      {item.transcript}
-    </Text>
-  </View>
-)}
+                                  if (item.transcript) {
+                                    setShowTranscriptIndex(index);
+                                    setShowSummaryIndex(null);
+                                  } else {
+                                    setShowTranscriptIndex(null);
+                                    setShowSummaryIndex(null);
+                                  }
+                                }}
+                              >
+                                {/* 小字摘要區塊 */}
+                                {!isCurrentPlaying && item.transcript && (
+                                  <View style={styles.transcriptBlock}>
+                                    <Text
+                                      style={styles.transcriptBlockText}
+                                      numberOfLines={2}
+                                      ellipsizeMode="tail"
+                                    >
+                                      {item.transcript}
+                                    </Text>
+                                  </View>
+                                )}
 
 
-                                </TouchableOpacity>
-                              )}
-
-                            </View>
-                          
+                              </TouchableOpacity>
+                            )}
+                          </View>
 
                           {/* 播放進度條 */}
                           {isCurrentPlaying && ((playingUri === item.uri ||
@@ -1067,10 +1077,11 @@ const RecorderPageVoiceNote = () => {
                                 </View>
                               </View>
                             ))}
+
                           {/* 轉文字 & 重點摘要按鈕 */}
                           {(isCurrentPlaying || !item.transcript) && (
-                        
-                        <View style={styles.actionButtons}>
+                            <View style={styles.actionButtons}>
+                              <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 }}>
                                 {/* 轉文字按鈕 */}
                                 <TouchableOpacity
                                   style={{
@@ -1078,10 +1089,9 @@ const RecorderPageVoiceNote = () => {
                                     paddingHorizontal: 12,
                                     backgroundColor: colors.primary,
                                     borderRadius: 8,
-                                    opacity: 1,
+                                    opacity: isAnyProcessing ? 0.4 : 1,
                                   }}
-
-
+                                  disabled={isAnyProcessing}
                                   onPress={async () => {
                                     closeAllMenus();
                                     if (item.transcript) {
@@ -1123,16 +1133,16 @@ const RecorderPageVoiceNote = () => {
                                     paddingHorizontal: 12,
                                     backgroundColor: colors.primary,
                                     borderRadius: 8,
-                                    opacity: item.transcript ? 1 : 0.4,
+                                    opacity: item.transcript && !isAnyProcessing ? 1 : 0.4,
                                   }}
-                                  disabled={!item.transcript}
+                                  disabled={!item.transcript || isAnyProcessing}
                                   onPress={async () => {
                                     closeAllMenus();
                                     if (!item.transcript) {
                                       Alert.alert('⚠️ 無法摘要', '請先執行「轉文字」功能');
                                       return;
                                     }
-
+                                    setIsSummarizingIndex(index); // ⬅️ 加這個，開始 loading
                                     if (item.summary) {
                                       setShowTranscriptIndex(null);
                                       setShowSummaryIndex(index);
@@ -1152,6 +1162,8 @@ const RecorderPageVoiceNote = () => {
                                       setShowSummaryIndex(index);
                                     } catch (err) {
                                       Alert.alert('❌ 摘要失敗', (err as Error).message);
+                                    } finally {
+                                      setIsSummarizingIndex(null); // ⬅️ 不管成不成功，結束 loading
                                     }
                                   }}
                                 >
@@ -1175,20 +1187,30 @@ const RecorderPageVoiceNote = () => {
                                   <Text style={{ color: 'white', fontSize: 14 }}>隱藏</Text>
                                 </TouchableOpacity>
                               </View>
-                            )}
-                              {/* 內容顯示區 */}
-
-                              {(isCurrentPlaying) && (
-                                <>
-                                  {showTranscriptIndex === index && renderNoteSection(index, 'transcript')}
-                                  {showSummaryIndex === index && renderNoteSection(index, 'summary')}
-                                </>
-                              )}                                      
-
-                          {/*放這裡才能放在下一行*/}
-                          {isTranscribingIndex === index && (
-                            <Text style={{ marginTop: 6, color: colors.primary }}>⏳ 轉文字處理中...</Text>
+                            </View>
                           )}
+
+  {/* 處理中loading（兄弟，不包進 actionButtons） */}
+  {(isTranscribingIndex === index || isSummarizingIndex === index) && (
+    <View style={{ marginTop: 6, alignItems: 'flex-start', paddingHorizontal: 12 }}>
+      {isTranscribingIndex === index && !item.transcript && (
+        <Text style={{ color: colors.primary }}>⏳ 錄音筆記處理中...</Text>
+      )}
+      {isSummarizingIndex === index && !item.summary && (
+        <Text style={{ color: colors.primary }}>⏳ 重點整理處理中...</Text>
+      )}
+    </View>
+  )}
+
+                          {/* 內容顯示區 */}
+
+                          {(isCurrentPlaying) && (
+                            <>
+                              {showTranscriptIndex === index && renderNoteSection(index, 'transcript')}
+                              {showSummaryIndex === index && renderNoteSection(index, 'summary')}
+                            </>
+                          )}
+
 
 
                           {/* 衍生檔案列表 */}
@@ -1198,7 +1220,7 @@ const RecorderPageVoiceNote = () => {
                               {item.derivedFiles?.enhanced && (
                                 <View style={styles.derivedFileRow}>
                                   {renderFilename(item.derivedFiles.enhanced.uri, item.derivedFiles.enhanced.name, index, true, '🔊 增強音質', isPlaying, playingUri ?? '', playRecording, closeAllMenus, styles)}
-                                  {renderMoreButton(index, 'enhanced', styles.derivedMoreButton, setSelectedContext, closeAllMenus, styles)}
+                                  {renderMoreButton(index, 'enhanced', styles.derivedMoreButton, setSelectedContext, closeAllMenus, styles, selectedContext)}
                                 </View>
                               )}
 
@@ -1206,7 +1228,7 @@ const RecorderPageVoiceNote = () => {
                               {item.derivedFiles?.trimmed && (
                                 <View style={styles.derivedFileRow}>
                                   {renderFilename(item.derivedFiles.trimmed.uri, item.derivedFiles.trimmed.name, index, true, '✂️ 靜音剪輯', isPlaying, playingUri ?? '', playRecording, closeAllMenus, styles)}
-                                  {renderMoreButton(index, 'trimmed', styles.derivedMoreButton, setSelectedContext, closeAllMenus, styles)}
+                                  {renderMoreButton(index, 'trimmed', styles.derivedMoreButton, setSelectedContext, closeAllMenus, styles, selectedContext)}
                                 </View>
                               )}
                             </View>

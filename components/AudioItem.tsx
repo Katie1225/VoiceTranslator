@@ -52,25 +52,34 @@ export const renderMoreButton = (
     style: any,
     setSelectedContext: Function,
     closeAllMenus: () => void,
-    styles: any
+    styles: any,
+    selectedContext: { type: 'main' | 'enhanced' | 'trimmed'; index: number } | null
 ) => (
     <TouchableOpacity
         style={style}
         onPress={(e) => {
             e.stopPropagation();
-            closeAllMenus();
-            e.target.measureInWindow((x, y, width, height) => {
-                setSelectedContext({
-                    type,
-                    index,
-                    position: { x, y: y + height },
+
+            if (selectedContext?.index === index && selectedContext?.type === type) {
+                // ✅ 如果點到同一個，就關掉
+                setSelectedContext(null);
+            } else {
+                // ✅ 點到新的，就開啟
+                closeAllMenus();
+                e.target.measureInWindow((x, y, width, height) => {
+                    setSelectedContext({
+                        type,
+                        index,
+                        position: { x, y: y + height },
+                    });
                 });
-            });
+            }
         }}
     >
         <Text style={styles.moreIcon}>⋯</Text>
     </TouchableOpacity>
 );
+
 
 
 export const renderNoteBlock = (props: {

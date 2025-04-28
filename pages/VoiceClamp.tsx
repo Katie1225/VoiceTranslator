@@ -69,6 +69,9 @@ const RecorderPageVoiceClamp = () => {
     const [dbHistory, setDbHistory] = useState<number[]>([]);
     const audioRecorderPlayer = useRef(new AudioRecorderPlayer()).current;
     const [isTranscribingIndex, setIsTranscribingIndex] = useState<number | null>(null);
+  const [isSummarizingIndex, setIsSummarizingIndex] = useState<number | null>(null);
+  const isAnyProcessing = isTranscribingIndex !== null || isSummarizingIndex !== null;
+
     const flatListRef = useRef<FlatList>(null);
     const [itemOffsets, setItemOffsets] = useState<Record<number, number>>({});
     const [selectedPlayingIndex, setSelectedPlayingIndex] = useState<number | null>(null);
@@ -167,7 +170,7 @@ const RecorderPageVoiceClamp = () => {
         let prefix = '';
         if (filename) {
             const label = type === 'transcript' ? '錄音筆記' : '重點整理';
-            prefix = `${filename} - ${label}x\n\n`;
+      prefix = `${filename} - ${label}\n\n`;
         }
 
         try {
@@ -748,6 +751,7 @@ const RecorderPageVoiceClamp = () => {
                     setRecordings(updated);
                     await saveRecordings(updated);
                     setShowSummaryIndex(null);
+          setIsSummarizingIndex(null);
                 }
             },
             styles,
@@ -809,7 +813,15 @@ const RecorderPageVoiceClamp = () => {
       alignItems: 'center',
                       marginBottom: 0,    // 控制兩個按鈕的距離
     }}
-    onPress={() => { closeAllMenus(); setMenuVisible(!menuVisible); }}
+                    onPress={() => {
+                      if (menuVisible) {
+                        // 如果漢堡本來是打開的，再按一次就關掉
+                        setMenuVisible(false);
+                      } else {
+                        closeAllMenus();
+                        setMenuVisible(true);
+                      }
+                    }}
   >
     <Text style={{ fontSize: 20, color: colors.primary }}>☰</Text>
   </TouchableOpacity>
@@ -855,6 +867,7 @@ const RecorderPageVoiceClamp = () => {
                                 style={styles.listContainer}
                                 data={recordings}
                                 keyExtractor={(item) => item.uri}  // 改用 uri 作為 key
+                contentContainerStyle={{ paddingBottom: 40 }}
                                 initialNumToRender={10}
                                 maxToRenderPerBatch={10}
                                 windowSize={5}
@@ -968,10 +981,9 @@ const RecorderPageVoiceClamp = () => {
                                                                     </TouchableOpacity>
                                                                 </View>
                                                             ) : (
-                                                                renderMoreButton(index, 'main', styles.moreButton, setSelectedContext, closeAllMenus, styles)
+                              renderMoreButton(index, 'main', styles.moreButton, setSelectedContext, closeAllMenus, styles, selectedContext)
                                                             )}
                                                         </View>
-
 
                                                         {/* 第二行：兩行小字摘要 */}
                                                         <View pointerEvents="box-none">
@@ -1024,9 +1036,7 @@ const RecorderPageVoiceClamp = () => {
 
                                                                 </TouchableOpacity>
                                                             )}
-
                                                     </View>
-                          
 
                                                     {/* 播放進度條 */}
                                                     {isCurrentPlaying && ((playingUri === item.uri ||
@@ -1067,10 +1077,11 @@ const RecorderPageVoiceClamp = () => {
                                                                 </View>
                                                             </View>
                                                         ))}
+
                                                     {/* 轉文字 & 重點摘要按鈕 */}
                           {(isCurrentPlaying || !item.transcript) && (
-                        
                         <View style={styles.actionButtons}>
+                              <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 }}>
                                                                 {/* 轉文字按鈕 */}
                                                                 <TouchableOpacity
                                                                     style={{
@@ -1078,10 +1089,9 @@ const RecorderPageVoiceClamp = () => {
                                                                         paddingHorizontal: 12,
                                                                         backgroundColor: colors.primary,
                                                                         borderRadius: 8,
-                                                                        opacity: 1,
+                                    opacity: isAnyProcessing ? 0.4 : 1,
                                                                     }}
-
-
+                                  disabled={isAnyProcessing}
                                                                     onPress={async () => {
                                     closeAllMenus();
                                                                         if (item.transcript) {
@@ -1123,16 +1133,16 @@ const RecorderPageVoiceClamp = () => {
                                                                         paddingHorizontal: 12,
                                                                         backgroundColor: colors.primary,
                                                                         borderRadius: 8,
-                                                                        opacity: item.transcript ? 1 : 0.4,
+                                    opacity: item.transcript && !isAnyProcessing ? 1 : 0.4,
                                                                     }}
-                                                                    disabled={!item.transcript}
+                                  disabled={!item.transcript || isAnyProcessing}
                                                                     onPress={async () => {
                                     closeAllMenus();
                                                                         if (!item.transcript) {
                                                                             Alert.alert('⚠️ 無法摘要', '請先執行「轉文字」功能');
                                                                             return;
                                                                         }
-
+                                    setIsSummarizingIndex(index); // ⬅️ 加這個，開始 loading
                                                                         if (item.summary) {
                                                                             setShowTranscriptIndex(null);
                                                                             setShowSummaryIndex(index);
@@ -1152,6 +1162,8 @@ const RecorderPageVoiceClamp = () => {
                                                                             setShowSummaryIndex(index);
                                                                         } catch (err) {
                                                                             Alert.alert('❌ 摘要失敗', (err as Error).message);
+                                    } finally {
+                                      setIsSummarizingIndex(null); // ⬅️ 不管成不成功，結束 loading
                                                                         }
                                                                     }}
                                                                 >
@@ -1174,8 +1186,22 @@ const RecorderPageVoiceClamp = () => {
                                                                 >
                                                                     <Text style={{ color: 'white', fontSize: 14 }}>隱藏</Text>
                                                                 </TouchableOpacity>
+                              </View>
                                                             </View>
                             )}
+
+  {/* 處理中loading（兄弟，不包進 actionButtons） */}
+  {(isTranscribingIndex === index || isSummarizingIndex === index) && (
+    <View style={{ marginTop: 6, alignItems: 'flex-start', paddingHorizontal: 12 }}>
+      {isTranscribingIndex === index && !item.transcript && (
+        <Text style={{ color: colors.primary }}>⏳ 錄音筆記處理中...</Text>
+      )}
+      {isSummarizingIndex === index && !item.summary && (
+        <Text style={{ color: colors.primary }}>⏳ 重點整理處理中...</Text>
+      )}
+    </View>
+  )}
+
                                                             {/* 內容顯示區 */}
 
                               {(isCurrentPlaying) && (
@@ -1198,7 +1224,7 @@ const RecorderPageVoiceClamp = () => {
                                                             {item.derivedFiles?.enhanced && (
                                                                 <View style={styles.derivedFileRow}>
                                                                     {renderFilename(item.derivedFiles.enhanced.uri, item.derivedFiles.enhanced.name, index, true, '🔊 增強音質', isPlaying, playingUri ?? '', playRecording, closeAllMenus, styles)}
-                                                                    {renderMoreButton(index, 'enhanced', styles.derivedMoreButton, setSelectedContext, closeAllMenus, styles)}
+                                  {renderMoreButton(index, 'enhanced', styles.derivedMoreButton, setSelectedContext, closeAllMenus, styles, selectedContext)}
                                                                 </View>
                                                             )}
 
@@ -1206,7 +1232,7 @@ const RecorderPageVoiceClamp = () => {
                                                             {item.derivedFiles?.trimmed && (
                                                                 <View style={styles.derivedFileRow}>
                                                                     {renderFilename(item.derivedFiles.trimmed.uri, item.derivedFiles.trimmed.name, index, true, '✂️ 靜音剪輯', isPlaying, playingUri ?? '', playRecording, closeAllMenus, styles)}
-                                                                    {renderMoreButton(index, 'trimmed', styles.derivedMoreButton, setSelectedContext, closeAllMenus, styles)}
+                                  {renderMoreButton(index, 'trimmed', styles.derivedMoreButton, setSelectedContext, closeAllMenus, styles, selectedContext)}
                                                                 </View>
                                                             )}
                                                         </View>

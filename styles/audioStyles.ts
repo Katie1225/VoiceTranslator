@@ -54,7 +54,7 @@ borderColor: colors.primary,
   actionButtons: {                                  //錄音筆記重點摘要隱藏
     marginTop: 8,
     height: 50,
-    flexDirection: 'row',
+    flexDirection: 'column',
     justifyContent: 'center',
     alignItems: 'center',
     gap: 12,
