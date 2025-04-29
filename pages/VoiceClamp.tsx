@@ -341,7 +341,6 @@ const RecorderPageVoiceClamp = () => {
             return;
         }
 
-
         try {
             const now = new Date();
             const filename = `rec_${now.getTime()}.m4a`;
@@ -660,105 +659,109 @@ const RecorderPageVoiceClamp = () => {
         const editingIndex = isTranscript ? editingTranscriptIndex : editingSummaryIndex;
         const editValue = isTranscript ? editTranscript : editSummary;
         const itemValue = isTranscript ? recordings[index]?.transcript : recordings[index]?.summary;
-
+      
         return renderNoteBlock({
-            type,
-            index,
-            value: itemValue || '',
-            editingIndex,
-            editValue,
-            onChangeEdit: (text: string) => {
-                if (isTranscript) {
-                    setEditTranscript(text);
-                    setEditingTranscriptIndex(index);
-                } else {
-                    setEditSummary(text);
-                    setEditingSummaryIndex(index);
+          type,
+          index,
+          value: itemValue || '',
+          editingIndex,
+          editValue,
+          onChangeEdit: (text: string) => {
+            if (isTranscript) {
+              setEditTranscript(text);
+              setEditingTranscriptIndex(index);
+            } else {
+              setEditSummary(text);
+              setEditingSummaryIndex(index);
+            }
+          },
+          onSave: async () => {
+            const updated = recordings.map((rec, i) =>
+              i === index ? { ...rec, [type]: editValue } : rec
+            );
+            setRecordings(updated);
+            await saveRecordings(updated);
+      
+        // 🔥 重點：如果這次是改錄音筆記，而且這筆有 summary，就問要不要更新
+            if (type === 'transcript' && recordings[index]?.summary) {
+          Alert.alert(
+            '更新重點摘要？',
+            '錄音筆記已更新，是否需要重新生成新的重點摘要？',
+            [
+                { text: '否', style: 'cancel' },
+                {
+                  text: '是', onPress: async () => {
+                    try {
+                      const newSummary = await summarizeTranscript(editValue);
+                      const refreshed = recordings.map((rec, i) =>
+                        i === index ? { ...rec, summary: newSummary } : rec
+                      );
+                      setRecordings(refreshed);
+                      await saveRecordings(refreshed);
+                      Alert.alert('✅ 重點摘要已更新');
+                    } catch (err) {
+                      Alert.alert('❌ 重點摘要更新失敗', (err as Error).message);
+                    }
+                  }
                 }
-            },
-            onSave: async () => {
-                const updated = recordings.map((rec, i) =>
-                    i === index ? { ...rec, [type]: editValue } : rec
-                );
-                setRecordings(updated);
-                await saveRecordings(updated);
-
-                // 🔥 重點：如果這次是改錄音筆記，而且這筆有 summary，就問要不要更新
-                if (type === 'transcript' && recordings[index]?.summary) {
-                    Alert.alert(
-                        '更新重點摘要？',
-                        '錄音筆記已更新，是否需要重新生成新的重點摘要？',
-                        [
-                            { text: '否', style: 'cancel' },
-                            {
-                                text: '是', onPress: async () => {
-                                    try {
-                                        const newSummary = await summarizeTranscript(editValue);
-                                        const refreshed = recordings.map((rec, i) =>
-                                            i === index ? { ...rec, summary: newSummary } : rec
-                                        );
-                                        setRecordings(refreshed);
-                                        await saveRecordings(refreshed);
-                                        Alert.alert('✅ 重點摘要已更新');
-                                    } catch (err) {
-                                        Alert.alert('❌ 重點摘要更新失敗', (err as Error).message);
-                                    }
-                                }
-                            }
-                        ]
-                    );
+            ]
+          );
+            }
+            if (isTranscript) setEditingTranscriptIndex(null);
+            if (type === 'summary') setEditingSummaryIndex(null);
+          },
+          onCancel: () => {
+            if (isTranscript) {
+              setEditTranscript('');
+              setEditingTranscriptIndex(null);
+            } else {
+              setEditSummary('');
+              setEditingSummaryIndex(null);
+            }
+          },
+          onDelete: async () => {
+            if (type === 'transcript') {
+          Alert.alert(
+            '⚠️ 注意',
+            '刪除錄音筆記後，重點摘要也會一併刪除，若日後需要重新轉換將需重新付費。確定要刪除嗎？',
+            [
+              { text: '取消', style: 'cancel' },
+              {
+                text: '刪除',
+                style: 'destructive',
+                onPress: async () => {
+              const updated = recordings.map((rec, i) =>
+                i === index ? { ...rec, transcript: undefined, summary: undefined } : rec
+              );
+              setRecordings(updated);
+              await saveRecordings(updated);
+              setShowTranscriptIndex(null);
+              setShowSummaryIndex(null);
                 }
-                if (isTranscript) setEditingTranscriptIndex(null);
-                if (type === 'summary') setEditingSummaryIndex(null);
-            },
-
-            onCancel: () => {
-                if (isTranscript) {
-                    setEditTranscript('');
-                    setEditingTranscriptIndex(null);
-                } else {
-                    setEditSummary('');
-                    setEditingSummaryIndex(null);
-                }
-            },
-            onDelete: async () => {
-                if (type === 'transcript') {
-                    Alert.alert(
-                        '⚠️ 注意',
-                        '刪除錄音筆記後，重點摘要也會一併刪除，若日後需要重新轉換將需重新付費。確定要刪除嗎？',
-                        [
-                            { text: '取消', style: 'cancel' },
-                            {
-                                text: '刪除',
-                                style: 'destructive',
-                                onPress: async () => {
-                                    const updated = recordings.map((rec, i) =>
-                                        i === index ? { ...rec, transcript: undefined, summary: undefined } : rec
-                                    );
-                                    setRecordings(updated);
-                                    await saveRecordings(updated);
-                                    setShowTranscriptIndex(null);
-                                    setShowSummaryIndex(null);
-                                }
-                            }
-                        ]
-                    );
-                } else {
-                    // 如果是刪除 summary，就直接刪掉 summary 不需要警告
-                    const updated = recordings.map((rec, i) =>
-                        i === index ? { ...rec, summary: undefined } : rec
-                    );
-                    setRecordings(updated);
-                    await saveRecordings(updated);
-                    setShowSummaryIndex(null);
-          setIsSummarizingIndex(null);
-                }
-            },
-            styles,
-            colors,
-            shareText: (text) => shareText(text, type, recordings[index]?.displayName || recordings[index]?.name),
+              }
+            ]
+          );
+            } else {
+          // 如果是刪除 summary，就直接刪掉 summary 不需要警告
+              const updated = recordings.map((rec, i) =>
+                i === index ? { ...rec, summary: undefined } : rec
+              );
+              setRecordings(updated);
+              await saveRecordings(updated);
+              setShowSummaryIndex(null);
+              setIsSummarizingIndex(null);
+            }
+          },
+          onShare: async () => {
+            await shareText(itemValue || '', type, recordings[index]?.displayName || recordings[index]?.name);
+            if (type === 'summary') {
+          setIsSummarizingIndex(null); // 分享完清 loading
+            }
+          },
+          styles,
+          colors,
         });
-    };
+      };
 
 
     return (
@@ -1144,6 +1147,7 @@ const RecorderPageVoiceClamp = () => {
                                                                         }
                                     setIsSummarizingIndex(index); // ⬅️ 加這個，開始 loading
                                                                         if (item.summary) {
+                                      setIsSummarizingIndex(null);
                                                                             setShowTranscriptIndex(null);
                                                                             setShowSummaryIndex(index);
                                                                             return;
@@ -1193,7 +1197,7 @@ const RecorderPageVoiceClamp = () => {
   {/* 處理中loading（兄弟，不包進 actionButtons） */}
   {(isTranscribingIndex === index || isSummarizingIndex === index) && (
     <View style={{ marginTop: 6, alignItems: 'flex-start', paddingHorizontal: 12 }}>
-      {isTranscribingIndex === index && !item.transcript && (
+                              {isTranscribingIndex === index && (
         <Text style={{ color: colors.primary }}>⏳ 錄音筆記處理中...</Text>
       )}
       {isSummarizingIndex === index && !item.summary && (
@@ -1210,12 +1214,6 @@ const RecorderPageVoiceClamp = () => {
                                                             {showSummaryIndex === index && renderNoteSection(index, 'summary')}
                                                         </>
                                                     )}
-
-                                                    {/*放這裡才能放在下一行*/}
-                                                    {isTranscribingIndex === index && (
-                                                        <Text style={{ marginTop: 6, color: colors.primary }}>⏳ 轉文字處理中...</Text>
-                                                    )}
-
 
                                                     {/* 衍生檔案列表 */}
                                                     {shouldShowDerivedFiles(title) && !shouldHideDefaultUI && hasDerivedFiles && (
@@ -1244,9 +1242,7 @@ const RecorderPageVoiceClamp = () => {
                                     );
                                 }}
                             />
-
                         )}
-
 
                         {/* 三點選單浮動層（全域定位） */}
                         {selectedContext && (

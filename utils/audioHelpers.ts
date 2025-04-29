@@ -11,7 +11,7 @@ export type RecordingItem = {
   isTrimmed?: boolean;
 
   transcript?: string;
-  summary?: string;
+  summaries?: { [mode: string]: string };
   transcriptEdited?: string;
   summaryEdited?: string;
   date?: string; 
@@ -183,7 +183,9 @@ export const transcribeAudio = async (
       '今天的節目',
       '忽略任何字幕來源',
       '廣告內容',
+      '請不吝點贊訂閱',
       '請不吝點贊訂閱欄目',
+      '請不吝點贊訂閱轉發打賞支持明鏡與點點欄目',
       '字幕by索蘭婭╰╯╯',
     ];
 
@@ -349,29 +351,41 @@ export const splitAudioIntoSegments = async (
     .map(f => `${FileSystem.cacheDirectory}${f}`);
 };
 
+// audioHelpers.ts
 
+export const summarizeModes = [
+  { key: 'summary', label: '重點整理', prompt: '這是一段聲音轉文字的逐字稿, 專有名詞上可能會有錯誤, 或每次音譯造成不同, 請注意這個問題. 請將這段文字整理成清楚條列式的重點摘要。中文部分請使用繁體中文.' },
+  { key: 'analysis', label: '問題分析', prompt: '這是一段聲音轉文字的逐字稿, 專有名詞上可能會有錯誤, 或每次音譯造成不同, 請注意這個問題. 請將這段文字中的問題點分析出來，並給出可能的解決方向。中文部分請使用繁體中文.' },
+  { key: 'email', label: '信件撰寫', prompt: '這是一段聲音轉文字的逐字稿, 專有名詞上可能會有錯誤, 或每次音譯造成不同, 請注意這個問題. 請幫我把這段文字整理成一封正式的商業郵件，語氣禮貌。中文部分請使用繁體中文.' },
+  { key: 'news', label: '新聞稿', prompt: '這是一段聲音轉文字的逐字稿, 專有名詞上可能會有錯誤, 或每次音譯造成不同, 請注意這個問題. 請將這段文字改寫成新聞稿格式，具體且吸引人。中文部分請使用繁體中文.' },
+  { key: 'ai_answer', label: 'AI給答案', prompt: '這是一段聲音轉文字的逐字稿, 專有名詞上可能會有錯誤, 或每次音譯造成不同, 請注意這個問題. 請根據這段文字內容，直接給出一個完整詳細的回答。中文部分請使用繁體中文.' },
+];
 
-export const summarizeTranscript = async (transcript: string): Promise<string> => {
-  try {
-    const res = await fetch('https://katielab.com/summarize/', {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        text: transcript, // ✅ 這裡一定要是 text，不是 content
-      }),
-    });
+// 核心摘要函式
+export async function summarizeWithMode(transcript: string, modeKey: string) {
+  const mode = summarizeModes.find(m => m.key === modeKey);
+  if (!mode) throw new Error('未知的摘要模式');
 
-    const data = await res.json();
+  const prompt = mode.prompt;
 
-    if (!res.ok || !data.summary) {
-      throw new Error(data.error || '未取得摘要結果');
-    }
+  const res = await fetch('https://katielab.com/summarize/', {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ text: transcript, prompt }), // 🔥注意這裡
+  });
 
-    return data.summary;
-  } catch (err) {
-    console.error('❌ summarizeTranscript 錯誤:', err);
-    throw err;
+  if (!res.ok) {
+    throw new Error('API 回應錯誤');
   }
-};
+
+  const data = await res.json();
+  if (!data || !data.result) {
+    throw new Error('API 回傳格式錯誤');
+  }
+
+  return data.result.trim();
+}
+
+

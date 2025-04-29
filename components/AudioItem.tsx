@@ -92,9 +92,9 @@ export const renderNoteBlock = (props: {
     onSave: () => void;
     onCancel: () => void;
     onDelete: () => void;
+    onShare: () => void;
     styles: any;
     colors: any;
-    shareText: (text: string) => void;
 }) => {
     const {
         type,
@@ -106,9 +106,9 @@ export const renderNoteBlock = (props: {
         onSave,
         onCancel,
         onDelete,
+        onShare,
         styles,
         colors,
-        shareText,
     } = props;
 
     const isEditing = editingIndex === index;
@@ -142,7 +142,7 @@ export const renderNoteBlock = (props: {
                         <TouchableOpacity onPress={() => onChangeEdit(value)}>
                             <Text style={styles.transcriptActionButton}>✏️ 修改</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity onPress={() => shareText(value)}>
+                        <TouchableOpacity onPress={onShare}>
                             <Text style={styles.transcriptActionButton}>📤 轉發</Text>
                         </TouchableOpacity>
                         <TouchableOpacity onPress={onDelete}>

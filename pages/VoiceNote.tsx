@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Platform, PermissionsAndroid } from 'react-native';
 import {
   View,
@@ -30,7 +30,7 @@ import {
   enhanceAudio,
   trimSilence,
   transcribeAudio,
-  summarizeTranscript
+  summarizeWithMode, summarizeModes
 } from '../utils/audioHelpers';
 import { useFileStorage } from '../utils/useFileStorage';
 import { useAudioPlayer } from '../utils/useAudioPlayer';
@@ -72,10 +72,19 @@ const RecorderPageVoiceNote = () => {
   const [isTranscribingIndex, setIsTranscribingIndex] = useState<number | null>(null);
   const [isSummarizingIndex, setIsSummarizingIndex] = useState<number | null>(null);
   const isAnyProcessing = isTranscribingIndex !== null || isSummarizingIndex !== null;
+  const [summaryMode, setSummaryMode] = useState('summary');
+  const [showSummaryMenuIndex, setShowSummaryMenuIndex] = useState<number | null>(null);
+
 
   const flatListRef = useRef<FlatList>(null);
   const [itemOffsets, setItemOffsets] = useState<Record<number, number>>({});
   const [selectedPlayingIndex, setSelectedPlayingIndex] = useState<number | null>(null);
+
+  const [summaryMenuContext, setSummaryMenuContext] = useState<{
+    index: number;
+    position: { x: number; y: number };
+  } | null>(null);
+
 
   const ITEM_HEIGHT = 80; // 音檔名稱高度
 
@@ -170,7 +179,14 @@ const RecorderPageVoiceNote = () => {
 
     let prefix = '';
     if (filename) {
-      const label = type === 'transcript' ? '錄音筆記' : '重點整理';
+      let label = '';
+      if (type === 'transcript') {
+        label = '錄音筆記';
+      } else if (type === 'summary') {
+        const found = summarizeModes.find(m => m.key === summaryMode);
+        label = found?.label || '重點整理';
+      }
+
       prefix = `${filename} - ${label}\n\n`;
     }
 
@@ -640,6 +656,7 @@ const RecorderPageVoiceNote = () => {
     // 退出 summary 編輯
     setEditSummary('');
     setEditingSummaryIndex(null);
+    setSummaryMenuContext(null);
 
   };
 
@@ -659,7 +676,7 @@ const RecorderPageVoiceNote = () => {
     const isTranscript = type === 'transcript';
     const editingIndex = isTranscript ? editingTranscriptIndex : editingSummaryIndex;
     const editValue = isTranscript ? editTranscript : editSummary;
-    const itemValue = isTranscript ? recordings[index]?.transcript : recordings[index]?.summary;
+    const itemValue = isTranscript ? recordings[index]?.transcript : recordings[index]?.summaries?.[summaryMode] || '';
 
     return renderNoteBlock({
       type,
@@ -678,13 +695,24 @@ const RecorderPageVoiceNote = () => {
       },
       onSave: async () => {
         const updated = recordings.map((rec, i) =>
-          i === index ? { ...rec, [type]: editValue } : rec
+          i === index
+            ? isTranscript
+              ? { ...rec, summaries: { ...(rec.summaries || {}), [summaryMode]: editValue } }
+              : {
+                ...rec,
+                summaries: {
+                  ...(rec.summaries || {}),
+                  [summaryMode]: editValue
+                }
+              }
+            : rec
         );
+
         setRecordings(updated);
         await saveRecordings(updated);
 
         // 🔥 重點：如果這次是改錄音筆記，而且這筆有 summary，就問要不要更新
-        if (type === 'transcript' && recordings[index]?.summary) {
+        if (type === 'transcript' && recordings[index]?.summaries?.[summaryMode] || '') {
           Alert.alert(
             '更新重點摘要？',
             '錄音筆記已更新，是否需要重新生成新的重點摘要？',
@@ -693,7 +721,7 @@ const RecorderPageVoiceNote = () => {
               {
                 text: '是', onPress: async () => {
                   try {
-                    const newSummary = await summarizeTranscript(editValue);
+                    const newSummary = await summarizeWithMode(editValue, summaryMode);
                     const refreshed = recordings.map((rec, i) =>
                       i === index ? { ...rec, summary: newSummary } : rec
                     );
@@ -711,7 +739,6 @@ const RecorderPageVoiceNote = () => {
         if (isTranscript) setEditingTranscriptIndex(null);
         if (type === 'summary') setEditingSummaryIndex(null);
       },
-
       onCancel: () => {
         if (isTranscript) {
           setEditTranscript('');
@@ -722,41 +749,49 @@ const RecorderPageVoiceNote = () => {
         }
       },
       onDelete: async () => {
-        if (type === 'transcript') {
-          Alert.alert(
-            '⚠️ 注意',
-            '刪除錄音筆記後，重點摘要也會一併刪除，若日後需要重新轉換將需重新付費。確定要刪除嗎？',
-            [
-              { text: '取消', style: 'cancel' },
-              {
-                text: '刪除',
-                style: 'destructive',
-                onPress: async () => {
-                  const updated = recordings.map((rec, i) =>
-                    i === index ? { ...rec, transcript: undefined, summary: undefined } : rec
-                  );
-                  setRecordings(updated);
-                  await saveRecordings(updated);
-                  setShowTranscriptIndex(null);
-                  setShowSummaryIndex(null);
-                }
-              }
-            ]
-          );
-        } else {
-          // 如果是刪除 summary，就直接刪掉 summary 不需要警告
-          const updated = recordings.map((rec, i) =>
-            i === index ? { ...rec, summary: undefined } : rec
-          );
+        if (type === 'summary') {
+          const updated = recordings.map((rec, i) => {
+            if (i !== index) return rec;
+            const newSummaries = { ...(rec.summaries || {}) };
+            delete newSummaries[summaryMode];
+            return { ...rec, summaries: newSummaries };
+          });
+
           setRecordings(updated);
           await saveRecordings(updated);
+
+          // 檢查剩餘可用的摘要模式
+          const remainingModes = Object.keys(updated[index]?.summaries || {})
+            .filter(k => updated[index]?.summaries?.[k]);
+
+          if (remainingModes.length > 0) {
+            // 優先選擇預設模式順序
+            const preferredOrder = ['summary', 'analysis', 'email', 'news', 'ai_answer'];
+            const nextMode = preferredOrder.find(k => remainingModes.includes(k)) || remainingModes[0];
+            setSummaryMode(nextMode); // 更新全局摘要模式
+          } else {
+            setSummaryMode('summary'); // 重置為預設模式
+          }
+
           setShowSummaryIndex(null);
           setIsSummarizingIndex(null);
         }
       },
+
+      onShare: async () => {
+        const item = recordings[index];
+        const textToShare = type === 'summary'
+          ? (item.summaries?.[summaryMode] || '')
+          : (item.transcript || '');
+
+        await shareText(textToShare, type, item.displayName || item.name);
+
+        if (type === 'summary') {
+          setIsSummarizingIndex(null); // 分享完清 loading
+        }
+      },
       styles,
       colors,
-      shareText: (text) => shareText(text, type, recordings[index]?.displayName || recordings[index]?.name),
     });
   };
 
@@ -863,6 +898,10 @@ const RecorderPageVoiceNote = () => {
             ) : (
               <FlatList
                 ref={flatListRef}
+                onScroll={() => {
+                  closeAllMenus(); // 滑動時關閉所有選單
+                  setSummaryMenuContext(null); // 特別關閉摘要模式選單
+                }}
                 keyboardShouldPersistTaps="handled"
                 style={styles.listContainer}
                 data={recordings}
@@ -873,13 +912,27 @@ const RecorderPageVoiceNote = () => {
                 windowSize={5}
                 removeClippedSubviews={true}
                 renderItem={({ item, index }) => {
+                  const summaries = item.summaries || {};
+                  const availableKeys = Object.keys(summaries).filter(k => summaries[k]);
+
+                  let modeToShow = summaryMode; // 預設是全局 summaryMode
+
+                  if (showSummaryIndex !== index) {
+                    // 只有當這個錄音不是正在看的時候，才自動選一個已有內容的 mode
+                    if (availableKeys.length > 0) {
+                      const preferredOrder = ['summary', 'analysis', 'email', 'news', 'ai_answer'];
+                      const selected = preferredOrder.find(key => availableKeys.includes(key));
+                      modeToShow = selected || availableKeys[0]; // 找不到就拿第一個有的
+                    }
+                  }
+
                   const isCurrentPlaying = selectedPlayingIndex === index;
                   const hasDerivedFiles = item.derivedFiles && (item.derivedFiles.enhanced || item.derivedFiles.trimmed);
                   const isTranscriptView = showTranscriptIndex === index;
                   const isSummaryView = showSummaryIndex === index;
                   const shouldHideDefaultUI = isTranscriptView || isSummaryView;
 
-                  const hasAnyContent = item.transcript || item.summary;
+                  const hasAnyContent = item.transcript || item.summaries?.[summaryMode] || '';
                   const isVisible = showTranscriptIndex === index || showSummaryIndex === index;
                   const canHide = hasAnyContent && isVisible;
 
@@ -897,13 +950,15 @@ const RecorderPageVoiceNote = () => {
                         zIndex: selectedContext?.index === index ? 999 : 0,
                       }}
                     >
+
                       <TouchableOpacity
-                        onLongPress={() => {
-                          Alert.alert('刪除錄音', '確定要刪除嗎？', [
-                            { text: '取消', style: 'cancel' },
-                            { text: '刪除', onPress: () => deleteRecording(index) },
-                          ]);
-                        }}
+                        /*   onLongPress={() => {
+                             Alert.alert('刪除錄音', '確定要刪除嗎？', [
+                               { text: '取消', style: 'cancel' },
+                               { text: '刪除', onPress: () => deleteRecording(index) },
+                             ]);
+                           }}
+                             */
                         activeOpacity={0.8}
                       >
 
@@ -1127,6 +1182,7 @@ const RecorderPageVoiceNote = () => {
                                   <Text style={{ color: 'white', fontSize: 14 }}>錄音筆記</Text>
                                 </TouchableOpacity>
                                 {/* 重點摘要按鈕 */}
+
                                 <TouchableOpacity
                                   style={{
                                     paddingVertical: 6,
@@ -1136,39 +1192,73 @@ const RecorderPageVoiceNote = () => {
                                     opacity: item.transcript && !isAnyProcessing ? 1 : 0.4,
                                   }}
                                   disabled={!item.transcript || isAnyProcessing}
-                                  onPress={async () => {
+                                  onPress={async () => {  // 這裡加上 async
                                     closeAllMenus();
+                                    
                                     if (!item.transcript) {
                                       Alert.alert('⚠️ 無法摘要', '請先執行「轉文字」功能');
                                       return;
                                     }
-                                    setIsSummarizingIndex(index); // ⬅️ 加這個，開始 loading
-                                    if (item.summary) {
+
+                                    // 決定要顯示哪個模式
+                                    let modeToUse = summaryMode;
+                                    const availableModes = Object.keys(item.summaries || {})
+                                      .filter(k => item.summaries?.[k]);
+
+                                    // 如果當前模式沒有內容，找第一個有內容的模式
+                                    if (!item.summaries?.[modeToUse] && availableModes.length > 0) {
+                                      const preferredOrder = ['summary', 'analysis', 'email', 'news', 'ai_answer'];
+                                      modeToUse = preferredOrder.find(k => availableModes.includes(k)) || availableModes[0];
+                                    }
+
+                                    // 如果有內容就直接顯示
+                                    if (item.summaries?.[modeToUse]) {
+                                      setSummaryMode(modeToUse);
                                       setShowTranscriptIndex(null);
                                       setShowSummaryIndex(index);
                                       return;
                                     }
 
+                                    // 否則創建新摘要（使用預設的 summary 模式）
+                                    setIsSummarizingIndex(index);
                                     try {
-                                      const summary = await summarizeTranscript(item.transcript);
-
+                                      const summary = await summarizeWithMode(item.transcript || '', 'summary');
                                       const updated = recordings.map((rec, i) =>
-                                        i === index ? { ...rec, summary } : rec
+                                        i === index
+                                          ? {
+                                            ...rec,
+                                            summaries: {
+                                              ...(rec.summaries || {}),
+                                              summary: summary,
+                                            },
+                                          }
+                                          : rec
                                       );
                                       setRecordings(updated);
-                                      await saveRecordings(updated); // ✅ 寫入本地 JSON
-
+                                      await saveRecordings(updated);
+                                      setSummaryMode('summary');
                                       setShowTranscriptIndex(null);
                                       setShowSummaryIndex(index);
                                     } catch (err) {
                                       Alert.alert('❌ 摘要失敗', (err as Error).message);
                                     } finally {
-                                      setIsSummarizingIndex(null); // ⬅️ 不管成不成功，結束 loading
+                                      setIsSummarizingIndex(null);
                                     }
                                   }}
+                                  
+                                  onLongPress={(e) => {
+                                    e.target.measureInWindow((x, y, width, height) => {
+                                      setSummaryMenuContext({ index, position: { x, y: y + height } });
+                                    });
+                                  }}
                                 >
-                                  <Text style={{ color: 'white', fontSize: 14 }}>重點摘要</Text>
+                                  <Text style={{ color: 'white', fontSize: 14, textAlign: 'center' }}>
+                                    {summarizeModes.find(m => m.key === (
+                                      item.summaries?.[summaryMode] ? summaryMode : 'summary'
+                                    ))?.label || '重點摘要'}
+                                  </Text>
                                 </TouchableOpacity>
+
                                 {/* 隱藏按鈕（只有已顯示 transcript 或 summary 才能點） */}
                                 <TouchableOpacity
                                   disabled={!canHide}
@@ -1190,17 +1280,19 @@ const RecorderPageVoiceNote = () => {
                             </View>
                           )}
 
-  {/* 處理中loading（兄弟，不包進 actionButtons） */}
-  {(isTranscribingIndex === index || isSummarizingIndex === index) && (
-    <View style={{ marginTop: 6, alignItems: 'flex-start', paddingHorizontal: 12 }}>
-      {isTranscribingIndex === index && !item.transcript && (
-        <Text style={{ color: colors.primary }}>⏳ 錄音筆記處理中...</Text>
-      )}
-      {isSummarizingIndex === index && !item.summary && (
-        <Text style={{ color: colors.primary }}>⏳ 重點整理處理中...</Text>
-      )}
-    </View>
-  )}
+                          {/* 處理中loading（兄弟，不包進 actionButtons） */}
+                          {(isTranscribingIndex === index || isSummarizingIndex === index) && (
+                            <View style={{ marginTop: 6, alignItems: 'flex-start', paddingHorizontal: 12 }}>
+                              {isTranscribingIndex === index && (
+                                <Text style={{ color: colors.primary }}>⏳ 錄音筆記處理中...</Text>
+                              )}
+                              {isSummarizingIndex === index && !item.summaries?.[summaryMode] && (
+                                <Text style={{ color: colors.primary }}>
+                                  ⏳ {summarizeModes.find((m) => m.key === summaryMode)?.label || '重點整理'}處理中...
+                                </Text>
+                              )}
+                            </View>
+                          )}
 
                           {/* 內容顯示區 */}
 
@@ -1210,8 +1302,6 @@ const RecorderPageVoiceNote = () => {
                               {showSummaryIndex === index && renderNoteSection(index, 'summary')}
                             </>
                           )}
-
-
 
                           {/* 衍生檔案列表 */}
                           {shouldShowDerivedFiles(title) && !shouldHideDefaultUI && hasDerivedFiles && (
@@ -1243,7 +1333,6 @@ const RecorderPageVoiceNote = () => {
 
             )}
 
-
             {/* 三點選單浮動層（全域定位） */}
             {selectedContext && (
               <MoreMenu
@@ -1268,30 +1357,72 @@ const RecorderPageVoiceNote = () => {
                   shareRecording(uri);
                 }}
                 onDelete={(index) => {
-                  const isMain = selectedContext.type === 'main';
+                  const isMain = selectedContext?.type === 'main';
+
                   if (isMain) {
-                    deleteRecording(index);
+                    if (showTranscriptIndex === index) {
+                      // 🔥 刪除錄音筆記
+                      const updated = recordings.map((rec, i) => {
+                        if (i !== index) return rec;
+                        const newSummaries = { ...(rec.summaries || {}) };
+                        delete newSummaries[summaryMode];
+                        return { ...rec, summaries: newSummaries };
+                      });
+
+                      setRecordings(updated);
+                      saveRecordings(updated); // Removed await since we're not in an async function
+
+                      // 檢查是否還有其他摘要模式可用
+                      const remainingModes = Object.keys(updated[index]?.summaries || {})
+                        .filter(k => updated[index]?.summaries?.[k]);
+
+                      if (remainingModes.length > 0) {
+                        // 優先選擇預設模式，如果沒有則選擇第一個可用的
+                        const preferredOrder = ['summary', 'analysis', 'email', 'news', 'ai_answer'];
+                        const nextMode = preferredOrder.find(k => remainingModes.includes(k)) || remainingModes[0];
+                        setSummaryMode(nextMode);
+                      } else {
+                        // 如果沒有任何摘要了，重置為預設模式
+                        setSummaryMode('summary');
+                      }
+
+                      setShowSummaryIndex(null);
+                      setSelectedContext(null);
+                    } else {
+                      // 🔥 如果不是 transcript 也不是 summary，直接刪整個錄音
+                      deleteRecording(index);
+                    }
                   } else {
-                    const type = selectedContext.type;
+                    // 🔥 是剪輯版或增強版
+                    const type = selectedContext?.type;
                     if (type !== 'enhanced' && type !== 'trimmed') return;
                     const uri = recordings[index].derivedFiles?.[type]?.uri;
                     if (!uri) return;
-                    safeDeleteFile(uri).then(() => {
-                      setRecordings(prev => prev.map((rec, i) => {
-                        if (i !== index) return rec;
-                        const newDerivedFiles = { ...rec.derivedFiles };
-                        delete newDerivedFiles[type];
-                        return { ...rec, derivedFiles: newDerivedFiles };
-                      }));
-                      saveRecordings(recordings);
-                      Alert.alert("刪除成功", "已刪除衍生檔案");
-                    }).catch(err => {
-                      Alert.alert("刪除失敗", (err as Error).message);
-                    }).finally(() => {
-                      setSelectedContext(null);
-                    });
+
+                    safeDeleteFile(uri)
+                      .then(() => {
+                        setRecordings(prev =>
+                          prev.map((rec, i) => {
+                            if (i !== index) return rec;
+                            const newDerivedFiles = { ...rec.derivedFiles };
+                            delete newDerivedFiles[type];
+                            return { ...rec, derivedFiles: newDerivedFiles };
+                          })
+                        );
+                        saveRecordings(recordings);
+                        Alert.alert('刪除成功', '已刪除衍生檔案');
+                      })
+                      .catch((err) => {
+                        Alert.alert('刪除失敗', (err as Error).message);
+                      })
+                      .finally(() => {
+                        setSelectedContext(null);
+                      });
                   }
                 }}
+
+
+
                 onTrimSilence={async (index) => {
                   const item = recordings[index];
                   try {
@@ -1332,6 +1463,85 @@ const RecorderPageVoiceNote = () => {
             )}
 
 
+            {/* 摘要模式選單 (全域定位) */}
+            {summaryMenuContext && (
+              <View style={{
+                position: 'absolute',
+                top: summaryMenuContext.position.y,
+                left: summaryMenuContext.position.x,
+                backgroundColor: colors.container,
+                borderRadius: 8,
+                padding: 8,
+                zIndex: 9999,
+                elevation: 10,
+                shadowColor: '#000',
+                shadowOpacity: 0.2,
+                shadowOffset: { width: 0, height: 2 },
+                shadowRadius: 4,
+              }}>
+                {summarizeModes.map((mode) => (
+                  <TouchableOpacity
+                    key={mode.key}
+                    style={{
+                      paddingVertical: 8,
+                      paddingHorizontal: 12,
+                      backgroundColor:
+                        recordings[summaryMenuContext.index]?.summaries?.[mode.key]
+                          ? colors.primary + '20'
+                          : 'transparent',
+                      borderRadius: 4,
+                    }}
+                    onPress={async () => {
+                      closeAllMenus();
+                      const idx = summaryMenuContext.index;
+                      setSummaryMenuContext(null);
+
+                      if (recordings[idx]?.summaries?.[mode.key]) {
+                        setSummaryMode(mode.key);
+                        setShowTranscriptIndex(null);
+                        setShowSummaryIndex(idx);
+                        return;
+                      }
+
+                      setIsSummarizingIndex(idx);
+                      try {
+                        const summary = await summarizeWithMode(recordings[idx].transcript || '', mode.key);
+                        const updated = recordings.map((rec, i) =>
+                          i === idx
+                            ? {
+                              ...rec,
+                              summaries: {
+                                ...(rec.summaries || {}),
+                                [mode.key]: summary
+                              }
+                            }
+                            : rec
+                        );
+                        setRecordings(updated);
+                        await saveRecordings(updated);
+                        setSummaryMode(mode.key);
+                        setShowTranscriptIndex(null);
+                        setShowSummaryIndex(idx);
+                      } catch (err) {
+                        Alert.alert('❌ 摘要失敗', (err as Error).message);
+                      } finally {
+                        setIsSummarizingIndex(null);
+                      }
+                    }}
+                  >
+                    <Text style={{
+                      color: colors.text,
+                      fontWeight: recordings[summaryMenuContext.index]?.summaries?.[mode.key]
+                        ? 'bold'
+                        : 'normal',
+                    }}>
+                      {mode.label}
+                      {recordings[summaryMenuContext.index]?.summaries?.[mode.key] ? ' ✓' : ''}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
 
             {/* 放在這裡！不要放在 map 循環內部 */}
             {speedMenuIndex !== null && speedMenuPosition && (
@@ -1394,7 +1604,6 @@ const RecorderPageVoiceNote = () => {
             <Text style={{ color: 'white', fontSize: 18 }}>↑</Text>
           </TouchableOpacity>
         )}
-
       </SafeAreaView>
     </TouchableWithoutFeedback>
   );
