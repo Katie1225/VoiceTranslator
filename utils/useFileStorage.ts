@@ -34,42 +34,19 @@ export const useFileStorage = (setRecordings: React.Dispatch<React.SetStateActio
 
   // 從本地檔案載入錄音列表
   const loadRecordings = async () => {
-    try {
-      const filePath = `${FileSystem.documentDirectory}recordings.json`;
-      const fileExists = await FileSystem.getInfoAsync(filePath);
-  
-      if (fileExists.exists) {
-        const fileContents = await FileSystem.readAsStringAsync(filePath);
-        const parsedData = JSON.parse(fileContents);
-  
-        const validRecordings = [];
-  
-        for (const item of parsedData) {
-          try {
-            const fileInfo = await FileSystem.getInfoAsync(item.uri);
-            if (fileInfo.exists && fileInfo.size && fileInfo.size > 3000) {
-              validRecordings.push(item);
-            } else {
-              console.warn(`⚠️ 找到無效錄音（刪除）: ${item.uri}`);
-            }
-          } catch (err) {
-            console.warn(`⚠️ 檢查錄音失敗: ${item.uri}`, err);
-          }
-        }
-  
-        setRecordings(validRecordings);
-      }
-    } catch (error) {
-      console.error("讀取錄音列表失敗：", error);
-    };
-   
-   
+ 
     try {
       const internalPath = `${FileSystem.documentDirectory}recordings.json`;
       const backupPath = `${RNFS.ExternalDirectoryPath}/recordings_backup.json`;
   
       // 1. 載入現有記錄（優先從內部儲存，次之從備份）
       let existingData: RecordingItem[] = await loadExistingRecords(internalPath, backupPath);
+
+      const files = await RNFS.readDir(RNFS.ExternalDirectoryPath);
+console.log('📂 實際資料夾裡的所有檔案：');
+for (const file of files) {
+  console.log('🎧', file.name);
+}
   
       // 2. 掃描實際音檔
       const m4aFiles = await scanAudioFiles();

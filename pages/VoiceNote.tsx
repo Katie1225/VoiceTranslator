@@ -165,11 +165,12 @@ const RecorderPageVoiceNote = () => {
   const [showTranscriptIndex, setShowTranscriptIndex] = useState<number | null>(null);
   const [showSummaryIndex, setShowSummaryIndex] = useState<number | null>(null);
 
-  const [editingTranscriptIndex, setEditingTranscriptIndex] = useState<number | null>(null);
-  const [editTranscript, setEditTranscript] = useState('');
-
-  const [editingSummaryIndex, setEditingSummaryIndex] = useState<number | null>(null);
-  const [editSummary, setEditSummary] = useState('');
+  const [editingState, setEditingState] = useState<{
+    type: 'transcript' | 'summary' | null;
+    index: number | null;
+    text: string;
+  }>({ type: null, index: null, text: '' });
+  
 
   const shareText = async (text: string, type: 'transcript' | 'summary', filename?: string) => {
     if (!text || text.trim() === '') {
@@ -476,7 +477,7 @@ const RecorderPageVoiceNote = () => {
 
         setShowTranscriptIndex(null);   // 🔧 錄音完後，確保不會自動顯示 transcript
         setShowSummaryIndex(null);      // 🔧 順便清掉 summary 展開
-        setEditingTranscriptIndex(null); // 🔧 清除編輯狀態（如果你有保留 transcript 編輯功能）
+        setEditingState({ type: null, index: null, text: '' }); // 清除所有編輯狀態
 
         setRecordings(prev => [newItem, ...prev]);
         setSelectedPlayingIndex(0);
@@ -649,13 +650,9 @@ const RecorderPageVoiceNote = () => {
     setEditName('');
     setEditingIndex(null);
 
-    // 退出 transcript 編輯
-    setEditTranscript('');
-    setEditingTranscriptIndex(null);
+    // 退出 transcript / summary 編輯
+    setEditingState({ type: null, index: null, text: '' });
 
-    // 退出 summary 編輯
-    setEditSummary('');
-    setEditingSummaryIndex(null);
     setSummaryMenuContext(null);
 
   };
@@ -674,8 +671,8 @@ const RecorderPageVoiceNote = () => {
   }
   const renderNoteSection = (index: number, type: 'transcript' | 'summary') => {
     const isTranscript = type === 'transcript';
-    const editingIndex = isTranscript ? editingTranscriptIndex : editingSummaryIndex;
-    const editValue = isTranscript ? editTranscript : editSummary;
+    const editingIndex = editingState.type === type ? editingState.index : null;
+    const editValue = editingState.type === type && editingState.index === index ? editingState.text : '';    
     const itemValue = isTranscript ? recordings[index]?.transcript : recordings[index]?.summaries?.[summaryMode] || '';
 
     return renderNoteBlock({
@@ -685,19 +682,13 @@ const RecorderPageVoiceNote = () => {
       editingIndex,
       editValue,
       onChangeEdit: (text: string) => {
-        if (isTranscript) {
-          setEditTranscript(text);
-          setEditingTranscriptIndex(index);
-        } else {
-          setEditSummary(text);
-          setEditingSummaryIndex(index);
-        }
+        setEditingState({ type, index, text });
       },
       onSave: async () => {
         const updated = recordings.map((rec, i) =>
           i === index
             ? isTranscript
-              ? { ...rec, summaries: { ...(rec.summaries || {}), [summaryMode]: editValue } }
+            ? { ...rec, transcript: editValue }
               : {
                 ...rec,
                 summaries: {
@@ -723,7 +714,15 @@ const RecorderPageVoiceNote = () => {
                   try {
                     const newSummary = await summarizeWithMode(editValue, summaryMode);
                     const refreshed = recordings.map((rec, i) =>
-                      i === index ? { ...rec, summary: newSummary } : rec
+                      i === index
+                        ? {
+                            ...rec,
+                            summaries: {
+                              ...(rec.summaries || {}),
+                              [summaryMode]: newSummary,
+                            },
+                          }
+                        : rec
                     );
                     setRecordings(refreshed);
                     await saveRecordings(refreshed);
@@ -736,17 +735,10 @@ const RecorderPageVoiceNote = () => {
             ]
           );
         }
-        if (isTranscript) setEditingTranscriptIndex(null);
-        if (type === 'summary') setEditingSummaryIndex(null);
+        setEditingState({ type: null, index: null, text: '' });
       },
       onCancel: () => {
-        if (isTranscript) {
-          setEditTranscript('');
-          setEditingTranscriptIndex(null);
-        } else {
-          setEditSummary('');
-          setEditingSummaryIndex(null);
-        }
+        setEditingState({ type: null, index: null, text: '' });
       },
       onDelete: async () => {
         if (type === 'summary') {
@@ -1157,7 +1149,6 @@ const RecorderPageVoiceNote = () => {
                                     }
 
                                     setIsTranscribingIndex(index);
-                                    setIsTranscribingIndex(index);
 
                                     try {
                                       await transcribeAudio(item, (updatedTranscript) => {
@@ -1357,71 +1348,12 @@ const RecorderPageVoiceNote = () => {
                   shareRecording(uri);
                 }}
                 onDelete={(index) => {
-                  const isMain = selectedContext?.type === 'main';
-
-                  if (isMain) {
-                    if (showTranscriptIndex === index) {
-                      // 🔥 刪除錄音筆記
-                      const updated = recordings.map((rec, i) => {
-                        if (i !== index) return rec;
-                        const newSummaries = { ...(rec.summaries || {}) };
-                        delete newSummaries[summaryMode];
-                        return { ...rec, summaries: newSummaries };
-                      });
-
-                      setRecordings(updated);
-                      saveRecordings(updated); // Removed await since we're not in an async function
-
-                      // 檢查是否還有其他摘要模式可用
-                      const remainingModes = Object.keys(updated[index]?.summaries || {})
-                        .filter(k => updated[index]?.summaries?.[k]);
-
-                      if (remainingModes.length > 0) {
-                        // 優先選擇預設模式，如果沒有則選擇第一個可用的
-                        const preferredOrder = ['summary', 'analysis', 'email', 'news', 'ai_answer'];
-                        const nextMode = preferredOrder.find(k => remainingModes.includes(k)) || remainingModes[0];
-                        setSummaryMode(nextMode);
-                      } else {
-                        // 如果沒有任何摘要了，重置為預設模式
-                        setSummaryMode('summary');
-                      }
-
-                      setShowSummaryIndex(null);
-                      setSelectedContext(null);
-                    } else {
-                      // 🔥 如果不是 transcript 也不是 summary，直接刪整個錄音
-                      deleteRecording(index);
-                    }
-                  } else {
-                    // 🔥 是剪輯版或增強版
-                    const type = selectedContext?.type;
-                    if (type !== 'enhanced' && type !== 'trimmed') return;
-                    const uri = recordings[index].derivedFiles?.[type]?.uri;
-                    if (!uri) return;
-
-                    safeDeleteFile(uri)
-                      .then(() => {
-                        setRecordings(prev =>
-                          prev.map((rec, i) => {
-                            if (i !== index) return rec;
-                            const newDerivedFiles = { ...rec.derivedFiles };
-                            delete newDerivedFiles[type];
-                            return { ...rec, derivedFiles: newDerivedFiles };
-                          })
-                        );
-                        saveRecordings(recordings);
-                        Alert.alert('刪除成功', '已刪除衍生檔案');
-                      })
-                      .catch((err) => {
-                        Alert.alert('刪除失敗', (err as Error).message);
-                      })
-                      .finally(() => {
-                        setSelectedContext(null);
-                      });
-                  }
+                  deleteRecording(index); // 一次刪整包
+                  setShowTranscriptIndex(null);
+                  setShowSummaryIndex(null);
+                  setEditingState({ type: null, index: null, text: '' });
+                  setSelectedContext(null);
                 }}
-
-
 
                 onTrimSilence={async (index) => {
                   const item = recordings[index];
@@ -1438,8 +1370,7 @@ const RecorderPageVoiceNote = () => {
                       const trimSec = Math.round((trimStatus.durationMillis ?? 0) / 1000);
                       setShowTranscriptIndex(null);
                       setShowSummaryIndex(null);
-                      setEditingTranscriptIndex(null);
-
+                      setEditingState({ type: null, index: null, text: '' });
                       setRecordings(prev => prev.map((rec, i) =>
                         i === index
                           ? {
