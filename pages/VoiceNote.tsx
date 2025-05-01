@@ -98,7 +98,7 @@ const RecorderPageVoiceNote = () => {
   // 音量狀態
   const [currentVolume, setCurrentVolume] = useState(0);
   const [currentDecibels, setCurrentDecibels] = useState(-160);
-  const [recordingTime, setRecordingTime] = useState(0);
+  const recordingTimeRef = useRef(0);
 
 
 
@@ -256,38 +256,45 @@ const RecorderPageVoiceNote = () => {
       setRecording(true);
       recordingStartTimestamp.current = Date.now();
       const elapsedSec = Math.floor((Date.now() - GlobalRecorderState.startTime) / 1000);
-      setRecordingTime(elapsedSec);
+      setRecording(true);
+      recordingStartTimestamp.current = Date.now();
+      recordingTimeRef.current = Math.floor((Date.now() - GlobalRecorderState.startTime) / 1000);
+      
     }
   }, []);
 
   useEffect(() => {
     let timer: NodeJS.Timeout;
-
-    if (recording && recordingStartTimestamp.current) {
+  
+    if (recording) {
+      recordingTimeRef.current = 0;
       timer = setInterval(() => {
-        const elapsedSec = Math.floor((Date.now() - recordingStartTimestamp.current!) / 1000);
-        setRecordingTime(elapsedSec);
+        recordingTimeRef.current += 1;
       }, 1000);
     }
-
+  
     return () => clearInterval(timer);
   }, [recording]);
+  
 
-  useEffect(() => {
-    let dbTimer: NodeJS.Timeout;
+/*
+const dbHistoryRef = useRef<number[]>([]);
 
-    if (recording) {
-      dbTimer = setInterval(() => {
-        const newDb = Array.from({ length: 20 }, () =>
-          -Math.floor(Math.random() * 60 + 40)  // random dB：-40 到 -100
-        );
-        setDbHistory(newDb);
-      }, 500);
-    }
+useEffect(() => {
+  let dbTimer: NodeJS.Timeout;
 
-    return () => clearInterval(dbTimer);
-  }, [recording]);
+  if (recording) {
+    dbTimer = setInterval(() => {
+      dbHistoryRef.current = Array.from({ length: 20 }, () =>
+        -Math.floor(Math.random() * 60 + 40)
+      );
+    }, 500);
+  }
 
+  return () => clearInterval(dbTimer);
+}, [recording]);
+
+*/
 
   // 在組件掛載時載入
   useEffect(() => {
@@ -324,7 +331,7 @@ const RecorderPageVoiceNote = () => {
 
     audioRecorderPlayer.addRecordBackListener((e) => {
       const sec = Math.floor(e.currentPosition / 1000);
-      setRecordingTime(sec);
+      recordingTimeRef.current = sec;
     });
 
     console.log("✅ 錄音任務啟動完成");
@@ -385,7 +392,7 @@ const RecorderPageVoiceNote = () => {
       GlobalRecorderState.filePath = filePath;
       GlobalRecorderState.startTime = Date.now();
       setRecording(true);
-      setRecordingTime(0);
+      recordingTimeRef.current = 0;
 
       //測試版用開始
       setTimeout(() => {
@@ -664,18 +671,18 @@ const RecorderPageVoiceNote = () => {
 
 
   // 關閉所有彈出菜單
-  const closeAllMenus = () => {
+  const closeAllMenus = (preserveEditing = false) => {
     setSelectedIndex(null);
     setMenuVisible(false);
     setSpeedMenuIndex(null);
     setSelectedContext(null);
-
-    // 退出 transcript / summary 編輯
-    resetEditingState();
-
     setSummaryMenuContext(null);
-
+  
+    if (!preserveEditing) {
+      resetEditingState(); // 清掉正在編輯的
+    }
   };
+  
 
   if (!isLoading && permissionStatus === 'denied') {
     return (
@@ -694,6 +701,8 @@ const RecorderPageVoiceNote = () => {
     const editingIndex = editingState.type === type ? editingState.index : null;
     const editValue = editingState.type === type && editingState.index === index ? editingState.text : '';
     const itemValue = isTranscript ? recordings[index]?.transcript : recordings[index]?.summaries?.[summaryMode] || '';
+    console.log('[renderNoteSection] index=', index, 'type=', type, 'editing=', editingIndex === index);
+
 
     return renderNoteBlock({
       type,
@@ -757,7 +766,7 @@ const RecorderPageVoiceNote = () => {
 
 
   return (
-    <TouchableWithoutFeedback onPress={closeAllMenus}>
+<TouchableWithoutFeedback onPress={() => closeAllMenus(false)}>
       <SafeAreaView style={[styles.container, { marginTop: 0, paddingTop: 0 }]}>
         {isLoading ? (
           <View style={styles.loadingContainer}>
@@ -789,7 +798,7 @@ const RecorderPageVoiceNote = () => {
                   <RecorderButton
                     title={title}
                     recording={recording}
-                    recordingTime={recordingTime}
+                    recordingTimeRef={recordingTimeRef}
                     onStart={startRecording}
                     onStop={stopRecording}
                     styles={styles}
@@ -859,9 +868,10 @@ const RecorderPageVoiceNote = () => {
               <FlatList
                 ref={flatListRef}
                 onScroll={() => {
-                  closeAllMenus(); // 滑動時關閉所有選單
-                  setSummaryMenuContext(null); // 特別關閉摘要模式選單
+                  closeAllMenus(true); // ✅ 不清除正在編輯的內容與按鈕
+                  setSummaryMenuContext(null); // 可以額外手動清這些 popup 類的
                 }}
+                scrollEnabled={!editingState.type}  // 當有任何編輯狀態時禁用滾動
                 keyboardShouldPersistTaps="handled"
                 style={styles.listContainer}
                 data={recordings}
@@ -932,49 +942,53 @@ const RecorderPageVoiceNote = () => {
                           <View style={[styles.nameRow, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
                             {/* 左邊播放鍵＋檔名 */}
                             <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1 }}>
-                              <TouchableOpacity
-                                onPress={async () => {
-                                  closeAllMenus();
-                                  await togglePlayback(item.uri, index);
-                                  setSelectedPlayingIndex(index);
+  {/* ▶ 播放鍵 */}
+  <TouchableOpacity
+    onPress={async () => {
+      closeAllMenus();
+      await togglePlayback(item.uri, index);
+      setSelectedPlayingIndex(index);
+      if (item.transcript) {
+        setShowTranscriptIndex(index);
+        setShowSummaryIndex(null);
+      } else {
+        setShowTranscriptIndex(null);
+        setShowSummaryIndex(null);
+      }
+    }}
+    style={{ marginRight: 8 }}
+  >
+    <Text style={styles.playIcon}>
+      {playingUri === item.uri && isPlaying ? '❚❚' : '▶'}
+    </Text>
+  </TouchableOpacity>
 
-                                  if (item.transcript) {
-                                    setShowTranscriptIndex(index);
-                                    setShowSummaryIndex(null);
-                                  } else {
-                                    setShowTranscriptIndex(null);
-                                    setShowSummaryIndex(null);
-                                  }
-                                }}
-                                style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
-                              >
-                                <Text style={styles.playIcon}>
-                                  {playingUri === item.uri && isPlaying ? '❚❚' : '▶'}
-                                </Text>
+  {/* 檔名顯示或編輯 */}
+  {
+    editingState.type === 'name' && editingState.index === index ? (
+      <TextInput
+        style={[styles.recordingName, isCurrentPlaying && styles.playingText, { borderBottomWidth: 1, borderColor: colors.primary }]}
+        value={editingState.text}
+        onChangeText={(text) => setEditingState({ type: 'name', index, text })}
+        autoFocus
+        textAlign="center"
+        onSubmitEditing={saveEditing}
+        onBlur={saveEditing}
+      />
+    ) : (
+      <TouchableOpacity onPress={() => startEditing(index, 'name')}>
+        <Text
+          style={[styles.recordingName, isCurrentPlaying && styles.playingText]}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+        >
+          {item.displayName || item.name}
+        </Text>
+      </TouchableOpacity>
+    )
+  }
+</View>
 
-                                {/* 檔名顯示：正常是 Text，重新命名時是 TextInput */}
-                                {
-                                  editingState.type === 'name' && editingState.index === index ? (
-                                    <TextInput
-                                      style={[styles.recordingName, isCurrentPlaying && styles.playingText, { borderBottomWidth: 1, borderColor: colors.primary }]}
-                                      value={editingState.text}
-                                      onChangeText={(text) => setEditingState({ type: 'name', index, text })}
-                                      autoFocus
-                                      textAlign="center"
-                                      onPress={() => saveEditing()}
-                                    />
-                                  ) : (
-                                    <Text
-                                      style={[styles.recordingName, isCurrentPlaying && styles.playingText]}
-                                      numberOfLines={1}
-                                      ellipsizeMode="tail"
-                                    >
-                                      {item.displayName || item.name}
-                                    </Text>
-                                  )
-                                }
-                              </TouchableOpacity>
-                            </View>
 
                             {/* 右邊：三點選單 or 💾 ✖️ 按鈕 */}
                             {editingState.type === 'name' && editingState.index === index ? (
@@ -1249,8 +1263,9 @@ const RecorderPageVoiceNote = () => {
 
                           {(isCurrentPlaying) && (
                             <>
-                              {showTranscriptIndex === index && renderNoteSection(index, 'transcript')}
-                              {showSummaryIndex === index && renderNoteSection(index, 'summary')}
+{(showTranscriptIndex === index || showSummaryIndex === index) && (
+  <>{renderNoteSection(index, showTranscriptIndex === index ? 'transcript' : 'summary')}</>
+)}
                             </>
                           )}
 
@@ -1474,7 +1489,7 @@ const RecorderPageVoiceNote = () => {
 
           </>
         )}
-        {recordings.length > 10 && (
+{recordings.length > 10 && editingState.index === null && (
           <TouchableOpacity
             onPress={() => flatListRef.current?.scrollToOffset({ animated: true, offset: 0 })}
             style={{

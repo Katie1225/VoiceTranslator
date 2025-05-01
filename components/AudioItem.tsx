@@ -1,6 +1,6 @@
 // components/AudioUIHelpers.tsx
 import React from 'react';
-import { View, Text, TouchableOpacity, TextInput } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput, ScrollView } from 'react-native';
 import { lightTheme, darkTheme, additionalColors } from '../constants/Colors';
 import { createStyles } from '../styles/audioStyles';
 import { RecordingItem } from '../utils/audioHelpers';
@@ -17,7 +17,9 @@ export const renderFilename = (
     playingUri: string,
     playRecording: (uri: string, index: number) => void,
     closeAllMenus: () => void,
-    styles: any
+    styles: any,
+    isEditingName?: boolean,  // 新增參數，表示是否正在編輯檔名
+    onNamePress?: () => void  // 新增參數，點擊檔名時的處理函數
 ) => {
     const isPlayingThis = playingUri === uri;
     const label = iconPrefix ? `${iconPrefix} ${name}` : name;
@@ -26,20 +28,47 @@ export const renderFilename = (
         <TouchableOpacity
             style={[isDerived ? styles.derivedFileItem : styles.nameContainer, { flex: 1 }]}
             onPress={() => {
+                if (isEditingName) return;  // 正在編輯時不處理點擊事件
                 closeAllMenus();
                 playRecording(uri, index);
             }}
+            activeOpacity={isEditingName ? 1 : 0.8}  // 正在編輯時取消按鈕效果
         >
-            <Text
-                style={[
-                    isDerived ? styles.derivedFileName : styles.recordingName,
-                    isPlayingThis && styles.playingText,
-                ]}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-            >
-                {label}
-            </Text>
+            {isEditingName ? (
+                <TextInput
+                    value={name}
+                    onChangeText={(text) => {
+                        // 這裡應該有處理文字變更的邏輯
+                    }}
+                    autoFocus
+                    style={[
+                        isDerived ? styles.derivedFileName : styles.recordingName,
+                        isPlayingThis && styles.playingText,
+                        { borderBottomWidth: 1, borderColor: 'gray' }
+                    ]}
+                    onFocus={() => {
+                        if (onNamePress) onNamePress();
+                    }}
+                    onBlur={() => {
+                        // 這裡應該有處理編輯完成的邏輯
+                    }}
+                    onSubmitEditing={() => {
+                        // 這裡應該有處理提交的邏輯
+                    }}
+                />
+            ) : (
+                <Text
+                    style={[
+                        isDerived ? styles.derivedFileName : styles.recordingName,
+                        isPlayingThis && styles.playingText,
+                    ]}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                    onPress={onNamePress}  // 新增點擊處理
+                >
+                    {label}
+                </Text>
+            )}
         </TouchableOpacity>
     );
 };
@@ -80,8 +109,6 @@ export const renderMoreButton = (
     </TouchableOpacity>
 );
 
-
-
 export const renderNoteBlock = (props: {
     type: 'transcript' | 'summary';
     index: number;
@@ -118,15 +145,46 @@ export const renderNoteBlock = (props: {
             <View style={styles.bar} />
 
             {isEditing ? (
-                <>
-                    <TextInput
-                        style={styles.transcriptTextInput}
-                        value={editValue}
-                        onChangeText={onChangeEdit}
-                        multiline
-                        autoFocus
-                    />
-                    <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 16, marginTop: 8 }}>
+                <View
+                    style={{
+                        maxHeight: 400,
+
+
+                        backgroundColor: colors.background,
+
+                    }}
+                >
+                    {/* 添加 ScrollView 並設置 nestedScrollEnabled */}
+                    <ScrollView
+                        style={{ maxHeight: 400 }}
+                        contentContainerStyle={{ paddingBottom: 12 }}
+                        nestedScrollEnabled={true} // 關鍵屬性
+                        keyboardShouldPersistTaps="handled"
+                    >
+                        <TextInput
+                            value={editValue}
+                            onChangeText={onChangeEdit}
+                            multiline
+                            scrollEnabled={true}
+                            style={{
+                                minHeight: 100,
+                                padding: 12,
+                                fontSize: 16,
+                                color: colors.text,
+                                textAlignVertical: 'top',
+                            }}
+                            autoFocus
+                        />
+                    </ScrollView>
+
+                    <View
+                        style={{
+                            flexDirection: 'row',
+                            justifyContent: 'flex-end',
+                            gap: 16,
+                            marginTop: 8,
+                        }}
+                    >
                         <TouchableOpacity onPress={onSave}>
                             <Text style={styles.transcriptActionButton}>💾 儲存</Text>
                         </TouchableOpacity>
@@ -134,11 +192,18 @@ export const renderNoteBlock = (props: {
                             <Text style={styles.transcriptActionButton}>✖️ 取消</Text>
                         </TouchableOpacity>
                     </View>
-                </>
+                </View>
             ) : (
                 <>
                     <Text style={styles.transcriptText}>{value}</Text>
-                    <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 8 }}>
+                    <View
+                        style={{
+                            flexDirection: 'row',
+                            justifyContent: 'flex-end',
+                            gap: 12,
+                            marginTop: 8,
+                        }}
+                    >
                         <TouchableOpacity onPress={() => onChangeEdit(value)}>
                             <Text style={styles.transcriptActionButton}>✏️ 修改</Text>
                         </TouchableOpacity>
@@ -154,3 +219,4 @@ export const renderNoteBlock = (props: {
         </View>
     );
 };
+  
