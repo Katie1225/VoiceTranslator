@@ -65,8 +65,7 @@ const RecorderPageVoiceNote = () => {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [menuVisible, setMenuVisible] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [editName, setEditName] = useState('');
+
   const [dbHistory, setDbHistory] = useState<number[]>([]);
   const audioRecorderPlayer = useRef(new AudioRecorderPlayer()).current;
   const [isTranscribingIndex, setIsTranscribingIndex] = useState<number | null>(null);
@@ -79,6 +78,9 @@ const RecorderPageVoiceNote = () => {
   const flatListRef = useRef<FlatList>(null);
   const [itemOffsets, setItemOffsets] = useState<Record<number, number>>({});
   const [selectedPlayingIndex, setSelectedPlayingIndex] = useState<number | null>(null);
+  const resetEditingState = () => {
+    setEditingState({ type: null, index: null, text: '' });
+  };
 
   const [summaryMenuContext, setSummaryMenuContext] = useState<{
     index: number;
@@ -165,12 +167,12 @@ const RecorderPageVoiceNote = () => {
   const [showTranscriptIndex, setShowTranscriptIndex] = useState<number | null>(null);
   const [showSummaryIndex, setShowSummaryIndex] = useState<number | null>(null);
 
+  // 所有的文字編輯宣告
   const [editingState, setEditingState] = useState<{
-    type: 'transcript' | 'summary' | null;
+    type: 'transcript' | 'summary' | 'name' | null;
     index: number | null;
     text: string;
   }>({ type: null, index: null, text: '' });
-  
 
   const shareText = async (text: string, type: 'transcript' | 'summary', filename?: string) => {
     if (!text || text.trim() === '') {
@@ -477,7 +479,7 @@ const RecorderPageVoiceNote = () => {
 
         setShowTranscriptIndex(null);   // 🔧 錄音完後，確保不會自動顯示 transcript
         setShowSummaryIndex(null);      // 🔧 順便清掉 summary 展開
-        setEditingState({ type: null, index: null, text: '' }); // 清除所有編輯狀態
+        resetEditingState(); // 清除所有編輯狀態
 
         setRecordings(prev => [newItem, ...prev]);
         setSelectedPlayingIndex(0);
@@ -492,22 +494,44 @@ const RecorderPageVoiceNote = () => {
     }
   };
 
-  // 修改文件名
-  const startEditingName = (index: number) => {
-    setEditingIndex(index);
-    setEditName(recordings[index].displayName || recordings[index].name);
-    setSelectedIndex(null); // 關閉菜單
+  // 所有的文字編輯邏輯
+  const startEditing = (index: number, type: 'name' | 'transcript' | 'summary') => {
+    const raw = type === 'name'
+      ? recordings[index]?.displayName || recordings[index]?.name
+      : type === 'transcript'
+        ? recordings[index]?.transcript
+        : recordings[index]?.summaries?.[summaryMode] || '';
+
+    setEditingState({ type, index, text: raw || '' });
+    setSelectedIndex(null);
   };
 
-  const saveEditedName = (index: number) => {
-    if (editName.trim()) {
-      setRecordings(prev =>
-        prev.map((item, i) =>
-          i === index ? { ...item, displayName: editName } : item
-        )
-      );
-    }
-    setEditingIndex(null);
+  const saveEditing = () => {
+    const { type, index, text } = editingState;
+    if (index === null || !text.trim()) return;
+
+    const updated = recordings.map((rec, i) => {
+      if (i !== index) return rec;
+
+      if (type === 'name') {
+        return { ...rec, displayName: text };
+      } else if (type === 'transcript') {
+        return { ...rec, transcript: text };
+      } else if (type === 'summary') {
+        return {
+          ...rec,
+          summaries: {
+            ...(rec.summaries || {}),
+            [summaryMode]: text,
+          },
+        };
+      }
+      return rec;
+    });
+
+    setRecordings(updated);
+    saveRecordings(updated);
+    resetEditingState();
   };
 
 
@@ -646,12 +670,8 @@ const RecorderPageVoiceNote = () => {
     setSpeedMenuIndex(null);
     setSelectedContext(null);
 
-    // 退出名稱編輯
-    setEditName('');
-    setEditingIndex(null);
-
     // 退出 transcript / summary 編輯
-    setEditingState({ type: null, index: null, text: '' });
+    resetEditingState();
 
     setSummaryMenuContext(null);
 
@@ -672,7 +692,7 @@ const RecorderPageVoiceNote = () => {
   const renderNoteSection = (index: number, type: 'transcript' | 'summary') => {
     const isTranscript = type === 'transcript';
     const editingIndex = editingState.type === type ? editingState.index : null;
-    const editValue = editingState.type === type && editingState.index === index ? editingState.text : '';    
+    const editValue = editingState.type === type && editingState.index === index ? editingState.text : '';
     const itemValue = isTranscript ? recordings[index]?.transcript : recordings[index]?.summaries?.[summaryMode] || '';
 
     return renderNoteBlock({
@@ -684,61 +704,9 @@ const RecorderPageVoiceNote = () => {
       onChangeEdit: (text: string) => {
         setEditingState({ type, index, text });
       },
-      onSave: async () => {
-        const updated = recordings.map((rec, i) =>
-          i === index
-            ? isTranscript
-            ? { ...rec, transcript: editValue }
-              : {
-                ...rec,
-                summaries: {
-                  ...(rec.summaries || {}),
-                  [summaryMode]: editValue
-                }
-              }
-            : rec
-        );
-
-        setRecordings(updated);
-        await saveRecordings(updated);
-
-        // 🔥 重點：如果這次是改錄音筆記，而且這筆有 summary，就問要不要更新
-        if (type === 'transcript' && recordings[index]?.summaries?.[summaryMode] || '') {
-          Alert.alert(
-            '更新重點摘要？',
-            '錄音筆記已更新，是否需要重新生成新的重點摘要？',
-            [
-              { text: '否', style: 'cancel' },
-              {
-                text: '是', onPress: async () => {
-                  try {
-                    const newSummary = await summarizeWithMode(editValue, summaryMode);
-                    const refreshed = recordings.map((rec, i) =>
-                      i === index
-                        ? {
-                            ...rec,
-                            summaries: {
-                              ...(rec.summaries || {}),
-                              [summaryMode]: newSummary,
-                            },
-                          }
-                        : rec
-                    );
-                    setRecordings(refreshed);
-                    await saveRecordings(refreshed);
-                    Alert.alert('✅ 重點摘要已更新');
-                  } catch (err) {
-                    Alert.alert('❌ 重點摘要更新失敗', (err as Error).message);
-                  }
-                }
-              }
-            ]
-          );
-        }
-        setEditingState({ type: null, index: null, text: '' });
-      },
+      onSave: saveEditing,
       onCancel: () => {
-        setEditingState({ type: null, index: null, text: '' });
+        resetEditingState();
       },
       onDelete: async () => {
         if (type === 'summary') {
@@ -985,51 +953,43 @@ const RecorderPageVoiceNote = () => {
                                 </Text>
 
                                 {/* 檔名顯示：正常是 Text，重新命名時是 TextInput */}
-                                {editingIndex === index ? (
-                                  <TextInput
-                                    style={[
-                                      styles.recordingName,
-                                      isCurrentPlaying && styles.playingText,
-                                      { borderBottomWidth: 1, borderColor: colors.primary }
-                                    ]}
-                                    value={editName}
-                                    onChangeText={setEditName}
-                                    autoFocus
-                                    textAlign="center"
-                                    onSubmitEditing={() => saveEditedName(index)}
-                                    onBlur={() => saveEditedName(index)}
-                                  />
-                                ) : (
-                                  <Text
-                                    style={[
-                                      styles.recordingName,
-                                      isCurrentPlaying && styles.playingText
-                                    ]}
-                                    numberOfLines={1}
-                                    ellipsizeMode="tail"
-                                  >
-                                    {item.displayName || item.name}
-                                  </Text>
-                                )}
+                                {
+                                  editingState.type === 'name' && editingState.index === index ? (
+                                    <TextInput
+                                      style={[styles.recordingName, isCurrentPlaying && styles.playingText, { borderBottomWidth: 1, borderColor: colors.primary }]}
+                                      value={editingState.text}
+                                      onChangeText={(text) => setEditingState({ type: 'name', index, text })}
+                                      autoFocus
+                                      textAlign="center"
+                                      onPress={() => saveEditing()}
+                                    />
+                                  ) : (
+                                    <Text
+                                      style={[styles.recordingName, isCurrentPlaying && styles.playingText]}
+                                      numberOfLines={1}
+                                      ellipsizeMode="tail"
+                                    >
+                                      {item.displayName || item.name}
+                                    </Text>
+                                  )
+                                }
                               </TouchableOpacity>
                             </View>
 
                             {/* 右邊：三點選單 or 💾 ✖️ 按鈕 */}
-                            {editingIndex === index ? (
+                            {editingState.type === 'name' && editingState.index === index ? (
                               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                                <TouchableOpacity onPress={() => saveEditedName(index)}>
+                                <TouchableOpacity onPress={saveEditing}>
                                   <Text style={[styles.transcriptActionButton, { color: colors.primary }]}>💾</Text>
                                 </TouchableOpacity>
-                                <TouchableOpacity onPress={() => {
-                                  setEditingIndex(null);
-                                  setEditName('');
-                                }}>
+                                <TouchableOpacity onPress={resetEditingState}>
                                   <Text style={styles.transcriptActionButton}>✖️</Text>
                                 </TouchableOpacity>
                               </View>
                             ) : (
                               renderMoreButton(index, 'main', styles.moreButton, setSelectedContext, closeAllMenus, styles, selectedContext)
                             )}
+
                           </View>
 
                           {/* 第二行：兩行小字摘要 */}
@@ -1185,7 +1145,7 @@ const RecorderPageVoiceNote = () => {
                                   disabled={!item.transcript || isAnyProcessing}
                                   onPress={async () => {  // 這裡加上 async
                                     closeAllMenus();
-                                    
+
                                     if (!item.transcript) {
                                       Alert.alert('⚠️ 無法摘要', '請先執行「轉文字」功能');
                                       return;
@@ -1236,7 +1196,7 @@ const RecorderPageVoiceNote = () => {
                                       setIsSummarizingIndex(null);
                                     }
                                   }}
-                                  
+
                                   onLongPress={(e) => {
                                     e.target.measureInWindow((x, y, width, height) => {
                                       setSummaryMenuContext({ index, position: { x, y: y + height } });
@@ -1341,7 +1301,7 @@ const RecorderPageVoiceNote = () => {
                 onRename={(index) => {
                   setSelectedContext(null);
                   setTimeout(() => {
-                    startEditingName(index);
+                    startEditing(index, 'name')
                   }, 0);
                 }}
                 onShare={(uri) => {
@@ -1351,7 +1311,7 @@ const RecorderPageVoiceNote = () => {
                   deleteRecording(index); // 一次刪整包
                   setShowTranscriptIndex(null);
                   setShowSummaryIndex(null);
-                  setEditingState({ type: null, index: null, text: '' });
+                  resetEditingState();
                   setSelectedContext(null);
                 }}
 
@@ -1370,7 +1330,7 @@ const RecorderPageVoiceNote = () => {
                       const trimSec = Math.round((trimStatus.durationMillis ?? 0) / 1000);
                       setShowTranscriptIndex(null);
                       setShowSummaryIndex(null);
-                      setEditingState({ type: null, index: null, text: '' });
+                      resetEditingState();
                       setRecordings(prev => prev.map((rec, i) =>
                         i === index
                           ? {
