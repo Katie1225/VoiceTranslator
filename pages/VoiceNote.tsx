@@ -46,6 +46,12 @@ import {
   renderNoteBlock
 } from '../components/AudioItem';
 import { uFPermissions } from '../src/hooks/uFPermissions';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+
+GoogleSignin.configure({
+  webClientId: '732781312395-blhdm11hejnni8c2k9orf7drjcorp1pp.apps.googleusercontent.com',
+  offlineAccess: true, // 可選
+});
 
 
 const GlobalRecorderState = {
@@ -53,6 +59,7 @@ const GlobalRecorderState = {
   filePath: '',
   startTime: 0,
 };
+
 
 const RecorderPageVoiceNote = () => {
   const title = "  Voice Note";
