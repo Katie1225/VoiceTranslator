@@ -86,6 +86,7 @@ android {
 
    buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
+     flavorDimensions "store"
 
     namespace 'com.katiehuang.audiorecordermvp'
   defaultConfig {
