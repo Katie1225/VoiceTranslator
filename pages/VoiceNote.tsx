@@ -46,20 +46,19 @@ import {
   renderNoteBlock
 } from '../components/AudioItem';
 import { uFPermissions } from '../src/hooks/uFPermissions';
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import { logCoinUsage } from '../utils/googleSheetAPI';
 
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 GoogleSignin.configure({
   webClientId: '732781312395-blhdm11hejnni8c2k9orf7drjcorp1pp.apps.googleusercontent.com',
   offlineAccess: true, // 可選
 });
-
 
 const GlobalRecorderState = {
   isRecording: false,
   filePath: '',
   startTime: 0,
 };
-
 
 const RecorderPageVoiceNote = () => {
   const title = "  Voice Note";
@@ -129,9 +128,18 @@ const RecorderPageVoiceNote = () => {
 
   const loadThemePreference = async () => {
     const theme = await AsyncStorage.getItem('themeMode');
-    if (theme === 'dark') setIsDarkMode(true);
-    else if (theme === 'light') setIsDarkMode(false);
+
+    if (theme === 'dark') {
+      setIsDarkMode(true);
+    } else if (theme === 'light') {
+      setIsDarkMode(false);
+    } else {
+      // 🟢 第一次載入預設為 dark
+      setIsDarkMode(true);
+      await AsyncStorage.setItem('themeMode', 'dark');
+    }
   };
+
 
   const loadPrimaryColorPreference = async () => {
     const color = await AsyncStorage.getItem('primaryColor');
@@ -266,42 +274,42 @@ const RecorderPageVoiceNote = () => {
       setRecording(true);
       recordingStartTimestamp.current = Date.now();
       recordingTimeRef.current = Math.floor((Date.now() - GlobalRecorderState.startTime) / 1000);
-      
+
     }
   }, []);
 
   useEffect(() => {
     let timer: NodeJS.Timeout;
-  
+
     if (recording) {
       recordingTimeRef.current = 0;
       timer = setInterval(() => {
         recordingTimeRef.current += 1;
       }, 1000);
     }
-  
+
     return () => clearInterval(timer);
   }, [recording]);
+
+
+  /*
+  const dbHistoryRef = useRef<number[]>([]);
   
-
-/*
-const dbHistoryRef = useRef<number[]>([]);
-
-useEffect(() => {
-  let dbTimer: NodeJS.Timeout;
-
-  if (recording) {
-    dbTimer = setInterval(() => {
-      dbHistoryRef.current = Array.from({ length: 20 }, () =>
-        -Math.floor(Math.random() * 60 + 40)
-      );
-    }, 500);
-  }
-
-  return () => clearInterval(dbTimer);
-}, [recording]);
-
-*/
+  useEffect(() => {
+    let dbTimer: NodeJS.Timeout;
+  
+    if (recording) {
+      dbTimer = setInterval(() => {
+        dbHistoryRef.current = Array.from({ length: 20 }, () =>
+          -Math.floor(Math.random() * 60 + 40)
+        );
+      }, 500);
+    }
+  
+    return () => clearInterval(dbTimer);
+  }, [recording]);
+  
+  */
 
   // 在組件掛載時載入
   useEffect(() => {
@@ -684,12 +692,12 @@ useEffect(() => {
     setSpeedMenuIndex(null);
     setSelectedContext(null);
     setSummaryMenuContext(null);
-  
+
     if (!preserveEditing) {
       resetEditingState(); // 清掉正在編輯的
     }
   };
-  
+
 
   if (!isLoading && permissionStatus === 'denied') {
     return (
@@ -752,6 +760,27 @@ useEffect(() => {
           setShowSummaryIndex(null);
           setIsSummarizingIndex(null);
         }
+        if (type === 'transcript') {
+          const updated = recordings.map((rec, i) => {
+            if (i !== index) return rec;
+            return { ...rec, transcript: '' };
+          });
+
+          setRecordings(updated);
+          await saveRecordings(updated);
+          setShowTranscriptIndex(null);
+          setIsTranscribingIndex(null);
+        } if (type === 'transcript') {
+          const updated = recordings.map((rec, i) => {
+            if (i !== index) return rec;
+            return { ...rec, transcript: '' };
+          });
+
+          setRecordings(updated);
+          await saveRecordings(updated);
+          setShowTranscriptIndex(null);
+          setIsTranscribingIndex(null);
+        }
       },
 
       onShare: async () => {
@@ -773,7 +802,7 @@ useEffect(() => {
 
 
   return (
-<TouchableWithoutFeedback onPress={() => closeAllMenus(false)}>
+    <TouchableWithoutFeedback onPress={() => closeAllMenus(false)}>
       <SafeAreaView style={[styles.container, { marginTop: 0, paddingTop: 0 }]}>
         {isLoading ? (
           <View style={styles.loadingContainer}>
@@ -949,52 +978,52 @@ useEffect(() => {
                           <View style={[styles.nameRow, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
                             {/* 左邊播放鍵＋檔名 */}
                             <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1 }}>
-  {/* ▶ 播放鍵 */}
-  <TouchableOpacity
-    onPress={async () => {
-      closeAllMenus();
-      await togglePlayback(item.uri, index);
-      setSelectedPlayingIndex(index);
-      if (item.transcript) {
-        setShowTranscriptIndex(index);
-        setShowSummaryIndex(null);
-      } else {
-        setShowTranscriptIndex(null);
-        setShowSummaryIndex(null);
-      }
-    }}
-    style={{ marginRight: 8 }}
-  >
-    <Text style={styles.playIcon}>
-      {playingUri === item.uri && isPlaying ? '❚❚' : '▶'}
-    </Text>
-  </TouchableOpacity>
+                              {/* ▶ 播放鍵 */}
+                              <TouchableOpacity
+                                onPress={async () => {
+                                  closeAllMenus();
+                                  await togglePlayback(item.uri, index);
+                                  setSelectedPlayingIndex(index);
+                                  if (item.transcript) {
+                                    setShowTranscriptIndex(index);
+                                    setShowSummaryIndex(null);
+                                  } else {
+                                    setShowTranscriptIndex(null);
+                                    setShowSummaryIndex(null);
+                                  }
+                                }}
+                                style={{ marginRight: 8 }}
+                              >
+                                <Text style={styles.playIcon}>
+                                  {playingUri === item.uri && isPlaying ? '❚❚' : '▶'}
+                                </Text>
+                              </TouchableOpacity>
 
-  {/* 檔名顯示或編輯 */}
-  {
-    editingState.type === 'name' && editingState.index === index ? (
-      <TextInput
-        style={[styles.recordingName, isCurrentPlaying && styles.playingText, { borderBottomWidth: 1, borderColor: colors.primary }]}
-        value={editingState.text}
-        onChangeText={(text) => setEditingState({ type: 'name', index, text })}
-        autoFocus
-        textAlign="center"
-        onSubmitEditing={saveEditing}
-        onBlur={saveEditing}
-      />
-    ) : (
-      <TouchableOpacity onPress={() => startEditing(index, 'name')}>
-        <Text
-          style={[styles.recordingName, isCurrentPlaying && styles.playingText]}
-          numberOfLines={1}
-          ellipsizeMode="tail"
-        >
-          {item.displayName || item.name}
-        </Text>
-      </TouchableOpacity>
-    )
-  }
-</View>
+                              {/* 檔名顯示或編輯 */}
+                              {
+                                editingState.type === 'name' && editingState.index === index ? (
+                                  <TextInput
+                                    style={[styles.recordingName, isCurrentPlaying && styles.playingText, { borderBottomWidth: 1, borderColor: colors.primary }]}
+                                    value={editingState.text}
+                                    onChangeText={(text) => setEditingState({ type: 'name', index, text })}
+                                    autoFocus
+                                    textAlign="center"
+                                    onSubmitEditing={saveEditing}
+                                    onBlur={saveEditing}
+                                  />
+                                ) : (
+                                  <TouchableOpacity onPress={() => startEditing(index, 'name')}>
+                                    <Text
+                                      style={[styles.recordingName, isCurrentPlaying && styles.playingText]}
+                                      numberOfLines={1}
+                                      ellipsizeMode="tail"
+                                    >
+                                      {item.displayName || item.name}
+                                    </Text>
+                                  </TouchableOpacity>
+                                )
+                              }
+                            </View>
 
 
                             {/* 右邊：三點選單 or 💾 ✖️ 按鈕 */}
@@ -1129,25 +1158,76 @@ useEffect(() => {
                                       return;
                                     }
 
+
+                                    // 🔐 一開始就鎖定，防止狂點
                                     setIsTranscribingIndex(index);
 
                                     try {
+                                      const stored = await AsyncStorage.getItem('user');
+                                      if (!stored) {
+                                        setIsTranscribingIndex(null);
+                                        Alert.alert("未登入", "請先登入才能使用錄音筆記功能");
+                                        return;
+                                      }
+
+                                      const user = JSON.parse(stored);
+
+                                      if (user.coins <= 0) {
+                                        setIsTranscribingIndex(null);
+                                        Alert.alert(
+                                          "金幣不足",
+                                          "請儲值後再使用錄音筆記功能",
+                                          [
+                                            {
+                                              text: "取消",
+                                              style: "cancel",
+                                              onPress: () => {
+                                                setIsTranscribingIndex(null); // ✅ 還原 UI 狀態
+                                              }
+                                            },
+                                            {
+                                              text: "立即儲值",
+                                              onPress: () => {
+                                                setIsTranscribingIndex(null); // ✅ 一樣還原 UI 狀態
+                                                Linking.openURL("https://你的儲值網址或 Google Play 購買頁"); // 替換成你自己的金流入口
+                                              }
+                                            }
+                                          ]
+                                        );
+
+                                        return;
+                                      }
+
+                                      const coinResult = await logCoinUsage({
+                                        id: user.id,
+                                        action: 'transcript',
+                                        value: -1,
+                                        note: `使用錄音筆記：${item.displayName || item.name || ''}`
+                                      });
+
+                                      if (!coinResult.success) {
+                                        setIsTranscribingIndex(null);
+                                        Alert.alert("扣金幣失敗", coinResult.message || "請稍後再試");
+                                        return;
+                                      }
+
+                                      user.coins = user.coins - 1;
+                                      await AsyncStorage.setItem('user', JSON.stringify(user));
+
                                       await transcribeAudio(item, (updatedTranscript) => {
                                         setRecordings(prev =>
                                           prev.map((rec, i) =>
                                             i === index ? { ...rec, transcript: updatedTranscript } : rec
                                           )
                                         );
-
-                                        if (showTranscriptIndex !== index) {
-                                          setShowTranscriptIndex(index);
-                                          setShowSummaryIndex(null); // 可選，不做 summary 也沒差
-                                        }
+                                        setShowTranscriptIndex(index);
+                                        setShowSummaryIndex(null);
                                       });
+
                                     } catch (err) {
-                                      Alert.alert("❌ 轉文字失敗", (err as Error).message);
+                                      Alert.alert("❌ 發生錯誤", (err as Error).message);
                                     } finally {
-                                      setIsTranscribingIndex(null);
+                                      setIsTranscribingIndex(null); // ✅ 無論成功或失敗都要解除 loading
                                     }
                                   }}
                                 >
@@ -1270,9 +1350,9 @@ useEffect(() => {
 
                           {(isCurrentPlaying) && (
                             <>
-{(showTranscriptIndex === index || showSummaryIndex === index) && (
-  <>{renderNoteSection(index, showTranscriptIndex === index ? 'transcript' : 'summary')}</>
-)}
+                              {(showTranscriptIndex === index || showSummaryIndex === index) && (
+                                <>{renderNoteSection(index, showTranscriptIndex === index ? 'transcript' : 'summary')}</>
+                              )}
                             </>
                           )}
 
@@ -1496,7 +1576,7 @@ useEffect(() => {
 
           </>
         )}
-{recordings.length > 10 && editingState.index === null && (
+        {recordings.length > 10 && editingState.index === null && (
           <TouchableOpacity
             onPress={() => flatListRef.current?.scrollToOffset({ animated: true, offset: 0 })}
             style={{
