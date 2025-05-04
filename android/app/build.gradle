@@ -89,6 +89,13 @@ android {
      flavorDimensions "store"
 
     namespace 'com.katiehuang.audiorecordermvp'
+      productFlavors {
+    play {
+      dimension "store"
+      matchingFallbacks = ['play'] 
+    }
+  }
+
   defaultConfig {
         namespace 'com.katiehuang.audiorecordermvp'
     applicationId "com.katiehuang.audiorecordermvp"
@@ -119,6 +126,9 @@ android {
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
             crunchPngs (findProperty('android.enablePngCrunchInReleaseBuilds')?.toBoolean() ?: true)
+           minifyEnabled false
+    proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+       
         }
     }
     packagingOptions {
@@ -154,6 +164,8 @@ android {
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
+ //   implementation project(path: ':react-native-iap', configuration: 'playRelease')  
+    implementation "com.android.billingclient:billing:6.1.0"
 
     def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true";
     def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true";
@@ -178,4 +190,9 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+
+    tasks.register("installDebug") {
+    dependsOn "installPlayDebug"
+}
+
 }
