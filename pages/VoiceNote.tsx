@@ -46,7 +46,8 @@ import {
   renderNoteBlock
 } from '../components/AudioItem';
 import { uFPermissions } from '../src/hooks/uFPermissions';
-import { logCoinUsage } from '../utils/googleSheetAPI';
+import { logCoinUsage, fetchUserInfo } from '../utils/googleSheetAPI';
+
 
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 GoogleSignin.configure({
@@ -264,6 +265,64 @@ const RecorderPageVoiceNote = () => {
     },
     isMeteringEnabled: true
   };
+
+  // 帳號登入
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  const handleLogin = async (): Promise<boolean> => {
+  setIsLoggingIn(true);
+
+  try {
+    const result = await GoogleSignin.signIn();
+    const user = (result as any)?.data?.user || {};
+    if (!user.id || !user.email) throw new Error("無法取得使用者資訊");
+
+    const postResult = await logCoinUsage({
+      id: user.id,
+      action: 'signup',
+      value: 0,
+      note: '首次登入（不給點，純登入記錄）',
+      email: user.email,
+      name: user.name || user.email.split('@')[0],
+    });
+
+    if (!postResult.success) throw new Error(postResult.message || '註冊失敗');
+
+    const getResult = await fetchUserInfo(user.id);
+    if (!getResult.success) throw new Error(getResult.message || '取得資料失敗');
+
+    const mergedUser = {
+      ...user,
+      coins: getResult.data?.coins || 0,
+    };
+
+    
+// ✅ 如果是首次登入就補送 50 金幣
+if ((getResult.data?.coins ?? 0) === 0) {
+  await logCoinUsage({
+    id: user.id,
+    action: 'signup_bonus',
+    value: 50,
+    note: '首次登入送 50 金幣',
+    email: user.email,
+    name: user.name || user.email.split('@')[0],
+  });
+  mergedUser.coins = 50; // ⚠️ 手動更新本地顯示用的 AsyncStorage
+}
+
+    await AsyncStorage.setItem('user', JSON.stringify(mergedUser));
+
+    Alert.alert('✅ 登入成功', `你好，${user.name || user.email}`, [
+      { text: 'OK', onPress: () => setIsLoggingIn(false) }
+    ]);
+    return true;
+  } catch (err) {
+    Alert.alert('❌ 登入失敗', err instanceof Error ? err.message : '未知錯誤', [
+      { text: 'OK', onPress: () => setIsLoggingIn(false) }
+    ]);
+    return false;
+  }
+};
 
 
   useEffect(() => {
@@ -892,6 +951,8 @@ const RecorderPageVoiceNote = () => {
               customPrimaryColor={customPrimaryColor}
               setCustomPrimaryColor={handleSetPrimaryColor}
               styles={styles}
+              onLoginPress={handleLogin}  
+              onLoginSuccess={() => setMenuVisible(false)}  // 🔽 登入成功後收起漢堡選單
             />
 
 
@@ -1166,7 +1227,21 @@ const RecorderPageVoiceNote = () => {
                                       const stored = await AsyncStorage.getItem('user');
                                       if (!stored) {
                                         setIsTranscribingIndex(null);
-                                        Alert.alert("未登入", "請先登入才能使用錄音筆記功能");
+                                        Alert.alert("請先登入", "使用錄音筆記功能需要登入", [
+                                          {
+                                            text: "取消",
+                                            style: "cancel",
+                                            onPress: () => setIsTranscribingIndex(null)
+                                          },
+                                          {
+                                            text: "登入",
+                                            onPress: () => {
+                                              setIsTranscribingIndex(null); // 重置 index
+                                              handleLogin(); // 直接觸發登入
+                                            }
+                                          }
+                                        ]);
+                                        
                                         return;
                                       }
 
@@ -1597,6 +1672,28 @@ const RecorderPageVoiceNote = () => {
             <Text style={{ color: 'white', fontSize: 18 }}>↑</Text>
           </TouchableOpacity>
         )}
+        {isLoggingIn && (
+  <View style={{
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 9999,
+    elevation: 9999, // 確保在 Android 上也能遮住
+  }}>
+    <View style={{
+      backgroundColor: '#222',
+      padding: 24,
+      borderRadius: 12,
+      alignItems: 'center'
+    }}>
+      <Text style={{ color: 'white', fontSize: 18, marginBottom: 10 }}>🔄 登入中...</Text>
+      <Text style={{ color: 'white', fontSize: 14 }}>請稍候，正在與 Google 驗證身份</Text>
+    </View>
+  </View>
+)}
+
       </SafeAreaView>
     </TouchableWithoutFeedback>
   );

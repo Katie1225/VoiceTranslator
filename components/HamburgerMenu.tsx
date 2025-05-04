@@ -5,7 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { lightTheme, darkTheme, additionalColors } from '../constants/Colors';
 import { logCoinUsage, fetchUserInfo } from '../utils/googleSheetAPI';
-import { useGoogleLogin } from '../src/hooks/useGoogleLogin';
+
 
 
 type Props = {
@@ -16,6 +16,8 @@ type Props = {
   customPrimaryColor: string | null;
   setCustomPrimaryColor: (color: string | null) => void;
   styles: any;
+  onLoginPress: () => Promise<boolean>;
+  onLoginSuccess?: () => void;
 };
 
 type GoogleUser = {
@@ -36,10 +38,10 @@ const HamburgerMenu = ({
   customPrimaryColor,
   setCustomPrimaryColor,
   styles,
+  onLoginPress,
+  onLoginSuccess
 }: Props) => {
   const [currentUser, setCurrentUser] = useState<GoogleUser | null>(null);
-  const { isLoggingIn, loginWithGoogle } = useGoogleLogin();
-
   useEffect(() => {
     const loadUser = async () => {
       const stored = await AsyncStorage.getItem('user');
@@ -56,32 +58,20 @@ const HamburgerMenu = ({
     setCurrentUser(null);
     Alert.alert('已登出');
   };
+  const handleLoginWithAutoClose = async () => {
+    const result = await onLoginPress(); // loginPress 必須 return true/false
+    if (result && onLoginSuccess) {
+      onLoginSuccess(); // 登入成功後執行關閉選單
+    }
+  };
 
   if (!visible) return null;
 
 
   return (
     <View style={styles.menuContainer}>
-{isLoggingIn ? (
-  <View style={{
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 9999,
-  }}>
-    <View style={{
-      backgroundColor: '#222',
-      padding: 24,
-      borderRadius: 12,
-      alignItems: 'center'
-    }}>
-      <Text style={{ color: 'white', fontSize: 18, marginBottom: 10 }}>🔄 登入中...</Text>
-      <Text style={{ color: 'white', fontSize: 14 }}>請稍候，正在與 Google 驗證身份</Text>
-    </View>
-  </View>
-) : currentUser ? (
+
+{currentUser ? (
   <View style={[styles.menuItemButton, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
     <View style={{ flexDirection: 'column' }}>
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -99,13 +89,13 @@ const HamburgerMenu = ({
     </TouchableOpacity>
   </View>
 ) : (
-  <TouchableOpacity onPress={loginWithGoogle} style={styles.menuItemButton}>
-    <Text style={styles.menuItem}>☁️ 登入 Google 帳戶</Text>
-  </TouchableOpacity>
+<TouchableOpacity onPress={handleLoginWithAutoClose} style={styles.menuItemButton}>
+  <Text style={styles.menuItem}>☁️ 登入 Google 帳戶</Text>
+</TouchableOpacity>
+
 )}
 
-
-      <Text style={styles.menuItem}>版本: v1.3.2</Text>
+      <Text style={styles.menuItem}>版本: v1.3.3</Text>
 
       <TouchableOpacity onPress={() => { onClose(); toggleTheme(); }} style={styles.menuItemButton}>
         <Text style={styles.menuItem}>{isDarkMode ? '切換淺色模式' : '切換深色模式'}</Text>
