@@ -24,6 +24,7 @@ import { Linking } from 'react-native';
 import { Keyboard } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Localization from 'expo-localization';
 
 import {
   RecordingItem,
@@ -94,6 +95,8 @@ const RecorderPageVoiceNote = () => {
     position: { x: number; y: number };
   } | null>(null);
 
+
+  const userLang = Localization.getLocales()[0]?.languageTag || 'zh-TW';
 
   const ITEM_HEIGHT = 80; // 音檔名稱高度
 
@@ -1225,7 +1228,7 @@ if ((getResult.data?.coins ?? 0) === 0) {
 
                                     try {
                                       const stored = await AsyncStorage.getItem('user');
-                                      if (!stored) {
+ /*                                     if (!stored) {
                                         setIsTranscribingIndex(null);
                                         Alert.alert("請先登入", "使用錄音筆記功能需要登入", [
                                           {
@@ -1244,8 +1247,10 @@ if ((getResult.data?.coins ?? 0) === 0) {
                                         
                                         return;
                                       }
-
                                       const user = JSON.parse(stored);
+*/
+                                      const user = { id: 'guest', email: 'guest@example.com', coins: 99 };
+
 
                                       if (user.coins <= 0) {
                                         setIsTranscribingIndex(null);
@@ -1297,7 +1302,7 @@ if ((getResult.data?.coins ?? 0) === 0) {
                                         );
                                         setShowTranscriptIndex(index);
                                         setShowSummaryIndex(null);
-                                      });
+                                      }, userLang.includes('CN') ? 'cn' : 'tw');
 
                                     } catch (err) {
                                       Alert.alert("❌ 發生錯誤", (err as Error).message);
@@ -1573,7 +1578,7 @@ if ((getResult.data?.coins ?? 0) === 0) {
 
                       setIsSummarizingIndex(idx);
                       try {
-                        const summary = await summarizeWithMode(recordings[idx].transcript || '', mode.key);
+                        const summary = await summarizeWithMode(recordings[idx].transcript || '', mode.key, userLang.includes('CN') ? 'cn' : 'tw');
                         const updated = recordings.map((rec, i) =>
                           i === idx
                             ? {

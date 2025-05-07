@@ -26,8 +26,6 @@ export type RecordingItem = {
   };
 };
 
-
-
 // 增強音質的處理
 export const enhanceAudio = async (inputUri: string, originalName: string): Promise<RecordingItem> => {
   const folder = inputUri.substring(0, inputUri.lastIndexOf('/') + 1);
@@ -148,9 +146,10 @@ export const speedUpAudio = async (
 
 export const transcribeAudio = async (
   item: RecordingItem,
-  onPartial?: (text: string, index: number, total: number) => void
+  onPartial?: (text: string, index: number, total: number) => void,
+  targetLang: 'tw' | 'cn' = 'tw'
 ): Promise<{ transcript: { text: string } }> => {
-  let raw = '';
+
 
   try {
     if (!item.uri || !item.name) {
@@ -234,8 +233,9 @@ export const transcribeAudio = async (
         name: `segment_${i}.wav`,
         type: 'audio/wav',
       } as any);
+      formData.append('targetLang', targetLang); 
 
-      const response = await fetch('https://katielab.com/transcribe/', {
+      const response = await fetch('https://katielab.com/v1/transcribe/', {
         method: 'POST',
         headers: {
           Accept: 'application/json',
@@ -249,7 +249,7 @@ export const transcribeAudio = async (
       if (!response.ok) {
         console.error(`❌ 第 ${i + 1} 段錯誤：`, raw);
         throw new Error(`第 ${i + 1} 段轉文字失敗：HTTP ${response.status}`);
-      }
+      } else {console.log('✅ 呼叫 Whisper API 成功')}
 
       let text = '';
       try {
@@ -351,29 +351,28 @@ export const splitAudioIntoSegments = async (
     .map(f => `${FileSystem.cacheDirectory}${f}`);
 };
 
-// audioHelpers.ts
-
 export const summarizeModes = [
-  { key: 'summary', label: '重點整理', prompt: '這是一段聲音轉文字的逐字稿, 專有名詞上可能會有錯誤, 或每次音譯造成不同, 請注意這個問題. 請將這段文字整理成清楚條列式的重點摘要。中文部分請使用繁體中文.' },
-  { key: 'analysis', label: '問題分析', prompt: '這是一段聲音轉文字的逐字稿, 專有名詞上可能會有錯誤, 或每次音譯造成不同, 請注意這個問題. 請將這段文字中的問題點分析出來，並給出可能的解決方向。中文部分請使用繁體中文.' },
-  { key: 'email', label: '信件撰寫', prompt: '這是一段聲音轉文字的逐字稿, 專有名詞上可能會有錯誤, 或每次音譯造成不同, 請注意這個問題. 請幫我把這段文字整理成一封正式的商業郵件，語氣禮貌。中文部分請使用繁體中文.' },
-  { key: 'news', label: '新聞稿', prompt: '這是一段聲音轉文字的逐字稿, 專有名詞上可能會有錯誤, 或每次音譯造成不同, 請注意這個問題. 請將這段文字改寫成新聞稿格式，具體且吸引人。中文部分請使用繁體中文.' },
-  { key: 'ai_answer', label: 'AI給答案', prompt: '這是一段聲音轉文字的逐字稿, 專有名詞上可能會有錯誤, 或每次音譯造成不同, 請注意這個問題. 請根據這段文字內容，直接給出一個完整詳細的回答。中文部分請使用繁體中文.' },
+  { key: 'summary', label: '重點整理', prompt: '這是一段可能由多人或單人錄製聲音轉文字的逐字稿, 專有名詞上可能會有錯誤, 或每次音譯造成不同, 請注意這個問題. 請將這段文字整理成清楚條列式的重點摘要。' },
+  { key: 'analysis', label: '問題分析', prompt: '這是一段可能由多人或單人錄製聲音轉文字的逐字稿, 專有名詞上可能會有錯誤, 或每次音譯造成不同, 請注意這個問題. 請將這段文字中的問題點分析出來，並給出可能的解決方向。' },
+  { key: 'email', label: '信件撰寫', prompt: '這是一段可能由多人或單人錄製聲音轉文字的逐字稿, 專有名詞上可能會有錯誤, 或每次音譯造成不同, 請注意這個問題. 請幫我把這段文字整理成一封正式的商業郵件，語氣禮貌。' },
+  { key: 'news', label: '新聞稿', prompt: '這是一段可能由多人或單人錄製聲音轉文字的逐字稿, 專有名詞上可能會有錯誤, 或每次音譯造成不同, 請注意這個問題. 請將這段文字改寫成新聞稿格式，具體且吸引人。' },
+  { key: 'ai_answer', label: 'AI給答案', prompt: '這是一段可能由多人或單人錄製聲音轉文字的逐字稿, 專有名詞上可能會有錯誤, 或每次音譯造成不同, 請注意這個問題. 請根據這段文字內容，直接給出一個完整詳細的回答。' },
 ];
 
 // 核心摘要函式
-export async function summarizeWithMode(transcript: string, modeKey: string) {
+export async function summarizeWithMode(transcript: string, modeKey: string,
+  targetLang: 'tw' | 'cn' = 'tw') {
   const mode = summarizeModes.find(m => m.key === modeKey);
   if (!mode) throw new Error('未知的摘要模式');
 
   const prompt = mode.prompt;
 
-  const res = await fetch('https://katielab.com/summarize/', {
+  const res = await fetch('https://katielab.com/v1/summarize/', {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ text: transcript, prompt }), // 🔥注意這裡
+    body: JSON.stringify({ text: transcript, prompt, targetLang,  }), // 🔥注意這裡
   });
 
   if (!res.ok) {
