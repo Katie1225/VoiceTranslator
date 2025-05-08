@@ -95,7 +95,7 @@ const HamburgerMenu = ({
 
 )}
 
-      <Text style={styles.menuItem}>版本: v1.3.4</Text>
+      <Text style={styles.menuItem}>版本: v1.3.5</Text>
 
       <TouchableOpacity onPress={() => { onClose(); toggleTheme(); }} style={styles.menuItemButton}>
         <Text style={styles.menuItem}>{isDarkMode ? '切換淺色模式' : '切換深色模式'}</Text>

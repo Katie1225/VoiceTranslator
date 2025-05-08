@@ -85,10 +85,6 @@ export const trimSilence = async (uri: string, name: string): Promise<RecordingI
 
 
 
-
-/**
- * 將 m4a 或其他格式的音檔轉為 wav 格式，回傳輸出 wav 的 uri。
- */
 export const convertToWav = async (inputUri: string): Promise<string> => {
   try {
     // 取得檔名（不含副檔名）
@@ -144,6 +140,53 @@ export const speedUpAudio = async (
   }
 };
 
+// 切段工具
+export const splitAudioIntoSegments = async (
+  uri: string,
+  seconds = 30
+): Promise<string[]> => {
+  const outputPattern = `${FileSystem.cacheDirectory}segment_%03d.wav`;
+
+  // 清理舊檔案（排除壓縮過的）
+  const allFilesBefore = await FileSystem.readDirectoryAsync(FileSystem.cacheDirectory!);
+  await Promise.all(
+    allFilesBefore
+      .filter(f => f.startsWith('segment_') && f.endsWith('.wav') && !f.includes('_small'))
+      .map(f => FileSystem.deleteAsync(`${FileSystem.cacheDirectory}${f}`))
+  );
+
+  // 強制關鍵幀切割
+  const command = `-i "${uri}" -f segment -segment_time ${seconds} -force_key_frames "expr:gte(n, n_forced*${seconds})" -c copy "${outputPattern}"`;
+
+  const session = await FFmpegKit.execute(command);
+  const returnCode = await session.getReturnCode();
+
+  if (!ReturnCode.isSuccess(returnCode)) {
+    throw new Error('切割音檔失敗');
+  }
+
+  // 讀取並排序分段檔案
+  const allFiles = await FileSystem.readDirectoryAsync(FileSystem.cacheDirectory!);
+  return allFiles
+    .filter(f => f.startsWith('segment_') && f.endsWith('.wav') && !f.includes('_small'))
+    .sort((a, b) => a.localeCompare(b)) // 確保順序正確
+    .map(f => `${FileSystem.cacheDirectory}${f}`);
+};
+
+export async function getAudioDuration(uri: string): Promise<{ duration: number }> {
+  const { sound, status } = await Audio.Sound.createAsync({ uri }, { shouldPlay: false });
+
+  if (!status.isLoaded) {
+    throw new Error('音訊載入失敗');
+  }
+
+  const duration = status.durationMillis != null ? status.durationMillis / 1000 : 0;
+  await sound.unloadAsync(); // ✅ 記得釋放資源
+
+  return { duration };
+}
+
+
 export const transcribeAudio = async (
   item: RecordingItem,
   onPartial?: (text: string, index: number, total: number) => void,
@@ -192,8 +235,6 @@ export const transcribeAudio = async (
       return suspiciousPhrases.some(phrase => text.includes(phrase));
     };
 
-    const segments = await splitAudioIntoSegments(wavUri, 30);  // 這裡改時間
-
     // ✅ 每段切出來後壓縮：內部函式定義
     const compressSegment = async (uri: string): Promise<string> => {
       const output = uri.replace('.wav', '_small.wav');
@@ -211,30 +252,33 @@ export const transcribeAudio = async (
 
     let accumulated = '';
 
-    for (let i = 0; i < segments.length; i++) {
-      const segment = segments[i];
+    const { duration } = await getAudioDuration(wavUri);
+    const segmentCount = Math.ceil(duration / 30);
+    const now = Date.now();
 
-      // 檢查分段時長（需實作 getAudioDuration）
-      const { duration } = await getAudioDuration(segment);
-      console.log(`⏱️ 第 ${i + 1} 段時長: ${duration.toFixed(2)}秒`);
+    for (let i = 0; i < segmentCount; i++) {
+      const start = i * 30;
+      const segmentName = `segment_${i}_${Date.now()}.wav`;
+      const segmentPath = `${FileSystem.cacheDirectory}${segmentName}`;
 
-      if (duration < 1) {
-        console.log(`⏭️ 跳過過短分段 (${duration}s)`);
-        continue; // 跳過此段
+      const command = `-i "${wavUri}" -ss ${start} -t 30 -ar 16000 -ac 1 "${segmentPath}"`;
+      await FFmpegKit.execute(command);
+      const { duration: segmentDuration } = await getAudioDuration(segmentPath);
+      console.log(`⏱️ 第 ${i + 1} 段時長: ${segmentDuration.toFixed(2)}秒`);
+      if (segmentDuration < 1) {
+        console.log(`⏭️ 跳過過短分段 (${segmentDuration}s)`);
+        continue;
       }
-
+    
       console.log(`📤 上傳第 ${i + 1} 段`);
-
-      const compressed = await compressSegment(segment);
-
       const formData = new FormData();
       formData.append('audio', {
-        uri: compressed,
-        name: `segment_${i}.wav`,
+        uri: segmentPath,
+        name: segmentName,
         type: 'audio/wav',
       } as any);
-      formData.append('targetLang', targetLang); 
-
+      formData.append('targetLang', targetLang);
+    
       const response = await fetch('https://katielab.com/v1/transcribe/', {
         method: 'POST',
         headers: {
@@ -243,14 +287,15 @@ export const transcribeAudio = async (
         },
         body: formData,
       });
-
+    
       const raw = await response.text();
-
       if (!response.ok) {
         console.error(`❌ 第 ${i + 1} 段錯誤：`, raw);
         throw new Error(`第 ${i + 1} 段轉文字失敗：HTTP ${response.status}`);
-      } else {console.log('✅ 呼叫 Whisper API 成功')}
-
+      } else {
+        console.log('✅ 呼叫 Whisper API 成功');
+      }
+    
       let text = '';
       try {
         const parsed = JSON.parse(raw);
@@ -264,38 +309,20 @@ export const transcribeAudio = async (
           throw new Error(`第 ${i + 1} 段回傳格式錯誤`);
         }
       }
-
-      const originalText = text;
-      const sentences = text.split(/(?<=[。！？!?\n])/); // 切句子
-      const filteredSentences: string[] = [];
-
-      for (const sentence of sentences) {
-        const isSuspect = suspiciousPhrases.some((phrase) => sentence.includes(phrase));
-        if (isSuspect) {
-          console.warn(`🚫 移除可疑句：「${sentence.trim()}」`);
-        } else {
-          filteredSentences.push(sentence);
-        }
+    
+      const sentences = text.split(/(?<=[。！？!?\n])/);
+      const filtered = sentences.filter(s => !suspiciousPhrases.some(p => s.includes(p)));
+      text = filtered.join('').trim();
+    
+      if (text.trim()) {
+        accumulated += text + '\n';
       }
+    
+      onPartial?.(accumulated.trim(), i + 1, segmentCount);
+      await FileSystem.deleteAsync(segmentPath, { idempotent: true });  // 清除暫存段落檔案
 
-      text = filteredSentences.join('').trim(); // 保留乾淨的句子
-
-
-      // ⛔️ 若最後一段是空字串就直接略過，這會導致你 UI 不更新
-      // ✅ 改用累積方式，保證顯示最新內容
-      accumulated += text ? text + '\n' : '';
-      // ✅ 每段完成都即時更新 UI
-      onPartial?.(accumulated.trim(), i + 1, segments.length);
-      console.log(`🟢 傳出第 ${i + 1} 段 transcript`, accumulated.trim());
-
-/*
-      if (onPartial) {
-        // 傳回的是累積內容，不是單段文字
-        onPartial(accumulated.trim(), i + 1, segments.length);
-      }
-
-      */
     }
+    
 
     return { transcript: { text: accumulated.trim() } };
 
@@ -303,52 +330,6 @@ export const transcribeAudio = async (
     console.error('❌ transcribeAudio 全域錯誤：', err);
     throw err;
   }
-};
-
-export async function getAudioDuration(uri: string): Promise<{ duration: number }> {
-  const { sound, status } = await Audio.Sound.createAsync({ uri }, { shouldPlay: false });
-
-  if (!status.isLoaded) {
-    throw new Error('音訊載入失敗');
-  }
-
-  const duration = status.durationMillis != null ? status.durationMillis / 1000 : 0;
-  await sound.unloadAsync(); // ✅ 記得釋放資源
-
-  return { duration };
-}
-
-// 切段工具
-export const splitAudioIntoSegments = async (
-  uri: string,
-  seconds = 30
-): Promise<string[]> => {
-  const outputPattern = `${FileSystem.cacheDirectory}segment_%03d.wav`;
-
-  // 清理舊檔案（排除壓縮過的）
-  const allFilesBefore = await FileSystem.readDirectoryAsync(FileSystem.cacheDirectory!);
-  await Promise.all(
-    allFilesBefore
-      .filter(f => f.startsWith('segment_') && f.endsWith('.wav') && !f.includes('_small'))
-      .map(f => FileSystem.deleteAsync(`${FileSystem.cacheDirectory}${f}`))
-  );
-
-  // 強制關鍵幀切割
-  const command = `-i "${uri}" -f segment -segment_time ${seconds} -force_key_frames "expr:gte(n, n_forced*${seconds})" -c copy "${outputPattern}"`;
-
-  const session = await FFmpegKit.execute(command);
-  const returnCode = await session.getReturnCode();
-
-  if (!ReturnCode.isSuccess(returnCode)) {
-    throw new Error('切割音檔失敗');
-  }
-
-  // 讀取並排序分段檔案
-  const allFiles = await FileSystem.readDirectoryAsync(FileSystem.cacheDirectory!);
-  return allFiles
-    .filter(f => f.startsWith('segment_') && f.endsWith('.wav') && !f.includes('_small'))
-    .sort((a, b) => a.localeCompare(b)) // 確保順序正確
-    .map(f => `${FileSystem.cacheDirectory}${f}`);
 };
 
 export const summarizeModes = [
