@@ -1,12 +1,24 @@
-const BASE_URL = 'https://script.google.com/macros/s/AKfycbzwlnddM2PzTPris0BORJfDaZjn8GWseXNeVOIge2tf7Ogjvy-vSkwhyxxlgkUw9b_p/exec';
+// googleSheetAPI.ts
+const BASE_URL = 'https://script.google.com/macros/s/AKfycbw4TrRmrfIkobg3X53If14mzY-llaBBYfAcIjI5YpZZEylU5LyQmA5eDxbzh7iqcam9/exec';
+
+// 金幣規則設定
+export const INITIAL_GIFT_COINS = 100;     // 首次登入送 100 金幣
+export const COIN_UNIT_MINUTES = 1;       // 幾分鐘為一單位
+export const COIN_COST_PER_UNIT = 1;      // 每單位扣幾金幣
+
+export const COINS_PER_MINUTE = COIN_COST_PER_UNIT / COIN_UNIT_MINUTES;
 
 
-
+type UserInfo = {
+  coins?: number;
+  gifted?: boolean;
+  giftNoticeShown?: boolean;
+};
 
 // ✅ 取得使用者資料（GET）
 export async function fetchUserInfo(id: string): Promise<{
   success: boolean;
-  data?: { coins?: number };
+  data?: UserInfo;
   message?: string;
 }> {
   try {
@@ -19,28 +31,6 @@ export async function fetchUserInfo(id: string): Promise<{
     };
   }
 }
-
-/*
-// ✅ 金幣相關操作（例如扣除）
-export async function callGoogleSheetAction(
-  action: 'deduct' | 'add',
-  id: string
-): Promise<{ success: boolean; coins?: number; message?: string }> {
-  try {
-    const response = await fetch(BASE_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, action }),
-    });
-
-    return await response.json();
-  } catch (err) {
-    return {
-      success: false,
-      message: (err as Error).message || '金幣操作失敗',
-    };
-  }
-}*/
 
 export async function logCoinUsage({
   id,

@@ -83,62 +83,29 @@ export const trimSilence = async (uri: string, name: string): Promise<RecordingI
   return { uri: outputPath, name: outputName, originalUri: uri, isTrimmed: true };
 };
 
+export async function speedUpAudio(uri: string, speed: number) {
+  const outputUri = `${FileSystem.cacheDirectory}sped_up_${Date.now()}_x${speed}.wav`;
 
+  const cmd = [
+    `-i "${uri}"`,
+    `-filter:a "atempo=${speed}"`,
+    `-ar 16000`,
+    `-ac 1`,
+    `-f wav`,
+    `"${outputUri}"`
+  ].join(' ');
 
-export const convertToWav = async (inputUri: string): Promise<string> => {
-  try {
-    // 取得檔名（不含副檔名）
-    const fileNameWithoutExt = inputUri.split('/').pop()?.split('.').slice(0, -1).join('.') || 'converted';
-
-    // 輸出路徑：放在 cache 資料夾下
-    const outputPath = `${FileSystem.cacheDirectory}${fileNameWithoutExt}.wav`;
-
-    // 刪除同名檔案（如果已存在）
-    const existing = await FileSystem.getInfoAsync(outputPath);
-    if (existing.exists) {
-      await FileSystem.deleteAsync(outputPath, { idempotent: true });
-    }
-
-    // 執行轉檔指令
-    const ffmpegCommand = `-i "${inputUri}" -ac 1 -ar 16000 "${outputPath}"`;
-    const session = await FFmpegKit.execute(ffmpegCommand);
-
-    const returnCode = await session.getReturnCode();
-
-    if (ReturnCode.isSuccess(returnCode)) {
-      return outputPath;
-    } else {
-      throw new Error(`轉換失敗，錯誤碼：${returnCode}`);
-    }
-  } catch (err) {
-    console.error('convertToWav 錯誤：', err);
-    throw err;
-  }
-};
-
-export const speedUpAudio = async (
-  inputUri: string,
-  speed: number = 1.25
-): Promise<string> => {
-  const baseName = inputUri.split('/').pop()?.split('.').slice(0, -1).join('_') || 'spedup';
-  const outputPath = `${FileSystem.cacheDirectory}${baseName}_x${speed}.m4a`;
-
-  // 先刪除舊檔（如果存在）
-  const existing = await FileSystem.getInfoAsync(outputPath);
-  if (existing.exists) {
-    await FileSystem.deleteAsync(outputPath, { idempotent: true });
-  }
-
-  const command = `-y -i "${inputUri}" -filter:a "atempo=${speed}" -vn "${outputPath}"`;
-  const session = await FFmpegKit.execute(command);
+  const session = await FFmpegKit.execute(cmd);
   const returnCode = await session.getReturnCode();
 
   if (ReturnCode.isSuccess(returnCode)) {
-    return outputPath;
+    return outputUri;
   } else {
-    throw new Error('音檔加速處理失敗');
+    throw new Error('加速音訊失敗');
   }
-};
+}
+
+
 
 // 切段工具
 export const splitAudioIntoSegments = async (
@@ -199,9 +166,9 @@ export const transcribeAudio = async (
       throw new Error('音檔資訊不完整（uri 或 name 為 null）');
     }
 
+
     const trimmedRecording = await trimSilence(item.uri, item.name);
-    const spedUpUri = await speedUpAudio(trimmedRecording.uri, 1.5);
-    const wavUri = await convertToWav(spedUpUri);
+    const wavUri = await speedUpAudio(trimmedRecording.uri, 1.5);
 
     const fileInfo = await FileSystem.getInfoAsync(wavUri);
     if (!fileInfo.exists || typeof fileInfo.size !== 'number') {
@@ -320,10 +287,8 @@ export const transcribeAudio = async (
     
       onPartial?.(accumulated.trim(), i + 1, segmentCount);
       await FileSystem.deleteAsync(segmentPath, { idempotent: true });  // 清除暫存段落檔案
-
     }
     
-
     return { transcript: { text: accumulated.trim() } };
 
   } catch (err) {

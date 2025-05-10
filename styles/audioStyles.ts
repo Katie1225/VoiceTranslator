@@ -422,6 +422,67 @@ borderColor: colors.primary,
     paddingHorizontal: 8,
     //marginBottom: 5,
   },
-  
+  modalOverlay: {
+  flex: 1,
+  backgroundColor: 'rgba(0, 0, 0, 0.6)',
+  justifyContent: 'center',
+  alignItems: 'center',
+  zIndex: 9999,
+  elevation: 9999,
+},
+
+modalContainer: {
+  width: '85%',
+  borderRadius: 12,
+  padding: 20,
+  backgroundColor: colors.container, // 使用淺色或深色主底
+},
+
+modalTitle: {
+  fontSize: 18,
+  fontWeight: 'bold',
+  textAlign: 'center',
+  marginBottom: 16,
+  color: colors.primary,
+},
+
+planCard: {
+  paddingVertical: 6,       // 減少上下空間
+  paddingHorizontal: 12,
+  borderRadius: 10,
+  marginBottom: 14,          // 卡片間距也稍微收一點
+  backgroundColor: colors.primary,
+  borderWidth: 0,
+},
+
+recommendedCard: {}, // ❌ 清空推薦樣式（不加特殊處理）
+
+planCoins: {
+  fontSize: 16,
+  fontWeight: 'bold',
+  color: 'white', // 白字
+  textAlign: 'center',
+},
+
+planMinutes: {
+  fontSize: 14,
+  color: 'white',  // 白字
+  textAlign: 'center',
+},
+
+planPrice: {
+  fontSize: 14,
+  marginTop: 6,
+  color: 'white',  // 白字
+  textAlign: 'center',
+},
+
+modalClose: {
+  textAlign: 'center',
+  marginTop: 20,
+  fontSize: 16,
+  color: colors.text, // 根據深色/淺色切換
+},
+ 
 });
 

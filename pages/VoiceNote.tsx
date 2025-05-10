@@ -47,8 +47,9 @@ import {
   renderNoteBlock
 } from '../components/AudioItem';
 import { uFPermissions } from '../src/hooks/uFPermissions';
-import { logCoinUsage, fetchUserInfo } from '../utils/googleSheetAPI';
-
+import { logCoinUsage, COIN_UNIT_MINUTES, COIN_COST_PER_UNIT } from '../utils/googleSheetAPI';
+import { handleLogin, loadUserAndSync } from '../utils/loginHelpers';
+import TopUpModal from '../components/TopUpModal';
 
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 GoogleSignin.configure({
@@ -169,6 +170,8 @@ const RecorderPageVoiceNote = () => {
     loadPrimaryColorPreference();
   }, []);
 
+  // 廣告
+  const [showTopUpModal, setShowTopUpModal] = useState(false);
 
 
   const [selectedContext, setSelectedContext] = useState<{
@@ -272,60 +275,9 @@ const RecorderPageVoiceNote = () => {
   // 帳號登入
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-  const handleLogin = async (): Promise<boolean> => {
-  setIsLoggingIn(true);
-
-  try {
-    const result = await GoogleSignin.signIn();
-    const user = (result as any)?.data?.user || {};
-    if (!user.id || !user.email) throw new Error("無法取得使用者資訊");
-
-    const postResult = await logCoinUsage({
-      id: user.id,
-      action: 'signup',
-      value: 0,
-      note: '首次登入（不給點，純登入記錄）',
-      email: user.email,
-      name: user.name || user.email.split('@')[0],
-    });
-
-    if (!postResult.success) throw new Error(postResult.message || '註冊失敗');
-
-    const getResult = await fetchUserInfo(user.id);
-    if (!getResult.success) throw new Error(getResult.message || '取得資料失敗');
-
-    const mergedUser = {
-      ...user,
-      coins: getResult.data?.coins || 0,
-    };
-
-    
-// ✅ 如果是首次登入就補送 50 金幣
-if ((getResult.data?.coins ?? 0) === 0) {
-  await logCoinUsage({
-    id: user.id,
-    action: 'signup_bonus',
-    value: 50,
-    note: '首次登入送 50 金幣',
-    email: user.email,
-    name: user.name || user.email.split('@')[0],
-  });
-  mergedUser.coins = 50; // ⚠️ 手動更新本地顯示用的 AsyncStorage
-}
-
-    await AsyncStorage.setItem('user', JSON.stringify(mergedUser));
-
-    Alert.alert('✅ 登入成功', `你好，${user.name || user.email}`, [
-      { text: 'OK', onPress: () => setIsLoggingIn(false) }
-    ]);
-    return true;
-  } catch (err) {
-    Alert.alert('❌ 登入失敗', err instanceof Error ? err.message : '未知錯誤', [
-      { text: 'OK', onPress: () => setIsLoggingIn(false) }
-    ]);
-    return false;
-  }
-};
+  useEffect(() => {
+    loadUserAndSync();
+  }, []);
 
 
   useEffect(() => {
@@ -954,7 +906,7 @@ if ((getResult.data?.coins ?? 0) === 0) {
               customPrimaryColor={customPrimaryColor}
               setCustomPrimaryColor={handleSetPrimaryColor}
               styles={styles}
-              onLoginPress={handleLogin}  
+              onLoginPress={() => handleLogin(setIsLoggingIn)}  // ✅ 正確用法：讓 loginHelpers.ts 控制遮罩
               onLoginSuccess={() => setMenuVisible(false)}  // 🔽 登入成功後收起漢堡選單
             />
 
@@ -1215,86 +1167,71 @@ if ((getResult.data?.coins ?? 0) === 0) {
                                   disabled={isAnyProcessing}
                                   onPress={async () => {
                                     closeAllMenus();
+
                                     if (item.transcript) {
-                                      // 已轉過文字就直接顯示，不重複呼叫 API
                                       setShowTranscriptIndex(index);
                                       setShowSummaryIndex(null);
                                       return;
                                     }
 
-
-                                    // 🔐 一開始就鎖定，防止狂點
                                     setIsTranscribingIndex(index);
 
                                     try {
                                       const stored = await AsyncStorage.getItem('user');
- /*                                     if (!stored) {
+                                      if (!stored) {
                                         setIsTranscribingIndex(null);
                                         Alert.alert("請先登入", "使用錄音筆記功能需要登入", [
-                                          {
-                                            text: "取消",
-                                            style: "cancel",
-                                            onPress: () => setIsTranscribingIndex(null)
-                                          },
+                                          { text: "取消", style: "cancel" },
                                           {
                                             text: "登入",
                                             onPress: () => {
-                                              setIsTranscribingIndex(null); // 重置 index
-                                              handleLogin(); // 直接觸發登入
+                                              setIsTranscribingIndex(null);
+                                              handleLogin(setIsLoggingIn);
                                             }
                                           }
                                         ]);
-                                        
                                         return;
                                       }
-                                      const user = JSON.parse(stored);
-*/
-                                      const user = { id: 'guest', email: 'guest@example.com', coins: 99 };
 
+                                      // ✅ 重新同步金幣
+                                      await loadUserAndSync();
+                                      const fresh = await AsyncStorage.getItem('user');
+                                      if (!fresh) throw new Error("無法取得使用者資料");
+                                      const user = JSON.parse(fresh);
 
-                                      if (user.coins <= 0) {
-                                        setIsTranscribingIndex(null);
+                                      // ✅ 計算錄音秒數
+                                      const { sound, status } = await Audio.Sound.createAsync({ uri: item.uri });
+                                      if (!status.isLoaded) throw new Error("無法取得音檔長度");
+
+                                      const durationSec = Math.ceil((status.durationMillis ?? 0) / 1000);
+                                      await sound.unloadAsync();
+
+                                      const coinsToDeduct = Math.ceil(durationSec / (COIN_UNIT_MINUTES * 60)) * COIN_COST_PER_UNIT;
+
+                                      if (user.coins < coinsToDeduct) {
                                         Alert.alert(
                                           "金幣不足",
-                                          "請儲值後再使用錄音筆記功能",
+                                          `此錄音需要 ${coinsToDeduct} 金幣，你目前剩餘 ${user.coins} 金幣。\n\n請儲值後再使用錄音筆記功能`,
                                           [
                                             {
                                               text: "取消",
                                               style: "cancel",
-                                              onPress: () => {
-                                                setIsTranscribingIndex(null); // ✅ 還原 UI 狀態
-                                              }
+                                              onPress: () => setIsTranscribingIndex(null)
                                             },
                                             {
                                               text: "立即儲值",
                                               onPress: () => {
-                                                setIsTranscribingIndex(null); // ✅ 一樣還原 UI 狀態
-                                                Linking.openURL("https://你的儲值網址或 Google Play 購買頁"); // 替換成你自己的金流入口
+                                                setShowTopUpModal(true);
+                                                setIsTranscribingIndex(null);
                                               }
                                             }
                                           ]
                                         );
-
                                         return;
                                       }
 
-                                      const coinResult = await logCoinUsage({
-                                        id: user.id,
-                                        action: 'transcript',
-                                        value: -1,
-                                        note: `使用錄音筆記：${item.displayName || item.name || ''}`
-                                      });
-
-                                      if (!coinResult.success) {
-                                        setIsTranscribingIndex(null);
-                                        Alert.alert("扣金幣失敗", coinResult.message || "請稍後再試");
-                                        return;
-                                      }
-
-                                      user.coins = user.coins - 1;
-                                      await AsyncStorage.setItem('user', JSON.stringify(user));
-
-                                      await transcribeAudio(item, (updatedTranscript) => {
+                                      // ✅ 執行轉錄
+                                      const result = await transcribeAudio(item, (updatedTranscript) => {
                                         setRecordings(prev =>
                                           prev.map((rec, i) =>
                                             i === index ? { ...rec, transcript: updatedTranscript } : rec
@@ -1304,15 +1241,36 @@ if ((getResult.data?.coins ?? 0) === 0) {
                                         setShowSummaryIndex(null);
                                       }, userLang.includes('CN') ? 'cn' : 'tw');
 
+                                      if (!result?.transcript?.text?.trim()) {
+                                        throw new Error("無法取得有效的轉譯結果");
+                                      }
+
+                                      // ✅ 寫入扣金幣紀錄
+                                      const coinResult = await logCoinUsage({
+                                        id: user.id,
+                                        action: 'transcript',
+                                        value: -coinsToDeduct,
+                                        note: `轉文字：${item.displayName || item.name || ''}，長度 ${durationSec}s，扣 ${coinsToDeduct} 金幣`
+                                      });
+
+                                      if (!coinResult.success) {
+                                        Alert.alert("轉換成功，但扣金幣失敗", coinResult.message || "請稍後再試");
+                                      } else {
+                                        user.coins -= coinsToDeduct;
+                                        await AsyncStorage.setItem('user', JSON.stringify(user));
+                                      }
+
                                     } catch (err) {
-                                      Alert.alert("❌ 發生錯誤", (err as Error).message);
+                                      Alert.alert("❌ 錯誤", (err as Error).message || "轉換失敗，這次不會扣金幣");
                                     } finally {
-                                      setIsTranscribingIndex(null); // ✅ 無論成功或失敗都要解除 loading
+                                      setIsTranscribingIndex(null);
                                     }
                                   }}
                                 >
                                   <Text style={{ color: 'white', fontSize: 14 }}>錄音筆記</Text>
                                 </TouchableOpacity>
+                                ㄋ
+
                                 {/* 重點摘要按鈕 */}
 
                                 <TouchableOpacity
@@ -1329,6 +1287,23 @@ if ((getResult.data?.coins ?? 0) === 0) {
 
                                     if (!item.transcript) {
                                       Alert.alert('⚠️ 無法摘要', '請先執行「轉文字」功能');
+                                      return;
+                                    }
+
+                                    const stored = await AsyncStorage.getItem('user');
+                                    if (!stored) {
+                                      Alert.alert("請先登入", "使用摘要功能需要登入", [
+                                        {
+                                          text: "取消",
+                                          style: "cancel",
+                                        },
+                                        {
+                                          text: "登入",
+                                          onPress: () => {
+                                            handleLogin(setIsLoggingIn); // ✅ 讓遮罩出現
+                                          },
+                                        },
+                                      ]);
                                       return;
                                     }
 
@@ -1678,29 +1653,42 @@ if ((getResult.data?.coins ?? 0) === 0) {
           </TouchableOpacity>
         )}
         {isLoggingIn && (
-  <View style={{
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 9999,
-    elevation: 9999, // 確保在 Android 上也能遮住
-  }}>
-    <View style={{
-      backgroundColor: '#222',
-      padding: 24,
-      borderRadius: 12,
-      alignItems: 'center'
-    }}>
-      <Text style={{ color: 'white', fontSize: 18, marginBottom: 10 }}>🔄 登入中...</Text>
-      <Text style={{ color: 'white', fontSize: 14 }}>請稍候，正在與 Google 驗證身份</Text>
-    </View>
-  </View>
-)}
+          <View style={{
+            position: 'absolute',
+            top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 9999,
+            elevation: 9999, // 確保在 Android 上也能遮住
+          }}>
+            <View style={{
+              backgroundColor: '#222',
+              padding: 24,
+              borderRadius: 12,
+              alignItems: 'center'
+            }}>
+              <Text style={{ color: 'white', fontSize: 18, marginBottom: 10 }}>🔄 登入中...</Text>
+              <Text style={{ color: 'white', fontSize: 14 }}>請稍候，正在與 Google 驗證身份</Text>
+            </View>
+          </View>
+        )}
+        <TopUpModal
+          visible={showTopUpModal}
+          onClose={() => setShowTopUpModal(false)}
+          onSelect={(productId) => {
+            setShowTopUpModal(false);
+            Linking.openURL(`https://你的付款連結/${productId}`);
+          }}
+          styles={styles}
+          colors={colors}
+        />
+
 
       </SafeAreaView>
     </TouchableWithoutFeedback>
+
+
   );
 };
 

@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { lightTheme, darkTheme, additionalColors } from '../constants/Colors';
 import { logCoinUsage, fetchUserInfo } from '../utils/googleSheetAPI';
+import { handleLogin } from '../utils/loginHelpers';
 
 
 
@@ -95,7 +96,7 @@ const HamburgerMenu = ({
 
 )}
 
-      <Text style={styles.menuItem}>版本: v1.3.5</Text>
+      <Text style={styles.menuItem}>版本: v1.3.6</Text>
 
       <TouchableOpacity onPress={() => { onClose(); toggleTheme(); }} style={styles.menuItemButton}>
         <Text style={styles.menuItem}>{isDarkMode ? '切換淺色模式' : '切換深色模式'}</Text>
