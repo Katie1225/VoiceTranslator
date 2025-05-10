@@ -1,10 +1,10 @@
 // components/HamburgerMenu.tsx
 import React, { useEffect, useState } from 'react';
-import { Alert, View, Text, TouchableOpacity, Image } from 'react-native';
+import { Linking, Alert, View, Text, TouchableOpacity, Image } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { lightTheme, darkTheme, additionalColors } from '../constants/Colors';
-import { logCoinUsage, fetchUserInfo } from '../utils/googleSheetAPI';
+import { logCoinUsage, fetchUserInfo, getCachedUser } from '../utils/googleSheetAPI';
 import { handleLogin } from '../utils/loginHelpers';
 
 
@@ -52,7 +52,7 @@ const HamburgerMenu = ({
     };
     loadUser();
   }, [visible]);
-  
+
   const handleLogout = async () => {
     await GoogleSignin.signOut();
     await AsyncStorage.removeItem('user');
@@ -67,36 +67,46 @@ const HamburgerMenu = ({
   };
 
   if (!visible) return null;
-
+  const coins = getCachedUser()?.coins ?? 0;
 
   return (
     <View style={styles.menuContainer}>
 
-{currentUser ? (
-  <View style={[styles.menuItemButton, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
-    <View style={{ flexDirection: 'column' }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-        {currentUser.photo && (
-          <Image source={{ uri: currentUser.photo }} style={{ width: 28, height: 28, borderRadius: 14, marginRight: 8 }} />
-        )}
-        <Text style={styles.menuItem}>{currentUser.name || currentUser.email}</Text>
-      </View>
-      {typeof currentUser.coins === 'number' && (
-        <Text style={[styles.menuItem, { fontSize: 12, color: 'gold' }]}>💰 金幣：{currentUser.coins}</Text>
+      {currentUser ? (
+        <View style={[styles.menuItemButton, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
+          <View style={{ flexDirection: 'column' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              {currentUser.photo && (
+                <Image source={{ uri: currentUser.photo }} style={{ width: 28, height: 28, borderRadius: 14, marginRight: 8 }} />
+              )}
+              <Text style={styles.menuItem}>{currentUser.name || currentUser.email}</Text>
+            </View>
+            {typeof currentUser.coins === 'number' && (
+              <Text style={[styles.menuItem, { fontSize: 12, color: 'gold' }]}>💰 金幣：{coins}</Text>
+            )}
+          </View>
+          <TouchableOpacity onPress={handleLogout}>
+            <Text style={[styles.menuItem, { marginLeft: 12, fontSize: 12 }]}>登出</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <TouchableOpacity onPress={handleLoginWithAutoClose} style={styles.menuItemButton}>
+          <Text style={styles.menuItem}>☁️ 登入 Google 帳戶</Text>
+        </TouchableOpacity>
+
       )}
-    </View>
-    <TouchableOpacity onPress={handleLogout}>
-      <Text style={[styles.menuItem, { marginLeft: 12, fontSize: 12 }]}>登出</Text>
-    </TouchableOpacity>
-  </View>
-) : (
-<TouchableOpacity onPress={handleLoginWithAutoClose} style={styles.menuItemButton}>
-  <Text style={styles.menuItem}>☁️ 登入 Google 帳戶</Text>
-</TouchableOpacity>
 
-)}
+      <Text style={styles.menuItem}>版本: v1.3.7</Text>
 
-      <Text style={styles.menuItem}>版本: v1.3.6</Text>
+
+      <TouchableOpacity
+        onPress={() => {
+          Linking.openURL('mailto:katie@example.com?subject=使用者回饋');
+        }}
+        style={styles.menuItemButton}
+      >
+        <Text style={styles.menuItem}>📧 聯繫凱凱</Text>
+      </TouchableOpacity>
 
       <TouchableOpacity onPress={() => { onClose(); toggleTheme(); }} style={styles.menuItemButton}>
         <Text style={styles.menuItem}>{isDarkMode ? '切換淺色模式' : '切換深色模式'}</Text>

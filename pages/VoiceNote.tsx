@@ -27,6 +27,17 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Localization from 'expo-localization';
 
 import {
+  initConnection,
+  getProducts,
+  requestPurchase as iapRequestPurchase,
+  purchaseUpdatedListener,
+  purchaseErrorListener,
+  finishTransaction,
+  ProductPurchase,
+  getAvailablePurchases,
+} from 'react-native-iap';
+
+import {
   RecordingItem,
   enhanceAudio,
   trimSilence,
@@ -50,6 +61,8 @@ import { uFPermissions } from '../src/hooks/uFPermissions';
 import { logCoinUsage, COIN_UNIT_MINUTES, COIN_COST_PER_UNIT } from '../utils/googleSheetAPI';
 import { handleLogin, loadUserAndSync } from '../utils/loginHelpers';
 import TopUpModal from '../components/TopUpModal';
+import { productIds, initIAP, requestPurchase, setupPurchaseListener } from '../utils/iap';
+
 
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 GoogleSignin.configure({
@@ -164,14 +177,39 @@ const RecorderPageVoiceNote = () => {
     savePrimaryColorPreference(color);
   };
 
+const [iapProducts, setIapProducts] = useState<any[]>([]);
+
   // useEffect 初始化
   useEffect(() => {
     loadThemePreference();
     loadPrimaryColorPreference();
   }, []);
 
-  // 廣告
+  // 購買畫面
   const [showTopUpModal, setShowTopUpModal] = useState(false);
+
+useEffect(() => {
+  const init = async () => {
+    try {
+      const connected = await initIAP();
+      const products = await getProducts({ skus: productIds });
+      console.log('📦 商品資料:', products);
+      setIapProducts(products);
+    } catch (err) {
+      console.error('❌ IAP 初始化失敗:', err);
+    }
+  };
+
+  init();
+
+  const sub = setupPurchaseListener((coins) => {
+    Alert.alert('✅ 購買成功', `已獲得 ${coins} 金幣`);    
+  });
+
+  return () => {
+    sub.remove();
+  };
+}, []);
 
 
   const [selectedContext, setSelectedContext] = useState<{
@@ -1678,10 +1716,11 @@ const RecorderPageVoiceNote = () => {
           onClose={() => setShowTopUpModal(false)}
           onSelect={(productId) => {
             setShowTopUpModal(false);
-            Linking.openURL(`https://你的付款連結/${productId}`);
+            requestPurchase(productId);
           }}
           styles={styles}
           colors={colors}
+          products={iapProducts}
         />
 
 

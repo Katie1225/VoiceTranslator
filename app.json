@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "audio-recorder-mvp",
+    "name": "Voice Note",
     "slug": "audio-recorder-mvp",
-    "version": "1.3.6",
+    "version": "1.3.7",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "myapp",

@@ -8,6 +8,10 @@ export const COIN_COST_PER_UNIT = 1;      // 每單位扣幾金幣
 
 export const COINS_PER_MINUTE = COIN_COST_PER_UNIT / COIN_UNIT_MINUTES;
 
+// 全域使用者暫存
+let cachedUser: UserInfo | null = null;
+
+export const getCachedUser = () => cachedUser;
 
 type UserInfo = {
   coins?: number;
@@ -18,54 +22,51 @@ type UserInfo = {
 // ✅ 取得使用者資料（GET）
 export async function fetchUserInfo(id: string): Promise<{
   success: boolean;
-  data?: UserInfo;
+  data: UserInfo | null;
   message?: string;
 }> {
   try {
     const response = await fetch(`${BASE_URL}?id=${id}`);
-    return await response.json();
+    const json = await response.json();
+    if (json.success && json.data) {
+      cachedUser = json.data; // ✅ 同步全域變數
+    }
+    return json;
   } catch (err) {
     return {
       success: false,
+      data: null,
       message: (err as Error).message || '取得資料失敗',
     };
   }
 }
 
-export async function logCoinUsage({
-  id,
-  action,
-  value,
-  note,
-  email,
-  name
-}: {
+export async function logCoinUsage(payload: {
   id: string;
   action: string;
   value: number;
-  note?: string;
-  email?: string;
-  name?: string;
-}): Promise<{ success: boolean; message?: string }> {
+  note: string;
+}) {
   try {
-    const res = await fetch(BASE_URL, {
+    const response = await fetch(`${BASE_URL}/log`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id,
-        action,
-        value,
-        note,
-        email,
-        name
-      })
+      body: JSON.stringify(payload),
     });
+    const json = await response.json();
 
-    return await res.json();
+    if (json.success && typeof json.newCoins === 'number') {
+      // ✅ 回傳的最新金幣值，直接更新 cachedUser
+      if (cachedUser) {
+        cachedUser.coins = json.newCoins;
+      }
+    }
+    return json;
   } catch (err) {
     return {
       success: false,
-      message: (err as Error).message
+      message: (err as Error).message || '紀錄失敗',
     };
   }
 }
+
