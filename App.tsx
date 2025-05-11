@@ -1,11 +1,13 @@
 // App.tsx
 import { APP_VARIANT } from './constants/AppVariant';
 import RecorderPageVoiceNote from './pages/VoiceNote';
+import RecorderPageVoiceNoteDebug from './pages/VoiceNoteDebug';
 import RecorderPageVoiceClamp from './pages/VoiceClamp';
 
 const variantMap: Record<string, React.FC> = {
   note: RecorderPageVoiceNote,
   clamp: RecorderPageVoiceClamp,
+  notedebug: RecorderPageVoiceNoteDebug,
 };
 
 // ✅ 若輸入無效，預設用 VoiceNote，並印出警告
