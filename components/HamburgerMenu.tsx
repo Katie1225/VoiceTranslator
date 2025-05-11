@@ -96,7 +96,7 @@ const HamburgerMenu = ({
 
       )}
 
-      <Text style={styles.menuItem}>版本: v1.3.8</Text>
+      <Text style={styles.menuItem}>版本: v1.3.9</Text>
 
 
       <TouchableOpacity
@@ -105,7 +105,7 @@ const HamburgerMenu = ({
         }}
         style={styles.menuItemButton}
       >
-        <Text style={styles.menuItem}>📧 聯繫凱凱</Text>
+        <Text style={styles.menuItem}>✉️ 聯繫凱凱</Text>
       </TouchableOpacity>
 
       <TouchableOpacity onPress={() => { onClose(); toggleTheme(); }} style={styles.menuItemButton}>

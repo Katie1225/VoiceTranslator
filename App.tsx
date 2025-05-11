@@ -1,16 +1,17 @@
 // App.tsx
-import { APP_VARIANT } from './constants/AppVariant';
+
+// 直接定義 APP_VARIANT（可以手動切換）
+export const APP_VARIANT: string = 'note'; // or 'notedebug'
+
 import RecorderPageVoiceNote from './pages/VoiceNote';
-import RecorderPageVoiceNoteDebug from './pages/VoiceNoteDebug';
-import RecorderPageVoiceClamp from './pages/VoiceClamp';
 
 const variantMap: Record<string, React.FC> = {
   note: RecorderPageVoiceNote,
-  clamp: RecorderPageVoiceClamp,
-  notedebug: RecorderPageVoiceNoteDebug,
+  clamp: RecorderPageVoiceNote,
+  notedebug: RecorderPageVoiceNote,
 };
 
-// ✅ 若輸入無效，預設用 VoiceNote，並印出警告
+// 若輸入無效，預設用 VoiceNote
 const SelectedPage = variantMap[APP_VARIANT] || (() => {
   console.warn(`⚠️ APP_VARIANT '${APP_VARIANT}' 無效，已使用預設 'note'`);
   return RecorderPageVoiceNote;

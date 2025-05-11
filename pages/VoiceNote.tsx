@@ -1196,8 +1196,8 @@ useEffect(() => {
                                 {/* 轉文字按鈕 */}
                                 <TouchableOpacity
                                   style={{
-                                    paddingVertical: 6,
-                                    paddingHorizontal: 12,
+                                    paddingVertical: 5,
+                                    paddingHorizontal: 8,
                                     backgroundColor: colors.primary,
                                     borderRadius: 8,
                                     opacity: isAnyProcessing ? 0.4 : 1,
@@ -1279,6 +1279,33 @@ useEffect(() => {
                                         setShowSummaryIndex(null);
                                       }, userLang.includes('CN') ? 'cn' : 'tw');
 
+                                      // ✅ 自動摘要（用完整結果）
+                                      try {
+                                        const summary = await summarizeWithMode(result.transcript.text, 'summary', userLang.includes('CN') ? 'cn' : 'tw');
+
+
+                                        const updated = recordings.map((rec, i) =>
+                                          i === index
+                                            ? {
+                                              ...rec,
+                                              summaries: {
+                                                ...(rec.summaries || {}),
+                                                summary,
+                                              },
+                                            }
+                                            : rec
+                                        );
+                                        setRecordings(updated);
+                                        await saveRecordings(updated);
+
+                                        // 🔁 自動切換顯示到摘要畫面
+                                        setShowTranscriptIndex(null);
+                                        setShowSummaryIndex(index);
+                                        setSummaryMode('summary');
+                                      } catch (err) {
+                                        console.warn('❌ 自動摘要失敗:', err);
+                                      }
+
                                       if (!result?.transcript?.text?.trim()) {
                                         throw new Error("無法取得有效的轉譯結果");
                                       }
@@ -1291,6 +1318,7 @@ useEffect(() => {
                                         note: `轉文字：${item.displayName || item.name || ''}，長度 ${durationSec}s，扣 ${coinsToDeduct} 金幣`
                                       });
 
+                                      console.log("🧾 金幣扣除結果：", coinResult);
                                       if (!coinResult.success) {
                                         Alert.alert("轉換成功，但扣金幣失敗", coinResult.message || "請稍後再試");
                                       } else {
@@ -1305,15 +1333,14 @@ useEffect(() => {
                                     }
                                   }}
                                 >
-                                  <Text style={{ color: 'white', fontSize: 14 }}>錄音筆記</Text>
+                                  <Text style={{ color: 'white', fontSize: 13 }}>錄音筆記</Text>
                                 </TouchableOpacity>
-
 
                                 {/* 重點摘要按鈕 */}
                                 <TouchableOpacity
                                   style={{
-                                    paddingVertical: 6,
-                                    paddingHorizontal: 12,
+                                    paddingVertical: 5,
+                                    paddingHorizontal: 8,
                                     backgroundColor: colors.primary,
                                     borderRadius: 8,
                                     opacity: item.transcript && !isAnyProcessing ? 1 : 0.4,
@@ -1344,26 +1371,15 @@ useEffect(() => {
                                       return;
                                     }
 
-                                    // 決定要顯示哪個模式
-                                    let modeToUse = summaryMode;
-                                    const availableModes = Object.keys(item.summaries || {})
-                                      .filter(k => item.summaries?.[k]);
-
-                                    // 如果當前模式沒有內容，找第一個有內容的模式
-                                    if (!item.summaries?.[modeToUse] && availableModes.length > 0) {
-                                      const preferredOrder = ['summary', 'analysis', 'email', 'news', 'ai_answer'];
-                                      modeToUse = preferredOrder.find(k => availableModes.includes(k)) || availableModes[0];
-                                    }
-
-                                    // 如果有內容就直接顯示
-                                    if (item.summaries?.[modeToUse]) {
-                                      setSummaryMode(modeToUse);
+                                    // 如果已有摘要，直接顯示
+                                    if (item.summaries?.summary) {
+                                      setSummaryMode('summary');
                                       setShowTranscriptIndex(null);
                                       setShowSummaryIndex(index);
                                       return;
                                     }
 
-                                    // 否則創建新摘要（使用預設的 summary 模式）
+                                    // 否則創建 summary 模式摘要
                                     setIsSummarizingIndex(index);
                                     try {
                                       const summary = await summarizeWithMode(item.transcript || '', 'summary');
@@ -1373,7 +1389,7 @@ useEffect(() => {
                                             ...rec,
                                             summaries: {
                                               ...(rec.summaries || {}),
-                                              summary: summary,
+                                              summary,
                                             },
                                           }
                                           : rec
@@ -1389,18 +1405,45 @@ useEffect(() => {
                                       setIsSummarizingIndex(null);
                                     }
                                   }}
+                                >
+                                  <Text style={{ color: 'white', fontSize: 13, textAlign: 'center' }}>重點摘要</Text>
+                                </TouchableOpacity>
 
+                                {/* AI工具箱按鈕 */}
+                                <TouchableOpacity
+                                  style={{
+                                    paddingVertical: 5,
+                                    paddingHorizontal: 8,
+                                    backgroundColor: colors.primary,
+                                    borderRadius: 8,
+                                    opacity: item.transcript && !isAnyProcessing ? 1 : 0.4,
+                                  }}
+                                  disabled={!item.transcript || isAnyProcessing}
+                                  onPress={async () => {
+                                    closeAllMenus();
+                                    const stored = await AsyncStorage.getItem('user');
+                                    if (!stored) {
+                                      Alert.alert("請先登入", "使用 AI 工具箱需要登入", [
+                                        { text: "取消", style: "cancel" },
+                                        {
+                                          text: "登入",
+                                          onPress: () => {
+                                            handleLogin(setIsLoggingIn);
+                                          },
+                                        },
+                                      ]);
+                                      return;
+                                    }
+
+                                    Alert.alert('請長按開啟AI工具選單');
+                                  }}
                                   onLongPress={(e) => {
                                     e.target.measureInWindow((x, y, width, height) => {
                                       setSummaryMenuContext({ index, position: { x, y: y + height } });
                                     });
                                   }}
                                 >
-                                  <Text style={{ color: 'white', fontSize: 14, textAlign: 'center' }}>
-                                    {summarizeModes.find(m => m.key === (
-                                      item.summaries?.[summaryMode] ? summaryMode : 'summary'
-                                    ))?.label || '重點摘要'}
-                                  </Text>
+                                  <Text style={{ color: 'white', fontSize: 13, textAlign: 'center' }}>AI工具箱</Text>
                                 </TouchableOpacity>
 
                                 {/* 隱藏按鈕（只有已顯示 transcript 或 summary 才能點） */}
@@ -1412,13 +1455,13 @@ useEffect(() => {
                                     setShowSummaryIndex(null);
                                   }}
                                   style={{
-                                    paddingVertical: 6,
-                                    paddingHorizontal: 12,
+                                    paddingVertical: 5,
+                                    paddingHorizontal: 8,
                                     backgroundColor: canHide ? colors.primary : '#ccc',
                                     borderRadius: 8
                                   }}
                                 >
-                                  <Text style={{ color: 'white', fontSize: 14 }}>隱藏</Text>
+                                  <Text style={{ color: 'white', fontSize: 13 }}>-</Text>
                                 </TouchableOpacity>
                               </View>
                             </View>
@@ -1564,15 +1607,19 @@ useEffect(() => {
                 shadowOffset: { width: 0, height: 2 },
                 shadowRadius: 4,
               }}>
-                {summarizeModes.map((mode) => (
+                {summarizeModes
+                  .filter(mode => mode.key !== 'summary') // ✅ 過濾掉 summary 模式
+                  .map((mode) => (
                   <TouchableOpacity
                     key={mode.key}
                     style={{
                       paddingVertical: 8,
                       paddingHorizontal: 12,
                       backgroundColor:
-                        recordings[summaryMenuContext.index]?.summaries?.[mode.key]
-                          ? colors.primary + '20'
+                          summaryMode === mode.key
+                            ? colors.primary + '50'
+                            : recordings[summaryMenuContext.index]?.summaries?.[mode.key]
+                              ? colors.primary + '10'
                           : 'transparent',
                       borderRadius: 4,
                     }}
@@ -1581,6 +1628,11 @@ useEffect(() => {
                       const idx = summaryMenuContext.index;
                       setSummaryMenuContext(null);
 
+                        const modeLabel = summarizeModes.find(m => m.key === mode.key)?.label || 'AI 工具箱';
+                        console.log(`🧰 使用者選擇 AI 工具箱模式：${mode.key}（${modeLabel}）`);
+
+                        try {
+                          // ✅ 若已存在，直接顯示
                       if (recordings[idx]?.summaries?.[mode.key]) {
                         setSummaryMode(mode.key);
                         setShowTranscriptIndex(null);
@@ -1588,9 +1640,45 @@ useEffect(() => {
                         return;
                       }
 
+                          // 🔐 登入與金幣檢查
+                          const stored = await AsyncStorage.getItem('user');
+                          if (!stored) {
+                            Alert.alert("請先登入", "使用 AI 工具箱需要登入", [
+                              { text: "取消", style: "cancel" },
+                              {
+                                text: "登入",
+                                onPress: () => handleLogin(setIsLoggingIn),
+                              },
+                            ]);
+                            return;
+                          }
+
+                          await loadUserAndSync();
+                          const fresh = await AsyncStorage.getItem('user');
+                          if (!fresh) throw new Error("無法取得使用者資料");
+                          const user = JSON.parse(fresh);
+
+                          const cost = 10;
+                          if (user.coins < cost) {
+                            Alert.alert(
+                              "金幣不足",
+                              `「${modeLabel}」需要 ${cost} 金幣，你目前剩餘 ${user.coins} 金幣。\n\n請儲值後再使用。`,
+                              [
+                                { text: "取消", style: "cancel" },
+                                {
+                                  text: "立即儲值",
+                                  onPress: () => setShowTopUpModal(true),
+                                },
+                              ]
+                            );
+                            return;
+                          }
+
                       setIsSummarizingIndex(idx);
-                      try {
+
+                          // ✨ 執行摘要
                         const summary = await summarizeWithMode(recordings[idx].transcript || '', mode.key, userLang.includes('CN') ? 'cn' : 'tw');
+
                         const updated = recordings.map((rec, i) =>
                           i === idx
                             ? {
@@ -1604,15 +1692,33 @@ useEffect(() => {
                         );
                         setRecordings(updated);
                         await saveRecordings(updated);
+
+                          // 💰 扣金幣紀錄
+                          const coinResult = await logCoinUsage({
+                            id: user.id,
+                            action: mode.key,
+                            value: -cost,
+                            note: `${modeLabel}：${recordings[idx].displayName || recordings[idx].name || ''}，固定扣 ${cost} 金幣`
+                          });
+
+                          if (!coinResult.success) {
+                            Alert.alert(`${modeLabel}成功，但扣金幣失敗`, coinResult.message || "請稍後再試");
+                          } else {
+                            user.coins -= cost;
+                            await AsyncStorage.setItem('user', JSON.stringify(user));
+                          }
+
                         setSummaryMode(mode.key);
                         setShowTranscriptIndex(null);
                         setShowSummaryIndex(idx);
+
                       } catch (err) {
-                        Alert.alert('❌ 摘要失敗', (err as Error).message);
+                          Alert.alert(`❌ ${modeLabel}失敗`, (err as Error).message || "摘要失敗，這次不會扣金幣");
                       } finally {
                         setIsSummarizingIndex(null);
                       }
                     }}
+
                   >
                     <Text style={{
                       color: colors.text,
@@ -1693,20 +1799,20 @@ useEffect(() => {
           <View style={{
             position: 'absolute',
             top: 0, left: 0, right: 0, bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.5)',
+            backgroundColor: colors.background,
             justifyContent: 'center',
             alignItems: 'center',
             zIndex: 9999,
-            elevation: 9999, // 確保在 Android 上也能遮住
+            elevation: 9999,
           }}>
             <View style={{
-              backgroundColor: '#222',
+              backgroundColor: colors.background,
               padding: 24,
               borderRadius: 12,
               alignItems: 'center'
             }}>
-              <Text style={{ color: 'white', fontSize: 18, marginBottom: 10 }}>🔄 登入中...</Text>
-              <Text style={{ color: 'white', fontSize: 14 }}>請稍候，正在與 Google 驗證身份</Text>
+              <Text style={{ color: colors.text, fontSize: 18, marginBottom: 10 }}>🔄 登入中...</Text>
+              <Text style={{ color: colors.text, fontSize: 14 }}>請稍候，正在與 Google 驗證身份</Text>
             </View>
           </View>
         )}
