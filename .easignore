@@ -10,6 +10,7 @@ ios/
 web-build/
 dist/
 build/
+zz/
 
 # 不需要上傳的圖片/素材 (除非你打算用在 App 裡)
 *.psd

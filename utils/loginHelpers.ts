@@ -1,8 +1,12 @@
 // utils/loginHelpers.ts
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { logCoinUsage, fetchUserInfo, INITIAL_GIFT_COINS, COINS_PER_MINUTE } from './googleSheetAPI';
+import { logCoinUsage, fetchUserInfo } from './googleSheetAPI';
+import { INITIAL_GIFT_COINS, COINS_PER_MINUTE } from './iap';
 import { Alert } from 'react-native';
+
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+
 
 export const handleLogin = async (
     setLoading?: (v: boolean) => void
@@ -12,14 +16,18 @@ export const handleLogin = async (
     try {
         const result = await GoogleSignin.signIn();
         const user = (result as any)?.data?.user || {};
+        const tokens = await GoogleSignin.getTokens();
+        const idToken = tokens.idToken;
         if (!user.id || !user.email) throw new Error("無法取得使用者資訊");
 
         const baseUser = {
             id: user.id,
+            idToken,
             email: user.email,
             name: user.name || user.email.split('@')[0],
         };
 
+        console.log(baseUser);
         await logCoinUsage({ ...baseUser, action: 'signup', value: 0, note: '首次登入紀錄' });
 
         // 同步 Google Sheet 上的用戶狀態
@@ -30,6 +38,8 @@ export const handleLogin = async (
             gifted: remote?.data?.gifted ?? false,
             giftNoticeShown: remote?.data?.giftNoticeShown ?? false,
         };
+
+        console.log(updatedUser);
 
         let message = `你好，${baseUser.name}！`;
 

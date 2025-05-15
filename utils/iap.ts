@@ -11,6 +11,16 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { logCoinUsage } from './googleSheetAPI';
 
+// 金幣規則設定
+export const INITIAL_GIFT_COINS = 100;     // 首次登入送 100 金幣
+export const COIN_UNIT_MINUTES = 1;       // 幾分鐘為一單位
+export const COIN_COST_PER_UNIT = 1;      // 每單位扣幾金幣
+
+export const COINS_PER_MINUTE = COIN_COST_PER_UNIT / COIN_UNIT_MINUTES;
+
+
+// 金幣儲存規則
+
 export const productIds = ['topup_100', 'topup_400', 'topup_1000'];
 
 const productToCoins: Record<string, number> = {
@@ -78,6 +88,7 @@ export const setupPurchaseListener = (onSuccess: (coins: number) => void) => {
                         // ✅ 上報到 Google Sheet
                         await logCoinUsage({
                             id: user.id,
+                            idToken: user.idToken,
                             action: 'topup',
                             value: coins,
                             note: `透過內購獲得 ${coins} 金幣（產品 ID: ${productId}）`,

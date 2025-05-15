@@ -1,12 +1,7 @@
 // googleSheetAPI.ts
-const BASE_URL = 'https://script.google.com/macros/s/AKfycbw4TrRmrfIkobg3X53If14mzY-llaBBYfAcIjI5YpZZEylU5LyQmA5eDxbzh7iqcam9/exec';
+const BASE_URL = 'https://katielab.com/v1/iap-redeem/';
 
-// 金幣規則設定
-export const INITIAL_GIFT_COINS = 100;     // 首次登入送 100 金幣
-export const COIN_UNIT_MINUTES = 1;       // 幾分鐘為一單位
-export const COIN_COST_PER_UNIT = 1;      // 每單位扣幾金幣
 
-export const COINS_PER_MINUTE = COIN_COST_PER_UNIT / COIN_UNIT_MINUTES;
 
 // 全域使用者暫存
 let cachedUser: UserInfo | null = null;
@@ -20,53 +15,56 @@ type UserInfo = {
 };
 
 // ✅ 取得使用者資料（GET）
-export async function fetchUserInfo(id: string): Promise<{
-  success: boolean;
-  data: UserInfo | null;
-  message?: string;
-}> {
+export async function fetchUserInfo(id: string) {
   try {
-    const response = await fetch(`${BASE_URL}?id=${id}`);
+    const response = await fetch(`${BASE_URL}?id=${id}`, {
+      headers: {
+        'Accept': 'application/json', // 明確要求 JSON 回應
+      },
+    });
+             console.log(`${BASE_URL}?id=${id}`);
+    
+    // 檢查回應的 Content-Type 是否是 JSON
+    const contentType = response.headers.get('content-type');
+    if (!contentType?.includes('application/json')) {
+      const text = await response.text();
+      throw new Error(`非 JSON 回應: ${text.substring(0, 100)}`);
+    }
+
     const json = await response.json();
     if (json.success && json.data) {
-      cachedUser = json.data; // ✅ 同步全域變數
+      cachedUser = json.data;
+      return json;
     }
-    return json;
+    return { success: false, data: null, message: json.message };
   } catch (err) {
-    return {
-      success: false,
-      data: null,
-      message: (err as Error).message || '取得資料失敗',
-    };
+    return { success: false, data: null, message: (err as Error).message };
   }
 }
 
-export async function logCoinUsage(payload: {
+export async function logCoinUsage({
+  id,
+  idToken,
+  action,
+  value,
+  note,
+}: {
   id: string;
+  idToken: string;
   action: string;
   value: number;
-  note: string;
+  note?: string;
 }) {
   try {
-const response = await fetch(BASE_URL, {
+  //  const res = await fetch(BASE_URL+"/", {
+     const res = await fetch(BASE_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ id, idToken, action, value, note }),
     });
-    const json = await response.json();
-
-    if (json.success && typeof json.newCoins === 'number') {
-      // ✅ 回傳的最新金幣值，直接更新 cachedUser
-      if (cachedUser) {
-        cachedUser.coins = json.newCoins;
-      }
-    }
-    return json;
+    return await res.json();
   } catch (err) {
-    return {
-      success: false,
-      message: (err as Error).message || '紀錄失敗',
-    };
+    return { success: false, message: (err as Error).message };
   }
 }
 

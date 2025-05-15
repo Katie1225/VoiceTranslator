@@ -58,10 +58,10 @@ import {
   renderNoteBlock
 } from '../components/AudioItem';
 import { uFPermissions } from '../src/hooks/uFPermissions';
-import { logCoinUsage, COIN_UNIT_MINUTES, COIN_COST_PER_UNIT } from '../utils/googleSheetAPI';
+import { logCoinUsage } from '../utils/googleSheetAPI';
 import { handleLogin, loadUserAndSync } from '../utils/loginHelpers';
 import TopUpModal from '../components/TopUpModal';
-import { productIds, initIAP, requestPurchase, setupPurchaseListener } from '../utils/iap';
+import { productIds, initIAP, requestPurchase, setupPurchaseListener, COIN_UNIT_MINUTES, COIN_COST_PER_UNIT } from '../utils/iap';
 
 
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
@@ -75,6 +75,7 @@ const GlobalRecorderState = {
   filePath: '',
   startTime: 0,
 };
+
 
 const RecorderPageVoiceNote = () => {
   const title = "  Voice Note";
@@ -1310,9 +1311,13 @@ useEffect(() => {
                                         throw new Error("無法取得有效的轉譯結果");
                                       }
 
+                                              const tokens = await GoogleSignin.getTokens();
+        const idToken = tokens.idToken;
+        if (!user.id || !user.email) throw new Error("無法取得使用者資訊");
                                       // ✅ 寫入扣金幣紀錄
                                       const coinResult = await logCoinUsage({
                                         id: user.id,
+                                                                                idToken,
                                         action: 'transcript',
                                         value: -coinsToDeduct,
                                         note: `轉文字：${item.displayName || item.name || ''}，長度 ${durationSec}s，扣 ${coinsToDeduct} 金幣`
@@ -1693,9 +1698,15 @@ useEffect(() => {
                         setRecordings(updated);
                         await saveRecordings(updated);
 
-                          // 💰 扣金幣紀錄
+
+        const tokens = await GoogleSignin.getTokens();
+        const idToken = tokens.idToken;
+        if (!user.id || !user.email) throw new Error("無法取得使用者資訊");
+
+                  // 💰 扣金幣紀錄
                           const coinResult = await logCoinUsage({
                             id: user.id,
+                            idToken,
                             action: mode.key,
                             value: -cost,
                             note: `${modeLabel}：${recordings[idx].displayName || recordings[idx].name || ''}，固定扣 ${cost} 金幣`
