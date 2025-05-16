@@ -1,7 +1,7 @@
 // App.tsx
 
 // 直接定義 APP_VARIANT（可以手動切換）
-export const APP_VARIANT: string = 'note'; // or 'notedebug'
+export const APP_VARIANT: string = 'notedebug'; // or 'notedebug'
 
 import RecorderPageVoiceNote from './pages/VoiceNote';
 

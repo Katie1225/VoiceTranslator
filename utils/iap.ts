@@ -6,10 +6,12 @@ import {
     purchaseErrorListener,
     finishTransaction,
     ProductPurchase,
+    Purchase,
 } from 'react-native-iap';
-import { Platform } from 'react-native';
+import { Alert, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { logCoinUsage } from './googleSheetAPI';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
 // 金幣規則設定
 export const INITIAL_GIFT_COINS = 100;     // 首次登入送 100 金幣
@@ -59,67 +61,46 @@ export const requestPurchase = async (productId: string) => {
     }
 };
 
-// ✅ 設定購買完成監聽
-export const setupPurchaseListener = (onSuccess: (coins: number) => void) => {
-    const purchaseUpdate = purchaseUpdatedListener(async (purchase: ProductPurchase) => {
-        try {
-            const { productId, transactionId, transactionReceipt } = purchase;
-
-            // ✅ 防止重複處理
-            if (!transactionId) {
-                console.warn('⚠️ 無效交易：缺少 transactionId，略過');
-                return;
-            }
-            if (handledTransactionIds.has(transactionId)) {
-                console.warn('⚠️ 此交易已處理過，略過:', transactionId);
-                return;
-            }
-            handledTransactionIds.add(transactionId);
-            console.log('🎉 購買成功:', productId);
-
-            if (transactionReceipt) {
-                const coins = productToCoins[productId] || 0;
-                if (coins > 0) {
-                    const stored = await AsyncStorage.getItem('user');
-                    if (stored) {
-                        const user = JSON.parse(stored);
-                        user.coins = (user.coins || 0) + coins;
-                        await AsyncStorage.setItem('user', JSON.stringify(user));
-                        // ✅ 上報到 Google Sheet
-                        await logCoinUsage({
-                            id: user.id,
-                            idToken: user.idToken,
-                            action: 'topup',
-                            value: coins,
-                            note: `透過內購獲得 ${coins} 金幣（產品 ID: ${productId}）`,
-                        });
-                        onSuccess(coins);
-                    }
-                }
-
-                // ✅ 新版 v12 的 finishTransaction 寫法
-                await finishTransaction({ purchase, isConsumable: true });
-            }
-        } catch (err) {
-            console.error('❌ 購買處理失敗:', err);
-        } return {
-            remove: () => {
-                purchaseUpdate.remove();
-                purchaseError.remove();
-            },
-        };
-
-    });
 
 
-    const purchaseError = purchaseErrorListener((error) => {
-        console.error('❌ 購買錯誤:', error);
-    });
+const processingTransactions = new Set<string>(); // 新增：正在處理中的交易
 
-    return {
-        remove: () => {
-            purchaseUpdate.remove();
-            purchaseError.remove();
-        },
-    };
+export const setupPurchaseListener = () => {
+  return purchaseUpdatedListener(async (purchase: Purchase) => {
+    try {
+      // ✅ 完成交易（要用物件格式包起來）
+      await finishTransaction({ purchase });
+
+      // ✅ 拿最新的 idToken
+      await GoogleSignin.signInSilently();
+      const tokens = await GoogleSignin.getTokens();
+      const stored = await AsyncStorage.getItem('user');
+      const user = JSON.parse(stored || '{}');
+
+      // ✅ 寫入金幣紀錄（固定加 100）
+      const result = await logCoinUsage({
+        id: user.id,
+        idToken: tokens.idToken,
+        action: 'topup',
+        value: 100,
+        note: '購買金幣',
+      });
+
+      if (result.success) {
+        // ✅ 更新本地金幣
+        user.coins = (user.coins || 0) + 100;
+        await AsyncStorage.setItem('user', JSON.stringify(user));
+
+        // ✅ 成功才顯示提示
+        Alert.alert('✅ 購買成功', `已獲得 100 金幣`);
+      } else {
+        Alert.alert('⚠️ 金幣尚未入帳', result.message || '請稍候重試或聯繫客服');
+      }
+    } catch (err) {
+      console.error('❌ 購買失敗:', err);
+      Alert.alert('❌ 購買處理失敗', (err as Error).message || '請稍候再試');
+    }
+  });
 };
+
+

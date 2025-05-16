@@ -56,6 +56,7 @@ export async function logCoinUsage({
   note?: string;
 }) {
   try {
+console.log("🧪 idToken 發行時間:", JSON.parse(atob(idToken.split('.')[1])));
   //  const res = await fetch(BASE_URL+"/", {
      const res = await fetch(BASE_URL, {
       method: 'POST',

@@ -1,5 +1,6 @@
-import React from 'react';
 import { View, Text, TouchableOpacity, Modal, FlatList } from 'react-native';
+import React, { useState } from 'react';
+
 
 type Props = {
   visible: boolean;
@@ -11,6 +12,20 @@ type Props = {
 };
 
 const TopUpModal = ({ visible, onClose, onSelect, styles, colors, products }: Props) => {
+  const [isProcessing, setIsProcessing] = useState(false);
+  // Sort products by price (low to high)
+  const sortedProducts = [...products].sort((a, b) => {
+    // Extract numeric price from localizedPrice (remove currency symbols)
+    const priceA = parseFloat(a.localizedPrice.replace(/[^0-9.]/g, ''));
+    const priceB = parseFloat(b.localizedPrice.replace(/[^0-9.]/g, ''));
+    return priceA - priceB;
+  });
+
+  // Format product title to remove "錄音筆記-凱凱實驗室"
+  const formatTitle = (title: string) => {
+    return title.replace(/\(錄音筆記-凱凱實驗室\)/g, '').trim();
+  };
+
   return (
     <Modal transparent visible={visible} animationType="fade">
       <View style={styles.modalOverlay}>
@@ -24,14 +39,21 @@ const TopUpModal = ({ visible, onClose, onSelect, styles, colors, products }: Pr
           </Text>
 
           <FlatList
-            data={products}
+            data={sortedProducts}
             keyExtractor={(item) => item.productId}
             renderItem={({ item }) => (
-              <TouchableOpacity
-                style={styles.planCard}
-                onPress={() => onSelect(item.productId)}
-              >
-                <Text style={styles.planCoins}>{item.title}</Text>
+          <TouchableOpacity
+            style={[styles.planCard, isProcessing && { opacity: 0.5 }]}
+            onPress={() => {
+              if (!isProcessing) {
+                setIsProcessing(true);
+                onSelect(item.productId);
+                setTimeout(() => setIsProcessing(false), 2000); // 2秒內防止重複點擊
+              }
+            }}
+            disabled={isProcessing}
+          >
+                <Text style={styles.planCoins}>{formatTitle(item.title)}</Text>
                 <Text style={styles.planPrice}>{item.localizedPrice}</Text>
               </TouchableOpacity>
             )}

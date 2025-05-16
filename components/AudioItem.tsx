@@ -6,7 +6,6 @@ import { lightTheme, darkTheme, additionalColors } from '../constants/Colors';
 import { createStyles } from '../styles/audioStyles';
 import { RecordingItem } from '../utils/audioHelpers';
 
-const isDebugMode = APP_VARIANT === 'notedebug';
 
 // 音檔檔名顯示
 export const renderFilename = (
@@ -212,11 +211,12 @@ export const renderNoteBlock = (props: {
                         <TouchableOpacity onPress={onShare}>
                             <Text style={styles.transcriptActionButton}>📤 轉發</Text>
                         </TouchableOpacity>
-{isDebugMode && (
+{/* {isDebugMode && ()} */}
+{APP_VARIANT === 'notedebug' && (
                         <TouchableOpacity onPress={onDelete}>
                             <Text style={styles.transcriptActionButton}>🗑️ 刪除</Text>
                         </TouchableOpacity>
-                        )}
+                      )}   
                     </View>
                 </>
             )}

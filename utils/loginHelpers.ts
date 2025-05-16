@@ -14,11 +14,20 @@ export const handleLogin = async (
     if (setLoading) setLoading(true);
 
     try {
+        await GoogleSignin.signInSilently();
+        
         const result = await GoogleSignin.signIn();
         const user = (result as any)?.data?.user || {};
+        
         const tokens = await GoogleSignin.getTokens();
         const idToken = tokens.idToken;
         if (!user.id || !user.email) throw new Error("無法取得使用者資訊");
+
+        const asyncStorageUser = {
+            id: user.id,
+            email: user.email,
+            name: user.name || user.email.split('@')[0],
+        };
 
         const baseUser = {
             id: user.id,
@@ -69,7 +78,7 @@ export const handleLogin = async (
         message += `\n\n💰 你目前擁有 ${updatedUser.coins} 金幣`;
         message += `\n\n📌 錄音轉文字每 1 分鐘會扣 ${COINS_PER_MINUTE} 金幣`;
 
-        await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
+        await AsyncStorage.setItem('user', JSON.stringify(asyncStorageUser));
         Alert.alert('✅ 登入成功', message);
         return true;
     } catch (err) {
