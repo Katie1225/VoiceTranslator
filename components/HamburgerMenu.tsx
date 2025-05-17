@@ -7,8 +7,6 @@ import { lightTheme, darkTheme, additionalColors } from '../constants/Colors';
 import { logCoinUsage, fetchUserInfo, getCachedUser } from '../utils/googleSheetAPI';
 import { handleLogin } from '../utils/loginHelpers';
 
-
-
 type Props = {
   visible: boolean;
   onClose: () => void;

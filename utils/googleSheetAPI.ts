@@ -22,8 +22,8 @@ export async function fetchUserInfo(id: string) {
         'Accept': 'application/json', // 明確要求 JSON 回應
       },
     });
-             console.log(`${BASE_URL}?id=${id}`);
-    
+    console.log(`${BASE_URL}?id=${id}`);
+
     // 檢查回應的 Content-Type 是否是 JSON
     const contentType = response.headers.get('content-type');
     if (!contentType?.includes('application/json')) {
@@ -56,9 +56,9 @@ export async function logCoinUsage({
   note?: string;
 }) {
   try {
-console.log("🧪 idToken 發行時間:", JSON.parse(atob(idToken.split('.')[1])));
-  //  const res = await fetch(BASE_URL+"/", {
-     const res = await fetch(BASE_URL, {
+    console.log("🧪 idToken 發行時間:", JSON.parse(atob(idToken.split('.')[1])));
+    //  const res = await fetch(BASE_URL+"/", {
+    const res = await fetch(BASE_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, idToken, action, value, note }),

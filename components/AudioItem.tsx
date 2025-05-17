@@ -1,7 +1,7 @@
 // components/AudioUIHelpers.tsx
 import React from 'react';
 import { View, Text, TouchableOpacity, TextInput, ScrollView } from 'react-native';
-import { APP_VARIANT } from '../App';
+//import { APP_VARIANT } from '../App';
 import { lightTheme, darkTheme, additionalColors } from '../constants/Colors';
 import { createStyles } from '../styles/audioStyles';
 import { RecordingItem } from '../utils/audioHelpers';
@@ -211,12 +211,12 @@ export const renderNoteBlock = (props: {
                         <TouchableOpacity onPress={onShare}>
                             <Text style={styles.transcriptActionButton}>📤 轉發</Text>
                         </TouchableOpacity>
-{/* {isDebugMode && ()} */}
-{APP_VARIANT === 'notedebug' && (
+
+{/*APP_VARIANT === 'notedebug' && (   )}   */}
                         <TouchableOpacity onPress={onDelete}>
                             <Text style={styles.transcriptActionButton}>🗑️ 刪除</Text>
                         </TouchableOpacity>
-                      )}   
+                   
                     </View>
                 </>
             )}

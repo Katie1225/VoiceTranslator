@@ -27,17 +27,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Localization from 'expo-localization';
 
 import {
-  initConnection,
-  getProducts,
-  requestPurchase as iapRequestPurchase,
-  purchaseUpdatedListener,
-  purchaseErrorListener,
-  finishTransaction,
-  ProductPurchase,
-  getAvailablePurchases,
-} from 'react-native-iap';
-
-import {
   RecordingItem,
   enhanceAudio,
   trimSilence,
@@ -61,7 +50,7 @@ import { uFPermissions } from '../src/hooks/uFPermissions';
 import { logCoinUsage } from '../utils/googleSheetAPI';
 import { handleLogin, loadUserAndSync } from '../utils/loginHelpers';
 import TopUpModal from '../components/TopUpModal';
-import { productIds, initIAP, requestPurchase, setupPurchaseListener, COIN_UNIT_MINUTES, COIN_COST_PER_UNIT } from '../utils/iap';
+import { productIds, productToCoins, purchaseManager, COIN_UNIT_MINUTES, COIN_COST_PER_UNIT } from '../utils/iap';
 
 
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
@@ -96,7 +85,7 @@ const RecorderPageVoiceNote = () => {
   const isAnyProcessing = isTranscribingIndex !== null || isSummarizingIndex !== null;
   const [summaryMode, setSummaryMode] = useState('summary');
   const [showSummaryMenuIndex, setShowSummaryMenuIndex] = useState<number | null>(null);
-  const [isPurchasing, setIsPurchasing] = useState(false);
+
 
 
   const flatListRef = useRef<FlatList>(null);
@@ -179,19 +168,22 @@ const RecorderPageVoiceNote = () => {
     savePrimaryColorPreference(color);
   };
 
-  const [iapProducts, setIapProducts] = useState<any[]>([]);
 
-  const handlePurchase = async (productId: string) => {
-    if (isPurchasing) return;
+  const [resumeAfterTopUp, setResumeAfterTopUp] = useState<null | { index: number }>(null);
 
-    setIsPurchasing(true);
+  // 替換原有的 handlePurchase 函數
+  const handleTopUp = async (productId: string) => {
     try {
-      await requestPurchase(productId);
+      await purchaseManager.requestPurchase(productId);
       setShowTopUpModal(false);
+
+      // 加值成功後自動繼續之前操作
+      if (resumeAfterTopUp?.index !== undefined) {
+        await handleTranscribe(resumeAfterTopUp.index);
+      }
+      setResumeAfterTopUp(null);
     } catch (err) {
-      Alert.alert('購買失敗', (err as Error).message || '請稍後再試');
-    } finally {
-      setIsPurchasing(false);
+      Alert.alert('購買失敗', err instanceof Error ? err.message : '請稍後再試');
     }
   };
 
@@ -202,24 +194,31 @@ const RecorderPageVoiceNote = () => {
     loadPrimaryColorPreference();
   }, []);
 
-  // 購買畫面
-  const [showTopUpModal, setShowTopUpModal] = useState(false);
-
+  // 在組件掛載時初始化 IAP
   useEffect(() => {
-    const sub = setupPurchaseListener(); // 👈 不再傳 callback
+    const initIAP = async () => {
+      const success = await purchaseManager.initialize();
+      if (!success) {
+        console.warn('IAP 初始化失敗');
+      }
+    };
+    initIAP();
 
     return () => {
-      sub.remove();
+      purchaseManager.cleanup();
     };
   }, []);
 
-
+  // 購買畫面
+  const [showTopUpModal, setShowTopUpModal] = useState(false);
 
   const [selectedContext, setSelectedContext] = useState<{
     type: 'main' | 'enhanced' | 'trimmed';
     index: number;
     position: { x: number; y: number };
   } | null>(null);
+
+
 
   const [selectedMainIndex, setSelectedMainIndex] = useState<number | null>(null);
   const [mainMenuPosition, setMainMenuPosition] = useState<{ x: number; y: number } | null>(null);
@@ -855,6 +854,135 @@ const RecorderPageVoiceNote = () => {
     });
   };
 
+  const handleTranscribe = async (index: number) => {
+    const item = recordings[index];
+
+    if (item.transcript) {
+      setShowTranscriptIndex(index);
+      setShowSummaryIndex(null);
+      return;
+    }
+
+    setIsTranscribingIndex(index);
+
+    try {
+      const stored = await AsyncStorage.getItem('user');
+      if (!stored) {
+        setIsTranscribingIndex(null);
+        Alert.alert("請先登入", "使用錄音筆記功能需要登入", [
+          { text: "取消", style: "cancel" },
+          {
+            text: "登入",
+            onPress: () => {
+              setIsTranscribingIndex(null);
+              handleLogin(setIsLoggingIn);
+            }
+          }
+        ]);
+        return;
+      }
+
+      await loadUserAndSync();
+      const fresh = await AsyncStorage.getItem('user');
+      if (!fresh) throw new Error("無法取得使用者資料");
+      const user = JSON.parse(fresh);
+
+      const { sound, status } = await Audio.Sound.createAsync({ uri: item.uri });
+      if (!status.isLoaded) throw new Error("無法取得音檔長度");
+      const durationSec = Math.ceil((status.durationMillis ?? 0) / 1000);
+      await sound.unloadAsync();
+
+      const coinsToDeduct = Math.ceil(durationSec / (COIN_UNIT_MINUTES * 60)) * COIN_COST_PER_UNIT;
+
+      if (user.coins < coinsToDeduct) {
+        purchaseManager.addPendingAction({ type: 'transcribe', index });
+        Alert.alert(
+          "金幣不足",
+          `此錄音需要 ${coinsToDeduct} 金幣，你目前剩餘 ${user.coins} 金幣`,
+          [
+            { text: "取消", onPress: () => setIsTranscribingIndex(null) },
+            {
+              text: "立即儲值",
+              onPress: () => {
+                setResumeAfterTopUp({ index });
+                setShowTopUpModal(true);
+              }
+            }
+          ]
+        );
+        return;
+      }
+
+      const result = await transcribeAudio(item, async (updatedTranscript) => {
+        setRecordings(prev => {
+          const updated = prev.map((rec, i) =>
+            i === index ? { ...rec, transcript: updatedTranscript } : rec
+          );
+          saveRecordings(updated).catch(e => console.error('保存失敗:', e));
+          return updated;
+        });
+        setShowTranscriptIndex(index);
+        setShowSummaryIndex(null);
+      }, userLang.includes('CN') ? 'cn' : 'tw');
+
+      if (!result?.transcript?.text?.trim()) {
+        throw new Error("無法取得有效的轉譯結果");
+      }
+
+      let finalUpdated = recordings.map((rec, i) =>
+        i === index ? { ...rec, transcript: result.transcript.text } : rec
+      );
+
+      try {
+        const summary = await summarizeWithMode(result.transcript.text, 'summary', userLang.includes('CN') ? 'cn' : 'tw');
+        finalUpdated = finalUpdated.map((rec, i) =>
+          i === index
+            ? {
+              ...rec,
+              summaries: {
+                ...(rec.summaries || {}),
+                summary,
+              },
+            }
+            : rec
+        );
+      } catch (err) {
+        console.warn('❌ 自動摘要失敗:', err);
+      }
+
+      setRecordings(finalUpdated);
+      await saveRecordings(finalUpdated);
+      setShowTranscriptIndex(null);
+      setShowSummaryIndex(index);
+      setSummaryMode('summary');
+
+      await GoogleSignin.signInSilently();
+      const tokens = await GoogleSignin.getTokens();
+      const idToken = tokens.idToken;
+
+      const coinResult = await logCoinUsage({
+        id: user.id,
+        idToken,
+        action: 'transcript',
+        value: -coinsToDeduct,
+        note: `轉文字：${item.displayName || item.name || ''}，長度 ${durationSec}s，扣 ${coinsToDeduct} 金幣`
+      });
+
+      if (!coinResult.success) {
+        Alert.alert("轉換成功，但扣金幣失敗", coinResult.message || "請稍後再試");
+      } else {
+        user.coins -= coinsToDeduct;
+        await AsyncStorage.setItem('user', JSON.stringify(user));
+      }
+
+    } catch (err) {
+      Alert.alert("❌ 錯誤", (err as Error).message || "轉換失敗，這次不會扣金幣");
+    } finally {
+      setIsTranscribingIndex(null);
+    }
+  };
+
+
 
   return (
     <TouchableWithoutFeedback onPress={() => closeAllMenus(false)}>
@@ -1198,151 +1326,17 @@ const RecorderPageVoiceNote = () => {
                                   style={{
                                     paddingVertical: 5,
                                     paddingHorizontal: 8,
-                                    backgroundColor: showTranscriptIndex === index ? colors.primary : colors.primary + '60',
+                                    backgroundColor: showTranscriptIndex === index
+                                      ? colors.primary
+                                      : colors.primary + '60',
                                     borderRadius: 8,
                                     opacity: isAnyProcessing ? 0.4 : 1,
                                   }}
                                   disabled={isAnyProcessing}
-                                  onPress={async () => {
+                                  onPress={() => {
                                     closeAllMenus();
-
-                                    if (item.transcript) {
-                                      setShowTranscriptIndex(index);
-                                      setShowSummaryIndex(null);
-                                      return;
-                                    }
-
-                                    setIsTranscribingIndex(index);
-
-                                    try {
-                                      const stored = await AsyncStorage.getItem('user');
-                                      if (!stored) {
-                                        setIsTranscribingIndex(null);
-                                        Alert.alert("請先登入", "使用錄音筆記功能需要登入", [
-                                          { text: "取消", style: "cancel" },
-                                          {
-                                            text: "登入",
-                                            onPress: () => {
-                                              setIsTranscribingIndex(null);
-                                              handleLogin(setIsLoggingIn);
-                                            }
-                                          }
-                                        ]);
-                                        return;
-                                      }
-
-                                      // 重新同步金幣
-                                      await loadUserAndSync();
-                                      const fresh = await AsyncStorage.getItem('user');
-                                      if (!fresh) throw new Error("無法取得使用者資料");
-                                      const user = JSON.parse(fresh);
-
-                                      // 取得錄音長度
-                                      const { sound, status } = await Audio.Sound.createAsync({ uri: item.uri });
-                                      if (!status.isLoaded) throw new Error("無法取得音檔長度");
-                                      const durationSec = Math.ceil((status.durationMillis ?? 0) / 1000);
-                                      await sound.unloadAsync();
-
-                                      const coinsToDeduct = Math.ceil(durationSec / (COIN_UNIT_MINUTES * 60)) * COIN_COST_PER_UNIT;
-
-                                      if (user.coins < coinsToDeduct) {
-                                        Alert.alert(
-                                          "金幣不足",
-                                          `此錄音需要 ${coinsToDeduct} 金幣，你目前剩餘 ${user.coins} 金幣。\n\n請儲值後再使用錄音筆記功能`,
-                                          [
-                                            {
-                                              text: "取消",
-                                              style: "cancel",
-                                              onPress: () => setIsTranscribingIndex(null)
-                                            },
-                                            {
-                                              text: "立即儲值",
-                                              onPress: () => {
-                                                setShowTopUpModal(true);
-                                                setIsTranscribingIndex(null);
-                                              }
-                                            }
-                                          ]
-                                        );
-                                        return;
-                                      }
-
-                                      // ✅ 修改轉錄部分 - 使用函數式更新確保獲取最新狀態
-                                      const result = await transcribeAudio(item, async (updatedTranscript) => {
-                                        setRecordings(prev => {
-                                          const updated = prev.map((rec, i) =>
-                                            i === index ? { ...rec, transcript: updatedTranscript } : rec
-                                          );
-                                          // 立即保存
-                                          saveRecordings(updated).catch(e => console.error('保存失敗:', e));
-                                          return updated;
-                                        });
-                                        setShowTranscriptIndex(index);
-                                        setShowSummaryIndex(null);
-                                      }, userLang.includes('CN') ? 'cn' : 'tw');
-
-                                      if (!result?.transcript?.text?.trim()) {
-                                        throw new Error("無法取得有效的轉譯結果");
-                                      }
-
-                                      // ✅ 確保至少有轉錄內容被保存
-                                      let finalUpdated = recordings.map((rec, i) =>
-                                        i === index ? { ...rec, transcript: result.transcript.text } : rec
-                                      );
-
-                                      // 自動摘要改為可選功能
-                                      try {
-                                        const summary = await summarizeWithMode(result.transcript.text, 'summary', userLang.includes('CN') ? 'cn' : 'tw');
-                                        finalUpdated = finalUpdated.map((rec, i) =>
-                                          i === index
-                                            ? {
-                                              ...rec,
-                                              summaries: {
-                                                ...(rec.summaries || {}),
-                                                summary,
-                                              },
-                                            }
-                                            : rec
-                                        );
-                                      } catch (err) {
-                                        console.warn('❌ 自動摘要失敗:', err);
-                                        // 即使摘要失敗也繼續保存轉錄內容
-                                      }
-
-                                      // ✅ 最終保存
-                                      setRecordings(finalUpdated);
-                                      await saveRecordings(finalUpdated);
-                                      setShowTranscriptIndex(null);
-                                      setShowSummaryIndex(index);
-                                      setSummaryMode('summary');
-
-                                      // ✅ 扣金幣
-                                      await GoogleSignin.signInSilently();
-                                      const tokens = await GoogleSignin.getTokens(); // 👈 從這裡拿最新 idToken
-                                      const idToken = tokens.idToken;
-
-                                      const coinResult = await logCoinUsage({
-                                        id: user.id,
-                                        idToken,
-                                        action: 'transcript',
-                                        value: -coinsToDeduct,
-                                        note: `轉文字：${item.displayName || item.name || ''}，長度 ${durationSec}s，扣 ${coinsToDeduct} 金幣`
-                                      });
-
-                                      if (!coinResult.success) {
-                                        Alert.alert("轉換成功，但扣金幣失敗", coinResult.message || "請稍後再試");
-                                      } else {
-                                        user.coins -= coinsToDeduct;
-                                        await AsyncStorage.setItem('user', JSON.stringify(user));
-                                      }
-
-                                    } catch (err) {
-                                      Alert.alert("❌ 錯誤", (err as Error).message || "轉換失敗，這次不會扣金幣");
-                                    } finally {
-                                      setIsTranscribingIndex(null);
-                                    }
+                                    handleTranscribe(index);
                                   }}
-
                                 >
                                   <Text style={{ color: 'white', fontSize: 13 }}>錄音筆記</Text>
                                 </TouchableOpacity>
@@ -1352,68 +1346,24 @@ const RecorderPageVoiceNote = () => {
                                   style={{
                                     paddingVertical: 5,
                                     paddingHorizontal: 8,
-                                    backgroundColor: showSummaryIndex === index ? colors.primary : colors.primary + '60',
+                                    backgroundColor: showSummaryIndex === index
+                                      ? colors.primary
+                                      : colors.primary + '60',
                                     borderRadius: 8,
                                     opacity: item.transcript && !isAnyProcessing ? 1 : 0.4,
                                   }}
                                   disabled={!item.transcript || isAnyProcessing}
-                                  onPress={async () => {  // 這裡加上 async
+                                  onPress={() => {
                                     closeAllMenus();
+                                    const item = recordings[index];
 
-                                    if (!item.transcript) {
-                                      Alert.alert('⚠️ 無法摘要', '請先執行「轉文字」功能');
-                                      return;
-                                    }
-
-                                    const stored = await AsyncStorage.getItem('user');
-                                    if (!stored) {
-                                      Alert.alert("請先登入", "使用摘要功能需要登入", [
-                                        {
-                                          text: "取消",
-                                          style: "cancel",
-                                        },
-                                        {
-                                          text: "登入",
-                                          onPress: () => {
-                                            handleLogin(setIsLoggingIn); // ✅ 讓遮罩出現
-                                          },
-                                        },
-                                      ]);
-                                      return;
-                                    }
-
-                                    // 如果已有摘要，直接顯示
-                                    if (item.summaries?.summary) {
-                                      setSummaryMode('summary');
+                                    const summary = item.summaries?.[summaryMode];
+                                    if (summary && summary.trim()) {
                                       setShowTranscriptIndex(null);
                                       setShowSummaryIndex(index);
-                                      return;
-                                    }
-
-                                    // 否則創建 summary 模式摘要
-                                    setIsSummarizingIndex(index);
-                                    try {
-                                      const summary = await summarizeWithMode(item.transcript || '', 'summary');
-                                      const updated = recordings.map((rec, i) =>
-                                        i === index
-                                          ? {
-                                            ...rec,
-                                            summaries: {
-                                              ...(rec.summaries || {}),
-                                              summary,
-                                            },
-                                          }
-                                          : rec
-                                      );
-                                      setRecordings(updated);
-                                      await saveRecordings(updated);
-                                      setSummaryMode('summary');
-                                      setShowTranscriptIndex(null);
-                                      setShowSummaryIndex(index);
-                                    } catch (err) {
-                                      Alert.alert('❌ 摘要失敗', (err as Error).message);
-                                    } finally {
-                                      setIsSummarizingIndex(null);
+                                      setSummaryMode('summary'); // 強制顯示預設摘要
+                                    } else {
+                                      Alert.alert('⚠️ 尚未產生摘要', '請先進行錄音筆記（轉文字）後，再查看摘要');
                                     }
                                   }}
                                 >
@@ -1425,7 +1375,9 @@ const RecorderPageVoiceNote = () => {
                                   style={{
                                     paddingVertical: 5,
                                     paddingHorizontal: 8,
-                                    backgroundColor: summaryMenuContext?.index === index ? colors.primary : colors.primary + '60',
+                                    backgroundColor: summaryMenuContext?.index === index
+                                      ? colors.primary
+                                      : colors.primary + '60',
                                     borderRadius: 8,
                                     opacity: item.transcript && !isAnyProcessing ? 1 : 0.4,
                                   }}
@@ -1837,13 +1789,11 @@ const RecorderPageVoiceNote = () => {
         <TopUpModal
           visible={showTopUpModal}
           onClose={() => setShowTopUpModal(false)}
-          onSelect={handlePurchase}
+          onSelect={handleTopUp}
           styles={styles}
           colors={colors}
-          products={iapProducts}
+          products={productIds.map(id => ({ id, coins: productToCoins[id] }))} // 傳遞產品資訊
         />
-
-
       </SafeAreaView>
     </TouchableWithoutFeedback>
 

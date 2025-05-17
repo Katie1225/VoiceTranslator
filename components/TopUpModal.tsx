@@ -14,12 +14,11 @@ type Props = {
 const TopUpModal = ({ visible, onClose, onSelect, styles, colors, products }: Props) => {
   const [isProcessing, setIsProcessing] = useState(false);
   // Sort products by price (low to high)
-  const sortedProducts = [...products].sort((a, b) => {
-    // Extract numeric price from localizedPrice (remove currency symbols)
-    const priceA = parseFloat(a.localizedPrice.replace(/[^0-9.]/g, ''));
-    const priceB = parseFloat(b.localizedPrice.replace(/[^0-9.]/g, ''));
-    return priceA - priceB;
-  });
+const sortedProducts = [...products].sort((a, b) => {
+  const priceA = parseFloat((a.localizedPrice ?? '').replace(/[^0-9.]/g, '')) || 0;
+  const priceB = parseFloat((b.localizedPrice ?? '').replace(/[^0-9.]/g, '')) || 0;
+  return priceA - priceB;
+});
 
   // Format product title to remove "錄音筆記-凱凱實驗室"
   const formatTitle = (title: string) => {
@@ -45,16 +44,18 @@ const TopUpModal = ({ visible, onClose, onSelect, styles, colors, products }: Pr
           <TouchableOpacity
             style={[styles.planCard, isProcessing && { opacity: 0.5 }]}
             onPress={() => {
+                console.log("🟢 購買商品 ID:", item.id);
               if (!isProcessing) {
                 setIsProcessing(true);
-                onSelect(item.productId);
+                onSelect(item.id);
                 setTimeout(() => setIsProcessing(false), 2000); // 2秒內防止重複點擊
               }
             }}
             disabled={isProcessing}
           >
-                <Text style={styles.planCoins}>{formatTitle(item.title)}</Text>
-                <Text style={styles.planPrice}>{item.localizedPrice}</Text>
+<Text style={styles.planCoins}>{item.coins} 金幣</Text>
+<Text style={styles.planPrice}>{item.localizedPrice || ''}</Text>
+
               </TouchableOpacity>
             )}
           />
