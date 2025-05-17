@@ -7,7 +7,7 @@ import { Alert } from 'react-native';
 
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
-
+// 手動登入
 export const handleLogin = async (
     setLoading?: (v: boolean) => void
 ): Promise<boolean> => {
@@ -89,6 +89,31 @@ export const handleLogin = async (
     }
 };
 
+// Token 過期自動登入
+export const ensureFreshIdToken = async (): Promise<string> => {
+  const tokens = await GoogleSignin.getTokens();
+  const idToken = tokens.idToken;
+  const payload = JSON.parse(atob(idToken.split('.')[1]));
+  const now = Math.floor(Date.now() / 1000);
+
+  const tokenAgeSec = now - payload.iat;
+
+  if (tokenAgeSec > 3600) { // 超過1小時
+    try {
+      await GoogleSignin.signOut();
+      await GoogleSignin.signInSilently(); // 無 UI 自動登入
+      const freshTokens = await GoogleSignin.getTokens();
+      return freshTokens.idToken;
+    } catch {
+      const freshUser = await GoogleSignin.signIn(); // fallback 重新登入
+      const freshTokens = await GoogleSignin.getTokens();
+      return freshTokens.idToken;
+    }
+  }
+  return idToken;
+};
+
+// 從本地 AsyncStorage 取出目前登入的使用者資訊
 export const loadUserAndSync = async () => {
     const stored = await AsyncStorage.getItem('user');
     if (stored) {

@@ -26,6 +26,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Localization from 'expo-localization';
 
+
 import {
   RecordingItem,
   enhanceAudio,
@@ -48,10 +49,11 @@ import {
 } from '../components/AudioItem';
 import { uFPermissions } from '../src/hooks/uFPermissions';
 import { logCoinUsage } from '../utils/googleSheetAPI';
-import { handleLogin, loadUserAndSync } from '../utils/loginHelpers';
+import { handleLogin, loadUserAndSync, ensureFreshIdToken } from '../utils/loginHelpers';
 import TopUpModal from '../components/TopUpModal';
 import { productIds, productToCoins, purchaseManager, COIN_UNIT_MINUTES, COIN_COST_PER_UNIT } from '../utils/iap';
-
+import {APP_VARIANT} from '../App';
+import {checkStoredIdToken} from '../utils/Test';
 
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 GoogleSignin.configure({
@@ -410,12 +412,8 @@ const RecorderPageVoiceNote = () => {
       }
       resolve(true);
     });
-
     console.log("🛑 背景任務結束");
-
   };
-
-
 
   // 開始錄音（帶音量檢測）
   const startRecording = async () => {
@@ -854,7 +852,9 @@ const RecorderPageVoiceNote = () => {
     });
   };
 
+  //轉文字邏輯
   const handleTranscribe = async (index: number) => {
+
     const item = recordings[index];
 
     if (item.transcript) {
@@ -956,9 +956,8 @@ const RecorderPageVoiceNote = () => {
       setShowSummaryIndex(index);
       setSummaryMode('summary');
 
-      await GoogleSignin.signInSilently();
-      const tokens = await GoogleSignin.getTokens();
-      const idToken = tokens.idToken;
+const idToken = await ensureFreshIdToken(); // 自動判斷是否需要 refresh 或重新登入
+      
 
       const coinResult = await logCoinUsage({
         id: user.id,
@@ -979,6 +978,54 @@ const RecorderPageVoiceNote = () => {
       Alert.alert("❌ 錯誤", (err as Error).message || "轉換失敗，這次不會扣金幣");
     } finally {
       setIsTranscribingIndex(null);
+    }
+  };
+  // 重點摘要邏輯
+  const handleSummarize = async (index: number) => {
+if (APP_VARIANT === 'notedebug') {
+        checkStoredIdToken(); }
+    const item = recordings[index];
+
+    // 如果已經有摘要就顯示出來
+    if (item.summaries?.[summaryMode]) {
+      setShowTranscriptIndex(null);
+      setShowSummaryIndex(index);
+      setSummaryMode('summary');
+      return;
+    }
+
+    // 沒有摘要就自動產生（語言依系統設定）
+    setIsSummarizingIndex(index);
+
+    try {
+      const summary = await summarizeWithMode(
+        item.transcript || '',
+        'summary',
+        userLang.includes('CN') ? 'cn' : 'tw'
+      );
+
+      const updated = recordings.map((rec, i) =>
+        i === index
+          ? {
+            ...rec,
+            summaries: {
+              ...(rec.summaries || {}),
+              summary,
+            },
+          }
+          : rec
+      );
+
+      setRecordings(updated);
+      await saveRecordings(updated);
+
+      setShowTranscriptIndex(null);
+      setShowSummaryIndex(index);
+      setSummaryMode('summary');
+    } catch (err) {
+      console.warn('❌ 摘要失敗:', err);
+    } finally {
+      setIsSummarizingIndex(null);
     }
   };
 
@@ -1355,16 +1402,7 @@ const RecorderPageVoiceNote = () => {
                                   disabled={!item.transcript || isAnyProcessing}
                                   onPress={() => {
                                     closeAllMenus();
-                                    const item = recordings[index];
-
-                                    const summary = item.summaries?.[summaryMode];
-                                    if (summary && summary.trim()) {
-                                      setShowTranscriptIndex(null);
-                                      setShowSummaryIndex(index);
-                                      setSummaryMode('summary'); // 強制顯示預設摘要
-                                    } else {
-                                      Alert.alert('⚠️ 尚未產生摘要', '請先進行錄音筆記（轉文字）後，再查看摘要');
-                                    }
+                                    handleSummarize(index);
                                   }}
                                 >
                                   <Text style={{ color: 'white', fontSize: 13, textAlign: 'center' }}>重點摘要</Text>
@@ -1656,9 +1694,9 @@ const RecorderPageVoiceNote = () => {
                           setRecordings(updated);
                           await saveRecordings(updated);
 
-                          await GoogleSignin.signInSilently();
-                          const tokens = await GoogleSignin.getTokens(); // 👈 從這裡拿最新 idToken
-                          const idToken = tokens.idToken;
+                          
+
+const idToken = await ensureFreshIdToken(); // 自動判斷是否需要 refresh 或重新登入
 
                           if (!user.id || !user.email) throw new Error("無法取得使用者資訊");
 
