@@ -10,7 +10,8 @@ import {
   ActivityIndicator,
   TouchableWithoutFeedback,
   Share,
-  FlatList
+  FlatList,
+  Dimensions
 } from 'react-native';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
@@ -21,7 +22,6 @@ import AudioRecorderPlayer from 'react-native-audio-recorder-player';
 import BackgroundService from 'react-native-background-actions';
 import RNFS from 'react-native-fs';
 import { Linking } from 'react-native';
-import { Keyboard } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Localization from 'expo-localization';
@@ -39,8 +39,6 @@ import { useAudioPlayer } from '../utils/useAudioPlayer';
 import { createStyles } from '../styles/audioStyles';
 import { ANDROID_AUDIO_ENCODERS, ANDROID_OUTPUT_FORMATS } from '../constants/AudioConstants';
 import { lightTheme, darkTheme, additionalColors } from '../constants/Colors';
-import RecorderButton from '../components/RecorderButton';
-import HamburgerMenu from '../components/HamburgerMenu';
 import MoreMenu from '../components/MoreMenu';
 import {
   renderFilename,
@@ -54,6 +52,7 @@ import TopUpModal from '../components/TopUpModal';
 import { productIds, productToCoins, purchaseManager, COIN_UNIT_MINUTES, COIN_COST_PER_UNIT } from '../utils/iap';
 import { APP_VARIANT } from '../constants/variant';
 import { checkStoredIdToken } from '../utils/Test';
+import RecorderHeader from '../components/RecorderHeader';
 
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 GoogleSignin.configure({
@@ -67,7 +66,6 @@ const GlobalRecorderState = {
   startTime: 0,
 };
 
-
 const RecorderPageVoiceNote = () => {
   const title = "  Voice Note";
 
@@ -77,8 +75,9 @@ const RecorderPageVoiceNote = () => {
   const [recording, setRecording] = useState(false);
   const recordingStartTimestamp = useRef<number | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
-  const [menuVisible, setMenuVisible] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
+
+  const [notesEditing, setNotesEditing] = useState<string>('');
 
   const [dbHistory, setDbHistory] = useState<number[]>([]);
   const audioRecorderPlayer = useRef(new AudioRecorderPlayer()).current;
@@ -86,9 +85,6 @@ const RecorderPageVoiceNote = () => {
   const [isSummarizingIndex, setIsSummarizingIndex] = useState<number | null>(null);
   const isAnyProcessing = isTranscribingIndex !== null || isSummarizingIndex !== null;
   const [summaryMode, setSummaryMode] = useState('summary');
-  const [showSummaryMenuIndex, setShowSummaryMenuIndex] = useState<number | null>(null);
-
-
 
   const flatListRef = useRef<FlatList>(null);
   const [itemOffsets, setItemOffsets] = useState<Record<number, number>>({});
@@ -205,7 +201,6 @@ const RecorderPageVoiceNote = () => {
       }
     };
     initIAP();
-
     return () => {
       purchaseManager.cleanup();
     };
@@ -221,9 +216,6 @@ const RecorderPageVoiceNote = () => {
   } | null>(null);
 
 
-
-  const [selectedMainIndex, setSelectedMainIndex] = useState<number | null>(null);
-  const [mainMenuPosition, setMainMenuPosition] = useState<{ x: number; y: number } | null>(null);
   // 變速播放
   const [speedMenuIndex, setSpeedMenuIndex] = useState<number | null>(null);
   const [speedMenuPosition, setSpeedMenuPosition] = useState<{ x: number; y: number } | null>(null);
@@ -459,6 +451,7 @@ const RecorderPageVoiceNote = () => {
       GlobalRecorderState.startTime = Date.now();
       setRecording(true);
       recordingTimeRef.current = 0;
+      setNotesEditing(''); // 重置
 
       //測試版用開始
       setTimeout(() => {
@@ -559,6 +552,7 @@ const RecorderPageVoiceNote = () => {
           displayName,
           derivedFiles: {},
           date: now.toISOString(),
+          notes: notesEditing, // ✅ 存進去
         };
 
         setShowTranscriptIndex(null);   // 🔧 錄音完後，確保不會自動顯示 transcript
@@ -710,7 +704,6 @@ const RecorderPageVoiceNote = () => {
   // 關閉所有彈出菜單
   const closeAllMenus = (preserveEditing = false) => {
     setSelectedIndex(null);
-    setMenuVisible(false);
     setSpeedMenuIndex(null);
     setSelectedContext(null);
     setSummaryMenuContext(null);
@@ -734,7 +727,7 @@ const RecorderPageVoiceNote = () => {
     );
   }
 
-  
+
   // 所有的文字編輯邏輯
   const startEditing = (index: number, type: 'name' | 'transcript' | 'summary') => {
     const raw = type === 'name'
@@ -1128,85 +1121,60 @@ const RecorderPageVoiceNote = () => {
 
             {/* 整個上半段白色背景 */}
             <View style={{
-              backgroundColor: colors.container, // 你的白色或主背景色
-              paddingHorizontal: 12,
-              paddingTop: 20,   // ✅只保留 paddingTop
+              backgroundColor: colors.container,
+              paddingHorizontal: 6,
+              paddingTop: 20,
               minHeight: 110,
-              borderBottomWidth: 3,          // ✅ 這行
-              borderBottomColor: colors.primary, // ✅ 這行
+              borderBottomWidth: 3,
+              borderBottomColor: colors.primary,
             }}>
-              {/* 這個裡面才開始 row 排版 */}
               <View style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
+                backgroundColor: colors.container,
               }}>
-                {/* 左邊：錄音按鈕 */}
-                <View style={{ flexShrink: 1, marginLeft: -2 }}>
-                  <RecorderButton
-                    title={title}
-                    recording={recording}
-                    recordingTimeRef={recordingTimeRef}
-                    onStart={startRecording}
-                    onStop={stopRecording}
-                    styles={styles}
-                    colors={colors}
-                  />
-                </View>
-
-                {/* 右邊：☰ 和 ➕ */}
-                <View style={{ alignItems: 'center', justifyContent: 'center', marginRight: 12, }}>
-                  {/* 漢堡按鈕 */}
-
-                  <TouchableOpacity
-                    style={{
-                      height: 35,         // ✅ 固定高度
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      marginBottom: 0,    // 控制兩個按鈕的距離
-                    }}
-                    onPress={() => {
-                      if (menuVisible) {
-                        // 如果漢堡本來是打開的，再按一次就關掉
-                        setMenuVisible(false);
-                      } else {
-                        closeAllMenus();
-                        setMenuVisible(true);
-                      }
-                    }}
-                  >
-                    <Text style={{ fontSize: 20, color: colors.primary }}>☰</Text>
-                  </TouchableOpacity>
-
-                  {/* 加號按鈕 */}
-                  <TouchableOpacity
-                    style={{
-                      height: 35,         // ✅ 固定高度，跟上面一樣
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                    }}
-                    onPress={pickAudio}
-                  >
-                    <Text style={{ fontSize: 20, color: colors.primary }}>＋</Text>
-                  </TouchableOpacity>
-                </View>
+                <RecorderHeader
+                  recording={recording}
+                  recordingTimeRef={recordingTimeRef}
+                  startRecording={startRecording}
+                  stopRecording={stopRecording}
+                  pickAudio={pickAudio}
+                  setIsLoggingIn={setIsLoggingIn}
+                  isDarkMode={isDarkMode}
+                  toggleTheme={toggleTheme}
+                  customPrimaryColor={customPrimaryColor}
+                  setCustomPrimaryColor={handleSetPrimaryColor}
+                  styles={styles}
+                  colors={colors}
+                  title={title}
+                />
               </View>
             </View>
 
 
+            {/* 關鍵筆記 */}
 
-            {/* 漢堡菜單內容 */}
-            <HamburgerMenu
-              visible={menuVisible}
-              onClose={closeAllMenus}
-              isDarkMode={isDarkMode}
-              toggleTheme={toggleTheme}
-              customPrimaryColor={customPrimaryColor}
-              setCustomPrimaryColor={handleSetPrimaryColor}
-              styles={styles}
-              onLoginPress={() => handleLogin(setIsLoggingIn)}  // ✅ 正確用法：讓 loginHelpers.ts 控制遮罩
-              onLoginSuccess={() => setMenuVisible(false)}  // 🔽 登入成功後收起漢堡選單
-            />
+            {recording && (
+              <View style={{ paddingHorizontal: 12, paddingVertical: 10, backgroundColor: colors.container, borderRadius: 12, margin: 10 }}>
+                <Text style={{ color: colors.text, fontWeight: 'bold', marginBottom: 4 }}>📝 談話關鍵字</Text>
+                <TextInput
+                  placeholder="輸入關鍵內容..."
+                  placeholderTextColor={colors.text + '80'}
+                  value={notesEditing}
+                  onChangeText={setNotesEditing}
+                  multiline
+                  style={{
+                    minHeight: 60,
+                    padding: 10,
+                    backgroundColor: colors.background,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: colors.primary,
+                    color: colors.text,
+                    textAlignVertical: 'top',
+                  }}
+                />
+              </View>
+            )}
+
 
 
             {/* 錄音列表 */}
@@ -1558,6 +1526,13 @@ const RecorderPageVoiceNote = () => {
                               )}
                             </>
                           )}
+                          {item.notes && !shouldHideDefaultUI && (
+                            <View style={{ backgroundColor: colors.container, borderRadius: 10, padding: 10, marginTop: 8 }}>
+                              <Text style={{ color: colors.text, fontWeight: 'bold', marginBottom: 4 }}>📝 關鍵內容</Text>
+                              <Text style={{ color: colors.text }}>{item.notes}</Text>
+                            </View>
+                          )}
+
 
                           {/* 衍生檔案列表 */}
                           {shouldShowDerivedFiles(title) && !shouldHideDefaultUI && hasDerivedFiles && (

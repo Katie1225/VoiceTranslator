@@ -15,6 +15,7 @@ export type RecordingItem = {
   transcriptEdited?: string;
   summaryEdited?: string;
   date?: string; 
+  notes?: string; 
   segments?: string[]; 
   derivedFiles?: {
     enhanced?: RecordingItem;
