@@ -52,8 +52,8 @@ import { logCoinUsage } from '../utils/googleSheetAPI';
 import { handleLogin, loadUserAndSync, ensureFreshIdToken } from '../utils/loginHelpers';
 import TopUpModal from '../components/TopUpModal';
 import { productIds, productToCoins, purchaseManager, COIN_UNIT_MINUTES, COIN_COST_PER_UNIT } from '../utils/iap';
-import {APP_VARIANT} from '../App';
-import {checkStoredIdToken} from '../utils/Test';
+import { APP_VARIANT } from '../constants/variant';
+import { checkStoredIdToken } from '../utils/Test';
 
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 GoogleSignin.configure({
@@ -71,7 +71,7 @@ const GlobalRecorderState = {
 const RecorderPageVoiceNote = () => {
   const title = "  Voice Note";
 
-  useKeepAwake(); // 保持清醒
+  // useKeepAwake(); // 保持清醒
   const { permissionStatus, requestPermissions } = uFPermissions();
   // 核心狀態
   const [recording, setRecording] = useState(false);
@@ -380,7 +380,6 @@ const RecorderPageVoiceNote = () => {
   }, [recordings]);
 
 
-
   // 錄音工作
   const task = async (args: any) => {
     const path = args?.path;
@@ -480,7 +479,6 @@ const RecorderPageVoiceNote = () => {
 
 
   // 停止錄音
-
   const stopRecording = async () => {
     try {
       const uri = await audioRecorderPlayer.stopRecorder();
@@ -524,12 +522,24 @@ const RecorderPageVoiceNote = () => {
         const name = uri.split('/').pop() || `rec_${now.getTime()}.m4a`;
 
         // 取得錄音長度（秒）
+
         let durationText = '?秒';
+
         try {
           const { sound, status } = await Audio.Sound.createAsync({ uri: normalizedUri });
           if (status.isLoaded && status.durationMillis != null) {
-            const seconds = Math.round(status.durationMillis / 1000);
-            durationText = `${seconds}秒`;
+            const totalSeconds = Math.round(status.durationMillis / 1000);
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = totalSeconds % 60;
+
+            if (hours > 0) {
+              durationText = `${hours}小${minutes}分${seconds}秒`;
+            } else if (minutes > 0) {
+              durationText = `${minutes}分${seconds}秒`;
+            } else {
+              durationText = `${seconds}秒`;
+            }
           }
           await sound.unloadAsync();
         } catch (e) {
@@ -566,46 +576,6 @@ const RecorderPageVoiceNote = () => {
       console.error("❌ 停止錄音失敗：", err);
       Alert.alert("停止錄音失敗", (err as Error).message);
     }
-  };
-
-  // 所有的文字編輯邏輯
-  const startEditing = (index: number, type: 'name' | 'transcript' | 'summary') => {
-    const raw = type === 'name'
-      ? recordings[index]?.displayName || recordings[index]?.name
-      : type === 'transcript'
-        ? recordings[index]?.transcript
-        : recordings[index]?.summaries?.[summaryMode] || '';
-
-    setEditingState({ type, index, text: raw || '' });
-    setSelectedIndex(null);
-  };
-
-  const saveEditing = () => {
-    const { type, index, text } = editingState;
-    if (index === null || !text.trim()) return;
-
-    const updated = recordings.map((rec, i) => {
-      if (i !== index) return rec;
-
-      if (type === 'name') {
-        return { ...rec, displayName: text };
-      } else if (type === 'transcript') {
-        return { ...rec, transcript: text };
-      } else if (type === 'summary') {
-        return {
-          ...rec,
-          summaries: {
-            ...(rec.summaries || {}),
-            [summaryMode]: text,
-          },
-        };
-      }
-      return rec;
-    });
-
-    setRecordings(updated);
-    saveRecordings(updated);
-    resetEditingState();
   };
 
 
@@ -763,6 +733,50 @@ const RecorderPageVoiceNote = () => {
       </SafeAreaView>
     );
   }
+
+  
+  // 所有的文字編輯邏輯
+  const startEditing = (index: number, type: 'name' | 'transcript' | 'summary') => {
+    const raw = type === 'name'
+      ? recordings[index]?.displayName || recordings[index]?.name
+      : type === 'transcript'
+        ? recordings[index]?.transcript
+        : recordings[index]?.summaries?.[summaryMode] || '';
+
+    setEditingState({ type, index, text: raw || '' });
+    setSelectedIndex(null);
+  };
+
+  const saveEditing = () => {
+    const { type, index, text } = editingState;
+    if (index === null || !text.trim()) return;
+
+    const updated = recordings.map((rec, i) => {
+      if (i !== index) return rec;
+
+      if (type === 'name') {
+        return { ...rec, displayName: text };
+      } else if (type === 'transcript') {
+        return { ...rec, transcript: text };
+      } else if (type === 'summary') {
+        return {
+          ...rec,
+          summaries: {
+            ...(rec.summaries || {}),
+            [summaryMode]: text,
+          },
+        };
+      }
+      return rec;
+    });
+
+    setRecordings(updated);
+    saveRecordings(updated);
+    resetEditingState();
+  };
+
+
+  // 修改文字內容
   const renderNoteSection = (index: number, type: 'transcript' | 'summary') => {
     const isTranscript = type === 'transcript';
     const editingIndex = editingState.type === type ? editingState.index : null;
@@ -854,6 +868,10 @@ const RecorderPageVoiceNote = () => {
 
   //轉文字邏輯
   const handleTranscribe = async (index: number) => {
+
+    if (APP_VARIANT === 'notedebug') {
+      checkStoredIdToken();
+    }
 
     const item = recordings[index];
 
@@ -956,8 +974,8 @@ const RecorderPageVoiceNote = () => {
       setShowSummaryIndex(index);
       setSummaryMode('summary');
 
-const idToken = await ensureFreshIdToken(); // 自動判斷是否需要 refresh 或重新登入
-      
+      const idToken = await ensureFreshIdToken(); // 自動判斷是否需要 refresh 或重新登入
+
 
       const coinResult = await logCoinUsage({
         id: user.id,
@@ -980,27 +998,72 @@ const idToken = await ensureFreshIdToken(); // 自動判斷是否需要 refresh 
       setIsTranscribingIndex(null);
     }
   };
-  // 重點摘要邏輯
-  const handleSummarize = async (index: number) => {
-if (APP_VARIANT === 'notedebug') {
-        checkStoredIdToken(); }
+
+  // 重點摘要AI工具箱邏輯
+  const handleSummarize = async (
+
+    index: number,
+    mode: string = 'summary',
+    requirePayment: boolean = false
+  ) => {
+
+    if (APP_VARIANT === 'notedebug') {
+      checkStoredIdToken();
+    }
+
     const item = recordings[index];
 
-    // 如果已經有摘要就顯示出來
-    if (item.summaries?.[summaryMode]) {
+    // ✅ 已有摘要就直接顯示
+    if (item.summaries?.[mode]) {
+      setSummaryMode(mode);
       setShowTranscriptIndex(null);
       setShowSummaryIndex(index);
-      setSummaryMode('summary');
       return;
     }
 
-    // 沒有摘要就自動產生（語言依系統設定）
+    let user: any = null;
+    const cost = 10;
+
+    // ✅ 需要付費 → 確認登入與金幣
+    if (requirePayment) {
+      const stored = await AsyncStorage.getItem('user');
+      if (!stored) {
+        Alert.alert("請先登入", "使用 AI 工具箱需要登入", [
+          { text: "取消", style: "cancel" },
+          { text: "登入", onPress: () => handleLogin(setIsLoggingIn) },
+        ]);
+        return;
+      }
+
+      await loadUserAndSync();
+      const fresh = await AsyncStorage.getItem('user');
+      if (!fresh) {
+        Alert.alert("錯誤", "無法取得使用者資料");
+        return;
+      }
+
+      user = JSON.parse(fresh);
+
+      if (user.coins < cost) {
+        Alert.alert(
+          "金幣不足",
+          `「${summarizeModes.find(m => m.key === mode)?.label || 'AI 工具'}」需要 ${cost} 金幣，你目前剩餘 ${user.coins} 金幣`,
+          [
+            { text: "取消", style: "cancel" },
+            { text: "儲值", onPress: () => setShowTopUpModal(true) },
+          ]
+        );
+        return;
+      }
+    }
+
+    // ✅ 開始處理摘要
     setIsSummarizingIndex(index);
 
     try {
       const summary = await summarizeWithMode(
         item.transcript || '',
-        'summary',
+        mode,
         userLang.includes('CN') ? 'cn' : 'tw'
       );
 
@@ -1010,7 +1073,7 @@ if (APP_VARIANT === 'notedebug') {
             ...rec,
             summaries: {
               ...(rec.summaries || {}),
-              summary,
+              [mode]: summary,
             },
           }
           : rec
@@ -1019,11 +1082,30 @@ if (APP_VARIANT === 'notedebug') {
       setRecordings(updated);
       await saveRecordings(updated);
 
+      // ✅ 如果是付費，扣金幣
+      if (requirePayment && user) {
+        await GoogleSignin.signInSilently();
+        const tokens = await GoogleSignin.getTokens();
+        const idToken = tokens.idToken;
+
+        const result = await logCoinUsage({
+          id: user.id,
+          idToken,
+          action: mode,
+          value: -cost,
+          note: `${mode}：${item.displayName || item.name} 扣 ${cost} 金幣`,
+        });
+
+        user.coins -= cost;
+        await AsyncStorage.setItem('user', JSON.stringify(user));
+      }
+
+      // ✅ 顯示摘要
+      setSummaryMode(mode);
       setShowTranscriptIndex(null);
       setShowSummaryIndex(index);
-      setSummaryMode('summary');
     } catch (err) {
-      console.warn('❌ 摘要失敗:', err);
+      Alert.alert("❌ 摘要失敗", (err as Error).message || "處理失敗");
     } finally {
       setIsSummarizingIndex(null);
     }
@@ -1393,7 +1475,7 @@ if (APP_VARIANT === 'notedebug') {
                                   style={{
                                     paddingVertical: 5,
                                     paddingHorizontal: 8,
-                                    backgroundColor: showSummaryIndex === index
+                                    backgroundColor: showSummaryIndex === index && summaryMode === 'summary'
                                       ? colors.primary
                                       : colors.primary + '60',
                                     borderRadius: 8,
@@ -1402,7 +1484,7 @@ if (APP_VARIANT === 'notedebug') {
                                   disabled={!item.transcript || isAnyProcessing}
                                   onPress={() => {
                                     closeAllMenus();
-                                    handleSummarize(index);
+                                    handleSummarize(index, 'summary', false); // ✅ 不收費
                                   }}
                                 >
                                   <Text style={{ color: 'white', fontSize: 13, textAlign: 'center' }}>重點摘要</Text>
@@ -1413,32 +1495,16 @@ if (APP_VARIANT === 'notedebug') {
                                   style={{
                                     paddingVertical: 5,
                                     paddingHorizontal: 8,
-                                    backgroundColor: summaryMenuContext?.index === index
+                                    backgroundColor: showSummaryIndex === index && summaryMode !== 'summary'
                                       ? colors.primary
                                       : colors.primary + '60',
                                     borderRadius: 8,
                                     opacity: item.transcript && !isAnyProcessing ? 1 : 0.4,
                                   }}
                                   disabled={!item.transcript || isAnyProcessing}
-                                  onPress={async () => {
+                                  onPress={(e) => {
                                     closeAllMenus();
-                                    const stored = await AsyncStorage.getItem('user');
-                                    if (!stored) {
-                                      Alert.alert("請先登入", "使用 AI 工具箱需要登入", [
-                                        { text: "取消", style: "cancel" },
-                                        {
-                                          text: "登入",
-                                          onPress: () => {
-                                            handleLogin(setIsLoggingIn);
-                                          },
-                                        },
-                                      ]);
-                                      return;
-                                    }
-
-                                    Alert.alert('請長按開啟AI工具選單');
-                                  }}
-                                  onLongPress={(e) => {
+                                    // 取得按鈕位置，彈出選單
                                     e.target.measureInWindow((x, y, width, height) => {
                                       setSummaryMenuContext({ index, position: { x, y: y + height } });
                                     });
@@ -1446,6 +1512,7 @@ if (APP_VARIANT === 'notedebug') {
                                 >
                                   <Text style={{ color: 'white', fontSize: 13, textAlign: 'center' }}>AI工具箱</Text>
                                 </TouchableOpacity>
+
 
                                 {/* 隱藏按鈕（只有已顯示 transcript 或 summary 才能點） */}
                                 <TouchableOpacity
@@ -1624,107 +1691,11 @@ if (APP_VARIANT === 'notedebug') {
                               : 'transparent',
                         borderRadius: 4,
                       }}
-                      onPress={async () => {
+                      onPress={() => {
                         closeAllMenus();
                         const idx = summaryMenuContext.index;
                         setSummaryMenuContext(null);
-
-                        const modeLabel = summarizeModes.find(m => m.key === mode.key)?.label || 'AI 工具箱';
-                        console.log(`🧰 使用者選擇 AI 工具箱模式：${mode.key}（${modeLabel}）`);
-
-                        try {
-                          // ✅ 若已存在，直接顯示
-                          if (recordings[idx]?.summaries?.[mode.key]) {
-                            setSummaryMode(mode.key);
-                            setShowTranscriptIndex(null);
-                            setShowSummaryIndex(idx);
-                            return;
-                          }
-
-                          // 🔐 登入與金幣檢查
-                          const stored = await AsyncStorage.getItem('user');
-                          if (!stored) {
-                            Alert.alert("請先登入", "使用 AI 工具箱需要登入", [
-                              { text: "取消", style: "cancel" },
-                              {
-                                text: "登入",
-                                onPress: () => handleLogin(setIsLoggingIn),
-                              },
-                            ]);
-                            return;
-                          }
-
-                          await loadUserAndSync();
-                          const fresh = await AsyncStorage.getItem('user');
-                          if (!fresh) throw new Error("無法取得使用者資料");
-                          const user = JSON.parse(fresh);
-
-                          const cost = 10;
-                          if (user.coins < cost) {
-                            Alert.alert(
-                              "金幣不足",
-                              `「${modeLabel}」需要 ${cost} 金幣，你目前剩餘 ${user.coins} 金幣。\n\n請儲值後再使用。`,
-                              [
-                                { text: "取消", style: "cancel" },
-                                {
-                                  text: "立即儲值",
-                                  onPress: () => setShowTopUpModal(true),
-                                },
-                              ]
-                            );
-                            return;
-                          }
-
-                          setIsSummarizingIndex(idx);
-
-                          // ✨ 執行摘要
-                          const summary = await summarizeWithMode(recordings[idx].transcript || '', mode.key, userLang.includes('CN') ? 'cn' : 'tw');
-
-                          const updated = recordings.map((rec, i) =>
-                            i === idx
-                              ? {
-                                ...rec,
-                                summaries: {
-                                  ...(rec.summaries || {}),
-                                  [mode.key]: summary
-                                }
-                              }
-                              : rec
-                          );
-                          setRecordings(updated);
-                          await saveRecordings(updated);
-
-                          
-
-const idToken = await ensureFreshIdToken(); // 自動判斷是否需要 refresh 或重新登入
-
-                          if (!user.id || !user.email) throw new Error("無法取得使用者資訊");
-
-                          // 💰 扣金幣紀錄
-                          const coinResult = await logCoinUsage({
-                            id: user.id,
-                            idToken,
-                            action: mode.key,
-                            value: -cost,
-                            note: `${modeLabel}：${recordings[idx].displayName || recordings[idx].name || ''}，固定扣 ${cost} 金幣`
-                          });
-
-                          if (!coinResult.success) {
-                            Alert.alert(`${modeLabel}成功，但扣金幣失敗`, coinResult.message || "請稍後再試");
-                          } else {
-                            user.coins -= cost;
-                            await AsyncStorage.setItem('user', JSON.stringify(user));
-                          }
-
-                          setSummaryMode(mode.key);
-                          setShowTranscriptIndex(null);
-                          setShowSummaryIndex(idx);
-
-                        } catch (err) {
-                          Alert.alert(`❌ ${modeLabel}失敗`, (err as Error).message || "摘要失敗，這次不會扣金幣");
-                        } finally {
-                          setIsSummarizingIndex(null);
-                        }
+                        handleSummarize(idx, mode.key, true); // ✅ 呼叫統一邏輯
                       }}
 
                     >
