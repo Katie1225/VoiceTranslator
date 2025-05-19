@@ -98,9 +98,9 @@ const HamburgerMenu = ({
 
       )}
 
-      {/*<Text style={styles.menuItem}>版本: {version} </Text> */}
+      <Text style={styles.menuItem}>版本: {version} </Text> 
 
-      <Text style={styles.menuItem}>版本: {appVersion}</Text>
+     {/* <Text style={styles.menuItem}>版本: {appVersion}</Text>*/}
 
 
       <TouchableOpacity

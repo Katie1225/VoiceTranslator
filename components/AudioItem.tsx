@@ -111,7 +111,7 @@ export const renderMoreButton = (
 );
 
 export const renderNoteBlock = (props: {
-    type: 'transcript' | 'summary';
+    type: 'transcript' | 'summary' | 'notes';
     index: number;
     value: string;
     editingIndex: number | null;

@@ -77,20 +77,23 @@ const RecorderPageVoiceNote = () => {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
 
-  const [notesEditing, setNotesEditing] = useState<string>('');
 
   const [dbHistory, setDbHistory] = useState<number[]>([]);
   const audioRecorderPlayer = useRef(new AudioRecorderPlayer()).current;
   const [isTranscribingIndex, setIsTranscribingIndex] = useState<number | null>(null);
   const [isSummarizingIndex, setIsSummarizingIndex] = useState<number | null>(null);
-  const isAnyProcessing = isTranscribingIndex !== null || isSummarizingIndex !== null;
+  const [isEditingNotesIndex, setIsEditingNotesIndex] = useState<number | null>(null);
+  const isAnyProcessing = isTranscribingIndex !== null || isSummarizingIndex !== null || isEditingNotesIndex !== null;
   const [summaryMode, setSummaryMode] = useState('summary');
+  const [notesEditing, setNotesEditing] = useState<string>('');
+  const [showNotesIndex, setShowNotesIndex] = useState<number | null>(null);
 
   const flatListRef = useRef<FlatList>(null);
   const [itemOffsets, setItemOffsets] = useState<Record<number, number>>({});
   const [selectedPlayingIndex, setSelectedPlayingIndex] = useState<number | null>(null);
   const resetEditingState = () => {
     setEditingState({ type: null, index: null, text: '' });
+    setIsEditingNotesIndex(null);
   };
 
   const [summaryMenuContext, setSummaryMenuContext] = useState<{
@@ -225,12 +228,12 @@ const RecorderPageVoiceNote = () => {
 
   // 所有的文字編輯宣告
   const [editingState, setEditingState] = useState<{
-    type: 'transcript' | 'summary' | 'name' | null;
+    type: 'transcript' | 'summary' | 'name' | 'notes' | null;
     index: number | null;
     text: string;
   }>({ type: null, index: null, text: '' });
 
-  const shareText = async (text: string, type: 'transcript' | 'summary', filename?: string) => {
+  const shareText = async (text: string, type: 'transcript' | 'summary' | 'notes', filename?: string) => {
     if (!text || text.trim() === '') {
       Alert.alert('無法分享', '內容為空');
       return;
@@ -240,10 +243,12 @@ const RecorderPageVoiceNote = () => {
     if (filename) {
       let label = '';
       if (type === 'transcript') {
-        label = '錄音筆記';
+        label = '錄音文檔';
       } else if (type === 'summary') {
         const found = summarizeModes.find(m => m.key === summaryMode);
         label = found?.label || '重點整理';
+      } else if (type === 'notes') {
+        label = '談話筆記';
       }
 
       prefix = `${filename} - ${label}\n\n`;
@@ -729,12 +734,15 @@ const RecorderPageVoiceNote = () => {
 
 
   // 所有的文字編輯邏輯
-  const startEditing = (index: number, type: 'name' | 'transcript' | 'summary') => {
+  const startEditing = (index: number, type: 'name' | 'transcript' | 'summary' | 'notes') => {
     const raw = type === 'name'
       ? recordings[index]?.displayName || recordings[index]?.name
       : type === 'transcript'
         ? recordings[index]?.transcript
-        : recordings[index]?.summaries?.[summaryMode] || '';
+        : type === 'summary'
+          ? recordings[index]?.summaries?.[summaryMode] || ''
+          : recordings[index]?.notes || '';
+    ;
 
     setEditingState({ type, index, text: raw || '' });
     setSelectedIndex(null);
@@ -759,6 +767,8 @@ const RecorderPageVoiceNote = () => {
             [summaryMode]: text,
           },
         };
+      } else if (type === 'notes') {
+        return { ...rec, notes: text };
       }
       return rec;
     });
@@ -770,11 +780,17 @@ const RecorderPageVoiceNote = () => {
 
 
   // 修改文字內容
-  const renderNoteSection = (index: number, type: 'transcript' | 'summary') => {
+  const renderNoteSection = (index: number, type: 'transcript' | 'summary' | 'notes') => {
     const isTranscript = type === 'transcript';
+    const isNotes = type === 'notes';
     const editingIndex = editingState.type === type ? editingState.index : null;
     const editValue = editingState.type === type && editingState.index === index ? editingState.text : '';
-    const itemValue = isTranscript ? recordings[index]?.transcript : recordings[index]?.summaries?.[summaryMode] || '';
+    const itemValue =
+      isTranscript
+        ? recordings[index]?.transcript
+        : type === 'summary'
+          ? recordings[index]?.summaries?.[summaryMode] || ''
+          : recordings[index]?.notes || '';
     console.log('[renderNoteSection] index=', index, 'type=', type, 'editing=', editingIndex === index);
 
 
@@ -786,10 +802,17 @@ const RecorderPageVoiceNote = () => {
       editValue,
       onChangeEdit: (text: string) => {
         setEditingState({ type, index, text });
+        if (type === 'notes') {
+          setIsEditingNotesIndex(index);
+        }
       },
-      onSave: saveEditing,
+      onSave: () => {
+        saveEditing();
+        setIsEditingNotesIndex(null);
+      },
       onCancel: () => {
         resetEditingState();
+        setIsEditingNotesIndex(null);
       },
       onDelete: async () => {
         if (type === 'summary') {
@@ -829,26 +852,30 @@ const RecorderPageVoiceNote = () => {
           await saveRecordings(updated);
           setShowTranscriptIndex(null);
           setIsTranscribingIndex(null);
-        } if (type === 'transcript') {
+        }
+        if (type === 'notes') {
           const updated = recordings.map((rec, i) => {
             if (i !== index) return rec;
-            return { ...rec, transcript: '' };
+            return { ...rec, notes: '' };
           });
 
           setRecordings(updated);
           await saveRecordings(updated);
-          setShowTranscriptIndex(null);
-          setIsTranscribingIndex(null);
+          resetEditingState();
+          setIsEditingNotesIndex(null);
         }
       },
 
       onShare: async () => {
         const item = recordings[index];
-        const textToShare = type === 'summary'
-          ? (item.summaries?.[summaryMode] || '')
-          : (item.transcript || '');
+        const textToShare =
+          type === 'summary'
+            ? (item.summaries?.[summaryMode] || '')
+            : type === 'transcript'
+              ? (item.transcript || '')
+              : (item.notes || '');
 
-        await shareText(textToShare, type, item.displayName || item.name);
+        await shareText(textToShare, type, item.displayName || item.name || item.notes);
 
         if (type === 'summary') {
           setIsSummarizingIndex(null); // 分享完清 loading
@@ -1054,11 +1081,16 @@ const RecorderPageVoiceNote = () => {
     setIsSummarizingIndex(index);
 
     try {
+      const fullPrompt = item.notes?.trim()
+        ? `使用者補充筆記：${item.notes} 錄音文字如下：${item.transcript}`
+        : item.transcript || '';
+
       const summary = await summarizeWithMode(
-        item.transcript || '',
+        fullPrompt,
         mode,
         userLang.includes('CN') ? 'cn' : 'tw'
       );
+
 
       const updated = recordings.map((rec, i) =>
         i === index
@@ -1418,6 +1450,31 @@ const RecorderPageVoiceNote = () => {
                           {(isCurrentPlaying || !item.transcript) && (
                             <View style={styles.actionButtons}>
                               <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 }}>
+                                {/* 談話筆記 */}
+                                <TouchableOpacity
+                                  style={{
+                                    paddingVertical: 5,
+                                    paddingHorizontal: 8,
+                                    backgroundColor: showNotesIndex === index
+                                      ? colors.primary
+                                      : colors.primary + '80',
+                                    borderRadius: 8,
+                                    opacity: isAnyProcessing ? 0.4 : 1,
+                                  }}
+                                  disabled={isAnyProcessing || (editingState.type === 'notes' && editingState.index !== null)}
+
+                                  onPress={() => {
+                                    closeAllMenus();
+                                    setShowTranscriptIndex(null);
+                                    setShowSummaryIndex(null);
+                                    setShowNotesIndex(null);
+                                    setShowNotesIndex(index);
+                                  }}
+                                >
+                                  <Text style={{ color: 'white', fontSize: 13 }}>談話筆記</Text>
+                                </TouchableOpacity>
+
+
                                 {/* 轉文字按鈕 */}
                                 <TouchableOpacity
                                   style={{
@@ -1425,37 +1482,20 @@ const RecorderPageVoiceNote = () => {
                                     paddingHorizontal: 8,
                                     backgroundColor: showTranscriptIndex === index
                                       ? colors.primary
-                                      : colors.primary + '60',
+                                      : colors.primary + '80',
                                     borderRadius: 8,
                                     opacity: isAnyProcessing ? 0.4 : 1,
                                   }}
                                   disabled={isAnyProcessing}
                                   onPress={() => {
                                     closeAllMenus();
+                                    setShowTranscriptIndex(null);
+                                    setShowSummaryIndex(null);
+                                    setShowNotesIndex(null);
                                     handleTranscribe(index);
                                   }}
                                 >
-                                  <Text style={{ color: 'white', fontSize: 13 }}>錄音筆記</Text>
-                                </TouchableOpacity>
-
-                                {/* 重點摘要按鈕 */}
-                                <TouchableOpacity
-                                  style={{
-                                    paddingVertical: 5,
-                                    paddingHorizontal: 8,
-                                    backgroundColor: showSummaryIndex === index && summaryMode === 'summary'
-                                      ? colors.primary
-                                      : colors.primary + '60',
-                                    borderRadius: 8,
-                                    opacity: item.transcript && !isAnyProcessing ? 1 : 0.4,
-                                  }}
-                                  disabled={!item.transcript || isAnyProcessing}
-                                  onPress={() => {
-                                    closeAllMenus();
-                                    handleSummarize(index, 'summary', false); // ✅ 不收費
-                                  }}
-                                >
-                                  <Text style={{ color: 'white', fontSize: 13, textAlign: 'center' }}>重點摘要</Text>
+                                  <Text style={{ color: 'white', fontSize: 13 }}>錄音文檔</Text>
                                 </TouchableOpacity>
 
                                 {/* AI工具箱按鈕 */}
@@ -1463,15 +1503,18 @@ const RecorderPageVoiceNote = () => {
                                   style={{
                                     paddingVertical: 5,
                                     paddingHorizontal: 8,
-                                    backgroundColor: showSummaryIndex === index && summaryMode !== 'summary'
+                                    backgroundColor: showSummaryIndex === index
                                       ? colors.primary
-                                      : colors.primary + '60',
+                                      : colors.primary + '80',
                                     borderRadius: 8,
                                     opacity: item.transcript && !isAnyProcessing ? 1 : 0.4,
                                   }}
                                   disabled={!item.transcript || isAnyProcessing}
                                   onPress={(e) => {
                                     closeAllMenus();
+                                    setShowTranscriptIndex(null);
+                                    setShowSummaryIndex(null);
+                                    setShowNotesIndex(null);
                                     // 取得按鈕位置，彈出選單
                                     e.target.measureInWindow((x, y, width, height) => {
                                       setSummaryMenuContext({ index, position: { x, y: y + height } });
@@ -1489,6 +1532,7 @@ const RecorderPageVoiceNote = () => {
                                     closeAllMenus();
                                     setShowTranscriptIndex(null);
                                     setShowSummaryIndex(null);
+                                    setShowNotesIndex(null);
                                   }}
                                   style={{
                                     paddingVertical: 5,
@@ -1504,7 +1548,7 @@ const RecorderPageVoiceNote = () => {
                           )}
 
                           {/* 處理中loading（兄弟，不包進 actionButtons） */}
-                          {(isTranscribingIndex === index || isSummarizingIndex === index) && (
+                          {(isTranscribingIndex === index || isSummarizingIndex === index || isEditingNotesIndex !== null) && (
                             <View style={{ marginTop: 6, alignItems: 'flex-start', paddingHorizontal: 12 }}>
                               {isTranscribingIndex === index && (
                                 <Text style={{ color: colors.primary }}>⏳ 錄音筆記處理中...</Text>
@@ -1518,21 +1562,20 @@ const RecorderPageVoiceNote = () => {
                           )}
 
                           {/* 內容顯示區 */}
-
                           {(isCurrentPlaying) && (
                             <>
-                              {(showTranscriptIndex === index || showSummaryIndex === index) && (
-                                <>{renderNoteSection(index, showTranscriptIndex === index ? 'transcript' : 'summary')}</>
+                              {(showTranscriptIndex === index || showSummaryIndex === index || showNotesIndex === index) && (
+                                <>
+                                  {renderNoteSection(index,
+                                    showTranscriptIndex === index ? 'transcript'
+                                      : showSummaryIndex === index ? 'summary'
+                                        : showNotesIndex === index ? 'notes'
+                                          : 'transcript')}
+                                </>
                               )}
+
                             </>
                           )}
-                          {item.notes && !shouldHideDefaultUI && (
-                            <View style={{ backgroundColor: colors.container, borderRadius: 10, padding: 10, marginTop: 8 }}>
-                              <Text style={{ color: colors.text, fontWeight: 'bold', marginBottom: 4 }}>📝 關鍵內容</Text>
-                              <Text style={{ color: colors.text }}>{item.notes}</Text>
-                            </View>
-                          )}
-
 
                           {/* 衍生檔案列表 */}
                           {shouldShowDerivedFiles(title) && !shouldHideDefaultUI && hasDerivedFiles && (
@@ -1591,6 +1634,7 @@ const RecorderPageVoiceNote = () => {
                   deleteRecording(index); // 一次刪整包
                   setShowTranscriptIndex(null);
                   setShowSummaryIndex(null);
+                  setShowNotesIndex(null);
                   resetEditingState();
                   setSelectedContext(null);
                 }}
@@ -1650,41 +1694,39 @@ const RecorderPageVoiceNote = () => {
                 shadowOffset: { width: 0, height: 2 },
                 shadowRadius: 4,
               }}>
-                {summarizeModes
-                  .filter(mode => mode.key !== 'summary') // ✅ 過濾掉 summary 模式
-                  .map((mode) => (
-                    <TouchableOpacity
-                      key={mode.key}
-                      style={{
-                        paddingVertical: 8,
-                        paddingHorizontal: 12,
-                        backgroundColor:
-                          summaryMode === mode.key
-                            ? colors.primary + '50'
-                            : recordings[summaryMenuContext.index]?.summaries?.[mode.key]
-                              ? colors.primary + '10'
-                              : 'transparent',
-                        borderRadius: 4,
-                      }}
-                      onPress={() => {
-                        closeAllMenus();
-                        const idx = summaryMenuContext.index;
-                        setSummaryMenuContext(null);
-                        handleSummarize(idx, mode.key, true); // ✅ 呼叫統一邏輯
-                      }}
-
-                    >
-                      <Text style={{
-                        color: colors.text,
-                        fontWeight: recordings[summaryMenuContext.index]?.summaries?.[mode.key]
-                          ? 'bold'
-                          : 'normal',
-                      }}>
-                        {mode.label}
-                        {recordings[summaryMenuContext.index]?.summaries?.[mode.key] ? ' ✓' : ''}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                {summarizeModes.map((mode) => (
+                  <TouchableOpacity
+                    key={mode.key}
+                    style={{
+                      paddingVertical: 8,
+                      paddingHorizontal: 12,
+                      backgroundColor:
+                        summaryMode === mode.key
+                          ? colors.primary + '50'
+                          : recordings[summaryMenuContext.index]?.summaries?.[mode.key]
+                            ? colors.primary + '10'
+                            : 'transparent',
+                      borderRadius: 4,
+                    }}
+                    onPress={() => {
+                      closeAllMenus();
+                      const idx = summaryMenuContext.index;
+                      setSummaryMenuContext(null);
+                      const isFree = mode.key === 'summary'; // ✅ 只有 summary 不收費
+                      handleSummarize(idx, mode.key, !isFree);
+                    }}
+                  >
+                    <Text style={{
+                      color: colors.text,
+                      fontWeight: recordings[summaryMenuContext.index]?.summaries?.[mode.key]
+                        ? 'bold'
+                        : 'normal',
+                    }}>
+                      {mode.label}
+                      {recordings[summaryMenuContext.index]?.summaries?.[mode.key] ? ' ✓' : ''}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
               </View>
             )}
 
