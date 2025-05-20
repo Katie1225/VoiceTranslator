@@ -218,7 +218,6 @@ const RecorderPageVoiceNote = () => {
     position: { x: number; y: number };
   } | null>(null);
 
-
   // 變速播放
   const [speedMenuIndex, setSpeedMenuIndex] = useState<number | null>(null);
   const [speedMenuPosition, setSpeedMenuPosition] = useState<{ x: number; y: number } | null>(null);
@@ -994,12 +993,8 @@ const RecorderPageVoiceNote = () => {
       setShowSummaryIndex(index);
       setSummaryMode('summary');
 
-      const idToken = await ensureFreshIdToken(); // 自動判斷是否需要 refresh 或重新登入
-
-
       const coinResult = await logCoinUsage({
         id: user.id,
-        idToken,
         action: 'transcript',
         value: -coinsToDeduct,
         note: `轉文字：${item.displayName || item.name || ''}，長度 ${durationSec}s，扣 ${coinsToDeduct} 金幣`
@@ -1109,13 +1104,9 @@ const RecorderPageVoiceNote = () => {
 
       // ✅ 如果是付費，扣金幣
       if (requirePayment && user) {
-        await GoogleSignin.signInSilently();
-        const tokens = await GoogleSignin.getTokens();
-        const idToken = tokens.idToken;
 
         const result = await logCoinUsage({
           id: user.id,
-          idToken,
           action: mode,
           value: -cost,
           note: `${mode}：${item.displayName || item.name} 扣 ${cost} 金幣`,
@@ -1181,14 +1172,13 @@ const RecorderPageVoiceNote = () => {
               </View>
             </View>
 
-
             {/* 關鍵筆記 */}
 
             {recording && (
               <View style={{ paddingHorizontal: 12, paddingVertical: 10, backgroundColor: colors.container, borderRadius: 12, margin: 10 }}>
                 <Text style={{ color: colors.text, fontWeight: 'bold', marginBottom: 4 }}>📝 談話關鍵字</Text>
                 <TextInput
-                  placeholder="輸入關鍵內容..."
+                  placeholder="輸入關鍵字或複製貼上Agenda"
                   placeholderTextColor={colors.text + '80'}
                   value={notesEditing}
                   onChangeText={setNotesEditing}
@@ -1206,8 +1196,6 @@ const RecorderPageVoiceNote = () => {
                 />
               </View>
             )}
-
-
 
             {/* 錄音列表 */}
             {recordings.length === 0 ? (

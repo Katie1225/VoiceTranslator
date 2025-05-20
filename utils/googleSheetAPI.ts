@@ -1,6 +1,7 @@
 // googleSheetAPI.ts
 const BASE_URL = 'https://katielab.com/v1/iap-redeem/';
 
+import { ensureFreshIdToken } from './loginHelpers';
 
 
 // 全域使用者暫存
@@ -44,24 +45,23 @@ export async function fetchUserInfo(id: string) {
 
 export async function logCoinUsage({
   id,
-  idToken,
   action,
   value,
   note,
 }: {
   id: string;
-  idToken: string;
   action: string;
   value: number;
   note?: string;
 }) {
   try {
-    console.log("🧪 idToken 發行時間:", JSON.parse(atob(idToken.split('.')[1])));
-    //  const res = await fetch(BASE_URL+"/", {
+        //     const idToken = await ensureFreshIdToken(); // 這裡才驗證
+   // console.log("🧪 idToken 發行時間:", JSON.parse(atob(idToken.split('.')[1])));
+
     const res = await fetch(BASE_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, idToken, action, value, note }),
+      body: JSON.stringify({ id, action, value, note, idToken: undefined,}),
     });
     return await res.json();
   } catch (err) {
@@ -69,3 +69,28 @@ export async function logCoinUsage({
   }
 }
 
+export async function checkCoinUsage({
+  id,
+  action,
+  value,
+  note,
+}: {
+  id: string;
+  action: string;
+  value: number;
+  note?: string;
+}) {
+  try {
+    const idToken = await ensureFreshIdToken(); // 這裡才驗證
+   // console.log("🧪 idToken 發行時間:", JSON.parse(atob(idToken.split('.')[1])));
+
+    const res = await fetch(BASE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, action, value, note, idToken,}),
+    });
+    return await res.json();
+  } catch (err) {
+    return { success: false, message: (err as Error).message };
+  }
+}

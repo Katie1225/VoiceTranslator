@@ -4,7 +4,7 @@ require('dotenv').config();
 
 const whisperRoute = require('./whisper-v1');
 const summarizeRoute = require('./summarize-v1');
-const iapRoute = require('./iap-redeem'); 
+const iapRoute = require('./iap-redeem-v1'); 
 
 const app = express();
 app.use(cors());
@@ -21,6 +21,8 @@ app.use('/v1/summarize', summarizeRoute);
 app.use('/v1/iap-redeem', iapRoute);
 
 // 啟動伺服器
-app.listen(3001, () => {
-  console.log('V1 綠燈伺服器啟動：http://localhost:3001');
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => {
+  console.log(`V1 綠燈伺服器啟動：http://localhost:${PORT}`);
 });
+

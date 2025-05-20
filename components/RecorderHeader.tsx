@@ -55,61 +55,66 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = ({
 
     return (
         <>
-        <View style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            paddingHorizontal: 6,
-            paddingTop: 0,
-            minHeight: 70,
-        }}>
-            {/* 左邊 45%：時間 / 標題 */}
-            <View style={{ flex: 4.5, marginRight: 0 }}>
-                <Text style={{ color: colors.primary, fontSize: 26, fontWeight: '500', fontStyle: 'italic' }}>
-                    {recording ? `⏱ ${formatTime(displayTime * 1000)}` : title}
-                </Text>
-            </View>
-
-            {/* 中間 45%：錄音按鈕 */}
-            <View style={{ flex: 4.5, marginRight: 0 }}>
-                <TouchableOpacity
-                    style={recording ? styles.stopButton : styles.recordButton}
-                    onPress={recording ? stopRecording : startRecording}
-                >
-                    <Text style={styles.buttonText}>
-                        {recording ? '停止錄音' : '開始錄音'}
-                    </Text>
-                </TouchableOpacity>
-            </View>
-
-            {/* 右邊 15%：上下的 ☰ / ＋ */}
             <View style={{
-                flex: 1.5,
-                justifyContent: 'space-between',
+                flexDirection: 'row',
                 alignItems: 'center',
-                height: 70,
+                justifyContent: 'space-between',
+                paddingHorizontal: 6,
+                paddingTop: 0,
+                minHeight: 70,
             }}>
-                <TouchableOpacity onPress={() => setMenuVisible(!menuVisible)}>
-                    <Text style={{ fontSize: 20, color: colors.primary }}>☰</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={pickAudio}>
-                    <Text style={{ fontSize: 20, color: colors.primary }}>＋</Text>
-                </TouchableOpacity>
+                {/* 左邊 45%：時間 / 標題 */}
+                <View style={{ flex: 4.5, marginRight: 0 }}>
+                    <Text numberOfLines={1}
+                        ellipsizeMode="tail"
+                        style={{ color: colors.primary, fontSize: 26, fontWeight: '500', fontStyle: 'italic' }}>
+                        {recording ? `⏱ ${formatTime(displayTime * 1000)}` : title}
+                    </Text>
+                </View>
+
+                {/* 中間 45%：錄音按鈕 */}
+                <View style={{ flex: 4, marginRight: 0 }}>
+                    <TouchableOpacity
+                        style={recording ? styles.stopButton : styles.recordButton}
+                        onPress={recording ? stopRecording : startRecording}
+                    >
+                        <Text
+                            numberOfLines={1}
+                            ellipsizeMode="tail"
+                            style={styles.buttonText}>
+                            {recording ? '停止錄音' : '開始錄音'}
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+
+                {/* 右邊 15%：上下的 ☰ / ＋ */}
+                <View style={{
+                    flex: 1.5,
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    height: 70,
+                }}>
+                    <TouchableOpacity onPress={() => setMenuVisible(!menuVisible)}>
+                        <Text style={{ fontSize: 20, color: colors.primary }}>☰</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={pickAudio}>
+                        <Text style={{ fontSize: 20, color: colors.primary }}>📂</Text>
+                    </TouchableOpacity>
+                </View>
             </View>
-        </View>
-{/* ☰ 選單 */}
-      <HamburgerMenu
-        visible={menuVisible}
-        onClose={() => setMenuVisible(false)}
-        isDarkMode={isDarkMode}
-        toggleTheme={toggleTheme}
-        customPrimaryColor={customPrimaryColor}
-        setCustomPrimaryColor={setCustomPrimaryColor}
-        styles={styles}
-        onLoginPress={() => handleLogin(setIsLoggingIn)}
-        onLoginSuccess={() => setMenuVisible(false)}
-      />
-    </>
+            {/* ☰ 選單 */}
+            <HamburgerMenu
+                visible={menuVisible}
+                onClose={() => setMenuVisible(false)}
+                isDarkMode={isDarkMode}
+                toggleTheme={toggleTheme}
+                customPrimaryColor={customPrimaryColor}
+                setCustomPrimaryColor={setCustomPrimaryColor}
+                styles={styles}
+                onLoginPress={() => handleLogin(setIsLoggingIn)}
+                onLoginSuccess={() => setMenuVisible(false)}
+            />
+        </>
     );
 };
 

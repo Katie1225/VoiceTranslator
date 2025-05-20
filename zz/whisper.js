@@ -45,17 +45,20 @@ router.post('/', upload.single('audio'), async (req, res) => {
       }
     );
 
-    // 清除雜訊詞
-    const opencc = OpenCC.Converter({ from: 'cn', to: 'tw' }); // 簡轉繁
-
-    const rawText = response.data.text;
-    const traditionalText = opencc(rawText); // 轉繁體
-
     // 清除暫存音檔
     fs.unlinkSync(audioFile.path);
     fs.unlinkSync(wavPath);
 
-    res.json({ text: traditionalText.trim() });
+// 加上讀取語言設定
+const { targetLang = 'tw' } = req.body;
+
+// 動態轉換器
+const opencc = OpenCC.Converter({ from: 'cn', to: targetLang });
+
+const rawText = response.data.text;
+const convertedText = opencc(rawText); // 不判斷來源，永遠轉換
+res.json({ text: convertedText.trim() });
+
   } catch (error) {
     fs.unlinkSync(audioFile.path);
     if (fs.existsSync(wavPath)) fs.unlinkSync(wavPath);

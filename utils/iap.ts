@@ -11,7 +11,7 @@ import {
 } from 'react-native-iap';
 import { Alert, Platform, EmitterSubscription } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { logCoinUsage } from './googleSheetAPI';
+import { logCoinUsage, checkCoinUsage } from './googleSheetAPI';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
 // 金幣規則設定
@@ -112,9 +112,8 @@ class PurchaseManager {
             const tokens = await GoogleSignin.getTokens();
             const user = JSON.parse(await AsyncStorage.getItem('user') || '{}');
 
-            const result = await logCoinUsage({
+            const result = await checkCoinUsage({
                 id: user.id,
-                idToken: tokens.idToken,
                 action: 'topup',
                 value: coinsToAdd,
                 note: `購買 ${coinsToAdd} 金幣`
