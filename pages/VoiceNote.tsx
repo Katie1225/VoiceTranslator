@@ -47,9 +47,9 @@ import {
 } from '../components/AudioItem';
 import { uFPermissions } from '../src/hooks/uFPermissions';
 import { logCoinUsage } from '../utils/googleSheetAPI';
-import { handleLogin, loadUserAndSync, ensureFreshIdToken } from '../utils/loginHelpers';
+import { handleLogin, loadUserAndSync, COIN_UNIT_MINUTES, COIN_COST_PER_UNIT } from '../utils/loginHelpers';
 import TopUpModal from '../components/TopUpModal';
-import { productIds, productToCoins, purchaseManager, COIN_UNIT_MINUTES, COIN_COST_PER_UNIT } from '../utils/iap';
+import { productIds, productToCoins, purchaseManager,} from '../utils/iap';
 import { APP_VARIANT } from '../constants/variant';
 import { checkStoredIdToken } from '../utils/Test';
 import RecorderHeader from '../components/RecorderHeader';
@@ -76,7 +76,6 @@ const RecorderPageVoiceNote = () => {
   const recordingStartTimestamp = useRef<number | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
-
 
   const [dbHistory, setDbHistory] = useState<number[]>([]);
   const audioRecorderPlayer = useRef(new AudioRecorderPlayer()).current;
@@ -171,6 +170,8 @@ const RecorderPageVoiceNote = () => {
 
 
   const [resumeAfterTopUp, setResumeAfterTopUp] = useState<null | { index: number }>(null);
+
+  
 
   // 替換原有的 handlePurchase 函數
   const handleTopUp = async (productId: string) => {

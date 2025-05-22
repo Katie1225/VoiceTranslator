@@ -1,6 +1,7 @@
 import { FFmpegKit, ReturnCode } from 'ffmpeg-kit-react-native';
 import * as FileSystem from 'expo-file-system';
 import { Audio } from 'expo-av';
+import { nginxVersion } from '../constants/variant';
 
 export type RecordingItem = {
   uri: string;
@@ -14,9 +15,9 @@ export type RecordingItem = {
   summaries?: { [mode: string]: string };
   transcriptEdited?: string;
   summaryEdited?: string;
-  date?: string; 
-  notes?: string; 
-  segments?: string[]; 
+  date?: string;
+  notes?: string;
+  segments?: string[];
   derivedFiles?: {
     enhanced?: RecordingItem;
     trimmed?: {
@@ -237,7 +238,7 @@ export const transcribeAudio = async (
         console.log(`⏭️ 跳過過短分段 (${segmentDuration}s)`);
         continue;
       }
-    
+
       console.log(`📤 上傳第 ${i + 1} 段`);
       const formData = new FormData();
       formData.append('audio', {
@@ -246,8 +247,17 @@ export const transcribeAudio = async (
         type: 'audio/wav',
       } as any);
       formData.append('targetLang', targetLang);
-    
-      const response = await fetch('https://katielab.com/v1/transcribe/', {
+
+      let BASE_URL: string;
+      if (nginxVersion === 'blue') {
+        BASE_URL = 'https://katielab.com/transcribe/';
+      } else if (nginxVersion === 'green') {
+        BASE_URL = 'https://katielab.com/v1/transcribe/';
+      } else {
+        throw new Error('未知的 nginxVersion');
+      }
+
+      const response = await fetch(BASE_URL, {
         method: 'POST',
         headers: {
           Accept: 'application/json',
@@ -255,7 +265,7 @@ export const transcribeAudio = async (
         },
         body: formData,
       });
-    
+
       const raw = await response.text();
       if (!response.ok) {
         console.error(`❌ 第 ${i + 1} 段錯誤：`, raw);
@@ -263,7 +273,7 @@ export const transcribeAudio = async (
       } else {
         console.log('✅ 呼叫 Whisper API 成功');
       }
-    
+
       let text = '';
       try {
         const parsed = JSON.parse(raw);
@@ -277,19 +287,19 @@ export const transcribeAudio = async (
           throw new Error(`第 ${i + 1} 段回傳格式錯誤`);
         }
       }
-    
+
       const sentences = text.split(/(?<=[。！？!?\n])/);
       const filtered = sentences.filter(s => !suspiciousPhrases.some(p => s.includes(p)));
       text = filtered.join('').trim();
-    
+
       if (text.trim()) {
         accumulated += text + '\n';
       }
-    
+
       onPartial?.(accumulated.trim(), i + 1, segmentCount);
       await FileSystem.deleteAsync(segmentPath, { idempotent: true });  // 清除暫存段落檔案
     }
-    
+
     return { transcript: { text: accumulated.trim() } };
 
   } catch (err) {
@@ -340,7 +350,18 @@ export async function summarizeWithMode(
   if (!mode) throw new Error('未知的摘要模式');
 
   const finalPrompt = `${mode.prompt}\n\n使用者的主機語言是 ${targetLang}，請用此語言回覆。`;
-  const res = await fetch('https://katielab.com/v1/summarize/', {
+
+  let BASE_URL: string;
+
+  if (nginxVersion === 'blue') {
+    BASE_URL = 'https://katielab.com/summarize/';
+  } else if (nginxVersion === 'green') {
+    BASE_URL = 'https://katielab.com/v1/summarize/';
+  } else {
+    throw new Error('未知的 nginxVersion');
+  }
+
+  const res = await fetch(BASE_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

@@ -1,11 +1,19 @@
 // utils/loginHelpers.ts
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { logCoinUsage, fetchUserInfo } from './googleSheetAPI';
-import { INITIAL_GIFT_COINS, COINS_PER_MINUTE } from './iap';
+import { logCoinUsage, fetchUserInfo, checkCoinUsage } from './googleSheetAPI';
 import { Alert } from 'react-native';
+import { ensureFreshIdToken } from './authToken';
 
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
+
+
+// 金幣規則設定
+export const INITIAL_GIFT_COINS = 100;     // 首次登入送 100 金幣
+export const COIN_UNIT_MINUTES = 1;       // 幾分鐘為一單位
+export const COIN_COST_PER_UNIT = 1;      // 每單位扣幾金幣
+
+export const COINS_PER_MINUTE = COIN_COST_PER_UNIT / COIN_UNIT_MINUTES;
 
 // 手動登入
 export const handleLogin = async (
@@ -14,8 +22,6 @@ export const handleLogin = async (
     if (setLoading) setLoading(true);
 
     try {
-        await GoogleSignin.signInSilently();
-        
         const result = await GoogleSignin.signIn();
         const user = (result as any)?.data?.user || {};
         
@@ -37,7 +43,7 @@ export const handleLogin = async (
         };
 
         console.log(baseUser);
-        await logCoinUsage({ ...baseUser, action: 'signup', value: 0, note: '首次登入紀錄' });
+        await checkCoinUsage({ ...baseUser, action: 'signup', value: 0, note: '首次登入紀錄' });
 
         // 同步 Google Sheet 上的用戶狀態
         const remote = await fetchUserInfo(user.id);
@@ -87,30 +93,6 @@ export const handleLogin = async (
     } finally {
         if (setLoading) setLoading(false);
     }
-};
-
-// Token 過期自動登入
-export const ensureFreshIdToken = async (): Promise<string> => {
-  const tokens = await GoogleSignin.getTokens();
-  const idToken = tokens.idToken;
-  const payload = JSON.parse(atob(idToken.split('.')[1]));
-  const now = Math.floor(Date.now() / 1000);
-
-  const tokenAgeSec = now - payload.iat;
-
-  if (tokenAgeSec > 3600) { // 超過1小時
-    try {
-      await GoogleSignin.signOut();
-      await GoogleSignin.signInSilently(); // 無 UI 自動登入
-      const freshTokens = await GoogleSignin.getTokens();
-      return freshTokens.idToken;
-    } catch {
-      const freshUser = await GoogleSignin.signIn(); // fallback 重新登入
-      const freshTokens = await GoogleSignin.getTokens();
-      return freshTokens.idToken;
-    }
-  }
-  return idToken;
 };
 
 // 從本地 AsyncStorage 取出目前登入的使用者資訊

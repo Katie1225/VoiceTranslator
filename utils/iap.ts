@@ -13,20 +13,19 @@ import { Alert, Platform, EmitterSubscription } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { logCoinUsage, checkCoinUsage } from './googleSheetAPI';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import {debugValue} from '../constants/variant'
 
-// 金幣規則設定
-export const INITIAL_GIFT_COINS = 100;     // 首次登入送 100 金幣
-export const COIN_UNIT_MINUTES = 1;       // 幾分鐘為一單位
-export const COIN_COST_PER_UNIT = 1;      // 每單位扣幾金幣
 
-export const COINS_PER_MINUTE = COIN_COST_PER_UNIT / COIN_UNIT_MINUTES;
+
+
+
 
 
 // 產品配置
 export const productToCoins: Record<string, number> = {
-    'topup_100': 100,
-    'topup_400': 400,
-    'topup_1000': 1000,
+  'topup_100': debugValue === '1' ? 10 : 100,
+  'topup_400': 400,
+  'topup_1000': 1000,
 };
 
 export const productIds = Object.keys(productToCoins);
@@ -102,15 +101,21 @@ class PurchaseManager {
             // 完成交易
             await finishTransaction({ purchase, isConsumable: true });
 
+                            console.log('✅ google交易已完成，使用者完成付款');
+
             // 驗證產品
             const coinsToAdd = productToCoins[purchase.productId];
             if (!coinsToAdd) {
                 throw new Error(`無效產品ID: ${purchase.productId}`);
             }
 
+                            console.log('✅ 有效產品 ID');
+            
+
             // 記錄金幣
-            const tokens = await GoogleSignin.getTokens();
             const user = JSON.parse(await AsyncStorage.getItem('user') || '{}');
+
+             console.log('✅ 紀錄金幣');
 
             const result = await checkCoinUsage({
                 id: user.id,
@@ -119,6 +124,8 @@ class PurchaseManager {
                 note: `購買 ${coinsToAdd} 金幣`
             });
 
+   console.log('✅ 上傳金幣');
+   
             if (!result.success) {
                 throw new Error(result.message || '金幣記錄失敗');
             }

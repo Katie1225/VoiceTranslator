@@ -69,7 +69,6 @@ const HamburgerMenu = ({
   };
 
   if (!visible) return null;
-  const coins = getCachedUser()?.coins ?? 0;
 
   return (
     <View style={styles.menuContainer}>
@@ -84,7 +83,7 @@ const HamburgerMenu = ({
               <Text style={styles.menuItem}>{currentUser.name || currentUser.email}</Text>
             </View>
             {typeof currentUser.coins === 'number' && (
-              <Text style={[styles.menuItem, { fontSize: 12, color: 'gold' }]}>💰 金幣：{coins}</Text>
+              <Text style={[styles.menuItem, { fontSize: 12, color: 'gold' }]}>💰 金幣：{currentUser.coins}</Text>
             )}
           </View>
           <TouchableOpacity onPress={handleLogout}>

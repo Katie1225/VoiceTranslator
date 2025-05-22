@@ -14,11 +14,11 @@ type Props = {
 const TopUpModal = ({ visible, onClose, onSelect, styles, colors, products }: Props) => {
   const [isProcessing, setIsProcessing] = useState(false);
   // Sort products by price (low to high)
-const sortedProducts = [...products].sort((a, b) => {
-  const priceA = parseFloat((a.localizedPrice ?? '').replace(/[^0-9.]/g, '')) || 0;
-  const priceB = parseFloat((b.localizedPrice ?? '').replace(/[^0-9.]/g, '')) || 0;
-  return priceA - priceB;
-});
+  const sortedProducts = [...products].sort((a, b) => {
+    const priceA = parseFloat((a.localizedPrice ?? '').replace(/[^0-9.]/g, '')) || 0;
+    const priceB = parseFloat((b.localizedPrice ?? '').replace(/[^0-9.]/g, '')) || 0;
+    return priceA - priceB;
+  });
 
   // Format product title to remove "錄音筆記-凱凱實驗室"
   const formatTitle = (title: string) => {
@@ -28,7 +28,7 @@ const sortedProducts = [...products].sort((a, b) => {
   return (
     <Modal transparent visible={visible} animationType="fade">
       <View style={styles.modalOverlay}>
-        <View style={[styles.modalContainer, { backgroundColor: colors.container }]}>
+        <View style={[styles.modalContainer, { backgroundColor: colors.container }]}>         
           <Text style={[styles.modalTitle, { color: colors.primary, textAlign: 'center' }]}>
             💰 儲值金幣{"\n"}
           </Text>
@@ -39,27 +39,26 @@ const sortedProducts = [...products].sort((a, b) => {
 
           <FlatList
             data={sortedProducts}
-            keyExtractor={(item) => item.productId}
+            keyExtractor={(item) =>  item.id}
             renderItem={({ item }) => (
-          <TouchableOpacity
-            style={[styles.planCard, isProcessing && { opacity: 0.5 }]}
-            onPress={() => {
-                console.log("🟢 購買商品 ID:", item.id);
-              if (!isProcessing) {
-                setIsProcessing(true);
-                onSelect(item.id);
-                setTimeout(() => setIsProcessing(false), 2000); // 2秒內防止重複點擊
-              }
-            }}
-            disabled={isProcessing}
-          >
-<Text style={styles.planCoins}>{item.coins} 金幣</Text>
-<Text style={styles.planPrice}>{item.localizedPrice || ''}</Text>
+              <TouchableOpacity
+                style={[styles.planCard, isProcessing && { opacity: 0.5 }]}
+                onPress={() => {
+                  console.log("🟢 購買商品 ID:", item.id);
+                  if (!isProcessing) {
+                    setIsProcessing(true);
+                    onSelect(item.id);
+                    setTimeout(() => setIsProcessing(false), 2000); // 2秒內防止重複點擊
+                  }
+                }}
+                disabled={isProcessing}
+              >
+                <Text style={styles.planCoins}>{item.coins} 金幣</Text>
+                <Text style={styles.planPrice}>{item.localizedPrice || ''}</Text>
 
               </TouchableOpacity>
             )}
           />
-
           <TouchableOpacity onPress={onClose}>
             <Text style={[styles.modalClose, { color: colors.text }]}>取消</Text>
           </TouchableOpacity>

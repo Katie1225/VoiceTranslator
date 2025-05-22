@@ -26,6 +26,7 @@ async function verifyIdToken(idToken) {
 
 // 處理 doGet
 router.get('/', async (req, res) => {
+    console.log(' 收到get請求:'); 
   try {
     const { id } = req.query; // 從id獲取查詢結果
     if (!id) {
@@ -54,35 +55,10 @@ router.get('/', async (req, res) => {
 
 // 處理 doPost
 router.post('/', async (req, res) => {
+      console.log('收到Post請求:'); 
   const { idToken, action, ...rest } = req.body;
 
-  // ✅ 僅儲值需要驗證
-  if (action === 'topup') {
-    if (!idToken) {
-      return res.status(400).json({ 
-        success: false, 
-        message: '缺少 ID token' 
-      });
-    }
 
-    try {
-      const payload = await verifyIdToken(idToken);
-      const userId = payload.sub;
-
-      if (userId !== rest.id) {
-        return res.status(401).json({
-          success: false,
-          message: 'ID 不一致，驗證失敗'
-        });
-      }
-    } catch (error) {
-      return res.status(401).json({
-        success: false,
-        message: 'ID token 驗證失敗'
-      });
-    }
-  }
-  
   // ✅ 防止非儲值卻加金幣（最關鍵）
   if (action !== 'topup' && rest.value > 0) {
     return res.status(400).json({

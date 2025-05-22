@@ -1,7 +1,21 @@
 // googleSheetAPI.ts
-const BASE_URL = 'https://katielab.com/v1/iap-redeem/';
 
-import { ensureFreshIdToken } from './loginHelpers';
+import { ensureFreshIdToken } from './authToken';
+import { nginxVersion } from '../constants/variant';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+
+
+let BASE_URL: string;
+
+if (nginxVersion === 'blue') {
+  BASE_URL = 'https://katielab.com/iap-redeem/';
+} else if (nginxVersion === 'green') {
+  BASE_URL = 'https://katielab.com/v1/iap-redeem/';
+} else {
+  throw new Error('未知的 nginxVersion');
+}
+
 
 
 // 全域使用者暫存
@@ -17,6 +31,7 @@ type UserInfo = {
 
 // ✅ 取得使用者資料（GET）
 export async function fetchUserInfo(id: string) {
+  console.log('fetchUserInfo');
   try {
     const response = await fetch(`${BASE_URL}?id=${id}`, {
       headers: {
@@ -55,15 +70,33 @@ export async function logCoinUsage({
   note?: string;
 }) {
   try {
-        //     const idToken = await ensureFreshIdToken(); // 這裡才驗證
-   // console.log("🧪 idToken 發行時間:", JSON.parse(atob(idToken.split('.')[1])));
+    //     const idToken = await ensureFreshIdToken(); // 這裡才驗證
+    // console.log("🧪 idToken 發行時間:", JSON.parse(atob(idToken.split('.')[1])));
+    console.log('logCoinUsage');
 
     const res = await fetch(BASE_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, action, value, note, idToken: undefined,}),
+      body: JSON.stringify({ id, action, value, note, idToken: undefined, }),
     });
-    return await res.json();
+    const data = await res.json();
+    // ✅ 更新本地金幣
+    if (typeof data.coins === 'number') {
+      try {
+        const stored = await AsyncStorage.getItem('user');
+        if (stored) {
+          const user = JSON.parse(stored);
+          user.coins = data.coins;
+          await AsyncStorage.setItem('user', JSON.stringify(user));
+        }
+      } catch (err) {
+        console.warn('⚠️ 無法更新本地金幣 (checkCoinUsage)', err);
+      }
+    }
+
+    return data;
+
+
   } catch (err) {
     return { success: false, message: (err as Error).message };
   }
@@ -81,15 +114,46 @@ export async function checkCoinUsage({
   note?: string;
 }) {
   try {
-    const idToken = await ensureFreshIdToken(); // 這裡才驗證
-   // console.log("🧪 idToken 發行時間:", JSON.parse(atob(idToken.split('.')[1])));
+    console.log('chekCoinUsage1');
+    
+    // 非強制取得
+   const idToken = await ensureFreshIdToken(); // 這裡才驗證
+
+// 強制取得
+/*
+const result = await GoogleSignin.signIn(); // 強制讓使用者登入一次
+const freshTokens = await GoogleSignin.getTokens(); // 取得新的 idToken
+const idToken = freshTokens.idToken;*/
+
+
+    console.log('chekCoinUsage2');
+    console.log("🧪 idToken =", idToken);
+    console.log("🧪 raw middle =", idToken?.split?.(".")[1]);
+
 
     const res = await fetch(BASE_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, action, value, note, idToken,}),
+      body: JSON.stringify({ id, action, value, note, idToken }),
     });
-    return await res.json();
+
+    // 
+    const data = await res.json();
+    // ✅ 更新本地金幣
+    if (typeof data.coins === 'number') {
+      try {
+        const stored = await AsyncStorage.getItem('user');
+        if (stored) {
+          const user = JSON.parse(stored);
+          user.coins = data.coins;
+          await AsyncStorage.setItem('user', JSON.stringify(user));
+        }
+      } catch (err) {
+        console.warn('⚠️ 無法更新本地金幣 (checkCoinUsage)', err);
+      }
+    }
+
+    return data;
   } catch (err) {
     return { success: false, message: (err as Error).message };
   }
