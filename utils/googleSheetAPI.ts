@@ -18,10 +18,6 @@ if (nginxVersion === 'blue') {
 
 
 
-// 全域使用者暫存
-let cachedUser: UserInfo | null = null;
-
-export const getCachedUser = () => cachedUser;
 
 type UserInfo = {
   coins?: number;
@@ -49,13 +45,24 @@ export async function fetchUserInfo(id: string) {
 
     const json = await response.json();
     if (json.success && json.data) {
-      cachedUser = json.data;
+      try {
+        const stored = await AsyncStorage.getItem('user');
+        if (stored) {
+          const user = JSON.parse(stored);
+          const updatedUser = { ...user, coins: json.data.coins };
+          await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
+          console.log('💰 fetchUserInfo：已更新本地 coins =', json.data.coins);
+        }
+      } catch (err) {
+        console.warn('⚠️ fetchUserInfo：更新本地金幣失敗:', err);
+      }
       return json;
     }
     return { success: false, data: null, message: json.message };
   } catch (err) {
     return { success: false, data: null, message: (err as Error).message };
   }
+
 }
 
 export async function logCoinUsage({
@@ -70,8 +77,6 @@ export async function logCoinUsage({
   note?: string;
 }) {
   try {
-    //     const idToken = await ensureFreshIdToken(); // 這裡才驗證
-    // console.log("🧪 idToken 發行時間:", JSON.parse(atob(idToken.split('.')[1])));
     console.log('logCoinUsage');
 
     const res = await fetch(BASE_URL, {
@@ -115,21 +120,18 @@ export async function checkCoinUsage({
 }) {
   try {
     console.log('chekCoinUsage1');
-    
+
     // 非強制取得
-   const idToken = await ensureFreshIdToken(); // 這裡才驗證
+    const idToken = await ensureFreshIdToken(); // 這裡才驗證
 
-// 強制取得
-/*
-const result = await GoogleSignin.signIn(); // 強制讓使用者登入一次
-const freshTokens = await GoogleSignin.getTokens(); // 取得新的 idToken
-const idToken = freshTokens.idToken;*/
-
+    // 強制取得
+    /*
+    const result = await GoogleSignin.signIn(); // 強制讓使用者登入一次
+    const freshTokens = await GoogleSignin.getTokens(); // 取得新的 idToken
+    const idToken = freshTokens.idToken;*/
 
     console.log('chekCoinUsage2');
     console.log("🧪 idToken =", idToken);
-    console.log("🧪 raw middle =", idToken?.split?.(".")[1]);
-
 
     const res = await fetch(BASE_URL, {
       method: 'POST',

@@ -2,7 +2,7 @@ import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
 export const ensureFreshIdToken = async (): Promise<string> => {
   try {
-    // ✅ 嘗試靜默登入
+    // ✅ GoogleSignin SDK 內部有幫你判斷 token 是否有效, 無效就進行 嘗試靜默登入 
     const silentUser = await GoogleSignin.signInSilently();
     const tokens = await GoogleSignin.getTokens();
     if (!tokens.idToken) throw new Error('靜默登入無 idToken');

@@ -4,7 +4,7 @@ import { Linking, Alert, View, Text, TouchableOpacity, Image } from 'react-nativ
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { lightTheme, darkTheme, additionalColors } from '../constants/Colors';
-import { logCoinUsage, fetchUserInfo, getCachedUser } from '../utils/googleSheetAPI';
+import { logCoinUsage, fetchUserInfo } from '../utils/googleSheetAPI';
 import { handleLogin } from '../utils/loginHelpers';
 import { version } from '../constants/variant';
 import Constants from 'expo-constants';

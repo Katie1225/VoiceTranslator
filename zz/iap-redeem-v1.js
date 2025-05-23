@@ -26,7 +26,7 @@ async function verifyIdToken(idToken) {
 
 // 處理 doGet
 router.get('/', async (req, res) => {
-    console.log(' 收到get請求:'); 
+    console.log('V1 收到get請求:'); 
   try {
     const { id } = req.query; // 從id獲取查詢結果
     if (!id) {
@@ -55,7 +55,7 @@ router.get('/', async (req, res) => {
 
 // 處理 doPost
 router.post('/', async (req, res) => {
-      console.log('收到Post請求:'); 
+      console.log('V1 收到Post請求:'); 
   const { idToken, action, ...rest } = req.body;
 
 

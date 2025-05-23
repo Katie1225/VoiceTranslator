@@ -10,6 +10,7 @@ import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
 // 金幣規則設定
 export const INITIAL_GIFT_COINS = 100;     // 首次登入送 100 金幣
+export const COIN_COST_AI = 10;      // AI工具箱扣幾金幣
 export const COIN_UNIT_MINUTES = 1;       // 幾分鐘為一單位
 export const COIN_COST_PER_UNIT = 1;      // 每單位扣幾金幣
 
@@ -59,7 +60,7 @@ export const handleLogin = async (
         let message = `你好，${baseUser.name}！`;
 
         if (!updatedUser.gifted) {
-            await logCoinUsage({
+            await checkCoinUsage({
                 ...baseUser,
                 action: 'signup_bonus',
                 value: INITIAL_GIFT_COINS,
@@ -82,7 +83,8 @@ export const handleLogin = async (
         }
 
         message += `\n\n💰 你目前擁有 ${updatedUser.coins} 金幣`;
-        message += `\n\n📌 錄音轉文字每 1 分鐘會扣 ${COINS_PER_MINUTE} 金幣`;
+        message += `\n\n📌 錄音轉文字每 1 分鐘 ${COINS_PER_MINUTE} 金幣, 並獲得重點摘要`;
+        message += `\n\n📌 AI 工具箱每次使用 ${COIN_COST_AI} 金幣`;
 
         await AsyncStorage.setItem('user', JSON.stringify(asyncStorageUser));
         Alert.alert('✅ 登入成功', message);

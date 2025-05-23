@@ -13,7 +13,7 @@ import { Alert, Platform, EmitterSubscription } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { logCoinUsage, checkCoinUsage } from './googleSheetAPI';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import {debugValue} from '../constants/variant'
+import { debugValue } from '../constants/variant'
 
 
 
@@ -23,9 +23,9 @@ import {debugValue} from '../constants/variant'
 
 // 產品配置
 export const productToCoins: Record<string, number> = {
-  'topup_100': debugValue === '1' ? 10 : 100,
-  'topup_400': 400,
-  'topup_1000': 1000,
+    'topup_100': debugValue === '1' ? 10 : 100,
+    'topup_400': 400,
+    'topup_1000': 1000,
 };
 
 export const productIds = Object.keys(productToCoins);
@@ -101,21 +101,19 @@ class PurchaseManager {
             // 完成交易
             await finishTransaction({ purchase, isConsumable: true });
 
-                            console.log('✅ google交易已完成，使用者完成付款');
+            console.log('✅ google交易已完成，使用者完成付款');
 
             // 驗證產品
             const coinsToAdd = productToCoins[purchase.productId];
             if (!coinsToAdd) {
                 throw new Error(`無效產品ID: ${purchase.productId}`);
             }
-
-                            console.log('✅ 有效產品 ID');
-            
+            console.log('✅ 有效產品 ID');
 
             // 記錄金幣
             const user = JSON.parse(await AsyncStorage.getItem('user') || '{}');
 
-             console.log('✅ 紀錄金幣');
+            console.log('✅ 紀錄金幣');
 
             const result = await checkCoinUsage({
                 id: user.id,
@@ -124,8 +122,8 @@ class PurchaseManager {
                 note: `購買 ${coinsToAdd} 金幣`
             });
 
-   console.log('✅ 上傳金幣');
-   
+            console.log('✅ 上傳金幣');
+
             if (!result.success) {
                 throw new Error(result.message || '金幣記錄失敗');
             }

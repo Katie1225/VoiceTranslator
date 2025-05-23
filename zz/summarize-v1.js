@@ -4,6 +4,7 @@ const OpenCC = require('opencc-js');
 
 const router = express.Router();
 router.post('/', async (req, res) => {
+      console.log(' summarize-v1:'); 
   const { text, prompt, targetLang = 'tw' } = req.body;
 
   if (!text) {

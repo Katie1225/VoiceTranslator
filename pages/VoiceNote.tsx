@@ -47,12 +47,13 @@ import {
 } from '../components/AudioItem';
 import { uFPermissions } from '../src/hooks/uFPermissions';
 import { logCoinUsage } from '../utils/googleSheetAPI';
-import { handleLogin, loadUserAndSync, COIN_UNIT_MINUTES, COIN_COST_PER_UNIT } from '../utils/loginHelpers';
+import { handleLogin, loadUserAndSync, COIN_UNIT_MINUTES, COIN_COST_PER_UNIT, COIN_COST_AI } from '../utils/loginHelpers';
 import TopUpModal from '../components/TopUpModal';
-import { productIds, productToCoins, purchaseManager,} from '../utils/iap';
+import { productIds, productToCoins, purchaseManager, } from '../utils/iap';
 import { APP_VARIANT } from '../constants/variant';
-import { checkStoredIdToken } from '../utils/Test';
 import RecorderHeader from '../components/RecorderHeader';
+import { debugLog, debugWarn, debugError } from '../utils/debugLog';
+import { maybeSyncCoins } from '../utils/coinSync';
 
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 GoogleSignin.configure({
@@ -156,6 +157,7 @@ const RecorderPageVoiceNote = () => {
       setCustomPrimaryColor(color);
     }
   };
+  
 
   const toggleTheme = () => {
     const newMode = !isDarkMode;
@@ -171,7 +173,7 @@ const RecorderPageVoiceNote = () => {
 
   const [resumeAfterTopUp, setResumeAfterTopUp] = useState<null | { index: number }>(null);
 
-  
+
 
   // 替換原有的 handlePurchase 函數
   const handleTopUp = async (productId: string) => {
@@ -190,18 +192,26 @@ const RecorderPageVoiceNote = () => {
   };
 
 
-  // useEffect 初始化
+  // useEffect 初始化桌面色彩
   useEffect(() => {
     loadThemePreference();
     loadPrimaryColorPreference();
   }, []);
+  
+
+/*
+  // 每日更新本地及雲端金額
+useEffect(() => {
+  maybeSyncCoins();
+}, []);
+*/
 
   // 在組件掛載時初始化 IAP
   useEffect(() => {
     const initIAP = async () => {
       const success = await purchaseManager.initialize();
       if (!success) {
-        console.warn('IAP 初始化失敗');
+        debugWarn('IAP 初始化失敗');
       }
     };
     initIAP();
@@ -313,7 +323,6 @@ const RecorderPageVoiceNote = () => {
 
   // 帳號登入
   const [isLoggingIn, setIsLoggingIn] = useState(false);
-
   useEffect(() => {
     loadUserAndSync();
   }, []);
@@ -381,11 +390,11 @@ const RecorderPageVoiceNote = () => {
   const task = async (args: any) => {
     const path = args?.path;
     if (!path) {
-      console.error("❌ 無錄音路徑");
+      debugError("❌ 無錄音路徑");
       return;
     }
 
-    console.log("🎤 開始錄音任務:", path);
+    debugLog("🎤 開始錄音任務:", path);
 
     await audioRecorderPlayer.startRecorder(path, {
       AudioSourceAndroid: 1,
@@ -401,14 +410,14 @@ const RecorderPageVoiceNote = () => {
       recordingTimeRef.current = sec;
     });
 
-    console.log("✅ 錄音任務啟動完成");
+    debugLog("✅ 錄音任務啟動完成");
     await new Promise(async (resolve) => {
       while (BackgroundService.isRunning()) {
         await new Promise(res => setTimeout(res, 1000)); // 睡 1 秒 
       }
       resolve(true);
     });
-    console.log("🛑 背景任務結束");
+    debugLog("🛑 背景任務結束");
   };
 
   // 開始錄音（帶音量檢測）
@@ -436,7 +445,7 @@ const RecorderPageVoiceNote = () => {
       const filename = `rec_${now.getTime()}.m4a`;
       const filePath = `${RNFS.ExternalDirectoryPath}/${filename}`;
 
-      console.log("📁 錄音儲存路徑:", filePath);
+      debugLog("📁 錄音儲存路徑:", filePath);
 
       // ✅ 先啟動 BackgroundService，讓它來啟動錄音
       await BackgroundService.start(task, {
@@ -469,7 +478,7 @@ const RecorderPageVoiceNote = () => {
 
 
     } catch (err) {
-      console.error("❌ 錄音啟動錯誤：", err);
+      debugError("❌ 錄音啟動錯誤：", err);
       Alert.alert("錄音失敗", (err as Error).message || "請檢查權限或儲存空間");
       setRecording(false);
     }
@@ -513,7 +522,7 @@ const RecorderPageVoiceNote = () => {
       }
 
 
-      console.log("📄 錄音檔案資訊:", fileInfo);
+      debugLog("📄 錄音檔案資訊:", fileInfo);
 
       if (fileInfo.size > 0) {
         const now = new Date();
@@ -541,7 +550,7 @@ const RecorderPageVoiceNote = () => {
           }
           await sound.unloadAsync();
         } catch (e) {
-          console.warn("⚠️ 無法取得音檔長度", e);
+          debugWarn("⚠️ 無法取得音檔長度", e);
         }
 
         // 組合顯示名稱
@@ -572,7 +581,7 @@ const RecorderPageVoiceNote = () => {
         await RNFS.unlink(uri); // 刪除空檔案
       }
     } catch (err) {
-      console.error("❌ 停止錄音失敗：", err);
+      debugError("❌ 停止錄音失敗：", err);
       Alert.alert("停止錄音失敗", (err as Error).message);
     }
   };
@@ -619,7 +628,7 @@ const RecorderPageVoiceNote = () => {
                   await RNFS.writeFile(backupPath, JSON.stringify(updatedBackup), 'utf8');
                 }
               } catch (backupErr) {
-                console.warn("無法更新備份檔案:", backupErr);
+                debugWarn("無法更新備份檔案:", backupErr);
               }
 
             } catch (err) {
@@ -700,7 +709,7 @@ const RecorderPageVoiceNote = () => {
         setRecordings(prev => [newItem, ...prev]);
       }
     } catch (err) {
-      console.error('❌ 選取音檔失敗', err);
+      debugError('❌ 選取音檔失敗', err);
     }
   };
 
@@ -791,7 +800,7 @@ const RecorderPageVoiceNote = () => {
         : type === 'summary'
           ? recordings[index]?.summaries?.[summaryMode] || ''
           : recordings[index]?.notes || '';
-    console.log('[renderNoteSection] index=', index, 'type=', type, 'editing=', editingIndex === index);
+    debugLog('[renderNoteSection] index=', index, 'type=', type, 'editing=', editingIndex === index);
 
 
     return renderNoteBlock({
@@ -889,10 +898,6 @@ const RecorderPageVoiceNote = () => {
   //轉文字邏輯
   const handleTranscribe = async (index: number) => {
 
-    if (APP_VARIANT === 'notedebug') {
-      checkStoredIdToken();
-    }
-
     const item = recordings[index];
 
     if (item.transcript) {
@@ -956,7 +961,7 @@ const RecorderPageVoiceNote = () => {
           const updated = prev.map((rec, i) =>
             i === index ? { ...rec, transcript: updatedTranscript } : rec
           );
-          saveRecordings(updated).catch(e => console.error('保存失敗:', e));
+          saveRecordings(updated).catch(e => debugError('保存失敗:', e));
           return updated;
         });
         setShowTranscriptIndex(index);
@@ -985,7 +990,7 @@ const RecorderPageVoiceNote = () => {
             : rec
         );
       } catch (err) {
-        console.warn('❌ 自動摘要失敗:', err);
+        debugWarn('❌ 自動摘要失敗:', err);
       }
 
       setRecordings(finalUpdated);
@@ -1023,10 +1028,6 @@ const RecorderPageVoiceNote = () => {
     requirePayment: boolean = false
   ) => {
 
-    if (APP_VARIANT === 'notedebug') {
-      checkStoredIdToken();
-    }
-
     const item = recordings[index];
 
     // ✅ 已有摘要就直接顯示
@@ -1038,7 +1039,6 @@ const RecorderPageVoiceNote = () => {
     }
 
     let user: any = null;
-    const cost = 10;
 
     // ✅ 需要付費 → 確認登入與金幣
     if (requirePayment) {
@@ -1060,10 +1060,10 @@ const RecorderPageVoiceNote = () => {
 
       user = JSON.parse(fresh);
 
-      if (user.coins < cost) {
+      if (user.coins < COIN_COST_AI) {
         Alert.alert(
           "金幣不足",
-          `「${summarizeModes.find(m => m.key === mode)?.label || 'AI 工具'}」需要 ${cost} 金幣，你目前剩餘 ${user.coins} 金幣`,
+          `「${summarizeModes.find(m => m.key === mode)?.label || 'AI 工具'}」需要 ${COIN_COST_AI} 金幣，你目前剩餘 ${user.coins} 金幣`,
           [
             { text: "取消", style: "cancel" },
             { text: "儲值", onPress: () => setShowTopUpModal(true) },
@@ -1109,11 +1109,11 @@ const RecorderPageVoiceNote = () => {
         const result = await logCoinUsage({
           id: user.id,
           action: mode,
-          value: -cost,
-          note: `${mode}：${item.displayName || item.name} 扣 ${cost} 金幣`,
+          value: -COIN_COST_AI,
+          note: `${mode}：${item.displayName || item.name} 扣 ${COIN_COST_AI} 金幣`,
         });
 
-        user.coins -= cost;
+        user.coins -= COIN_COST_AI;
         await AsyncStorage.setItem('user', JSON.stringify(user));
       }
 

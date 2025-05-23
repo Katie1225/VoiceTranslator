@@ -10,6 +10,7 @@ const router = express.Router();
 const upload = multer({ dest: 'uploads/' });
 
 router.post('/', upload.single('audio'), async (req, res) => {
+        console.log(' whisper-v0:'); 
   const audioFile = req.file;
   if (!audioFile) {
     return res.status(400).json({ error: '沒有收到音檔' });
