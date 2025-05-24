@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { logCoinUsage, fetchUserInfo, checkCoinUsage } from './googleSheetAPI';
 import { Alert } from 'react-native';
 import { ensureFreshIdToken } from './authToken';
-
+import { debugLog, debugWarn,debugError } from './debugLog';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
 
@@ -23,70 +23,60 @@ export const handleLogin = async (
     if (setLoading) setLoading(true);
 
     try {
-        const result = await GoogleSignin.signIn();
+        const result = await GoogleSignin.signIn();            //google 登入取得使用者資訊
         const user = (result as any)?.data?.user || {};
         
-        const tokens = await GoogleSignin.getTokens();
-        const idToken = tokens.idToken;
         if (!user.id || !user.email) throw new Error("無法取得使用者資訊");
 
-        const asyncStorageUser = {
+        //分析使用者資訊
+        let  baseUser = {
             id: user.id,
             email: user.email,
             name: user.name || user.email.split('@')[0],
-        };
+        };             
 
-        const baseUser = {
-            id: user.id,
-            idToken,
-            email: user.email,
-            name: user.name || user.email.split('@')[0],
-        };
+        // 將資訊同步到本地
+        await AsyncStorage.setItem('user', JSON.stringify(baseUser)); 
 
-        console.log(baseUser);
-        await checkCoinUsage({ ...baseUser, action: 'signup', value: 0, note: '首次登入紀錄' });
+        debugLog(baseUser);
 
-        // 同步 Google Sheet 上的用戶狀態
-        const remote = await fetchUserInfo(user.id);
-        let updatedUser = {
-            ...user,
-            coins: remote?.data?.coins ?? 0,
-            gifted: remote?.data?.gifted ?? false,
-            giftNoticeShown: remote?.data?.giftNoticeShown ?? false,
-        };
+       await checkCoinUsage({ ...baseUser, action: 'signup', value: 0, note: '登入紀錄' });
 
-        console.log(updatedUser);
 
-        let message = `你好，${baseUser.name}！`;
 
-        if (!updatedUser.gifted) {
+            // ✅ 初次登入送金幣
+    const stored = await AsyncStorage.getItem('user');
+    const current = stored ? JSON.parse(stored) : null;
+
+        let message = `你好，${current.name}！`;
+
+        if (!current.gifted) {
             await checkCoinUsage({
                 ...baseUser,
                 action: 'signup_bonus',
                 value: INITIAL_GIFT_COINS,
                 note: `首次登入送 ${INITIAL_GIFT_COINS} 金幣`,
             });
-            updatedUser.coins = INITIAL_GIFT_COINS;
-            updatedUser.gifted = true;
+            current.coins = INITIAL_GIFT_COINS;
+            current.gifted = true;
             message += `\n\n🎁 首次登入已免費送你 ${INITIAL_GIFT_COINS} 金幣！`;
 
         }
 
-        if (!updatedUser.giftNoticeShown) {
+        if (!current.giftNoticeShown) {
             await logCoinUsage({
                 ...baseUser,
                 action: 'gift_notice_ack',
                 value: 0,
                 note: '首次登入提示已顯示',
             });
-            updatedUser.giftNoticeShown = true;
+            current.giftNoticeShown = true;
         }
 
-        message += `\n\n💰 你目前擁有 ${updatedUser.coins} 金幣`;
+        message += `\n\n💰 你目前擁有 ${current.coins} 金幣`;
         message += `\n\n📌 錄音轉文字每 1 分鐘 ${COINS_PER_MINUTE} 金幣, 並獲得重點摘要`;
         message += `\n\n📌 AI 工具箱每次使用 ${COIN_COST_AI} 金幣`;
 
-        await AsyncStorage.setItem('user', JSON.stringify(asyncStorageUser));
         Alert.alert('✅ 登入成功', message);
         return true;
     } catch (err) {
@@ -104,13 +94,13 @@ export const loadUserAndSync = async () => {
         const user = JSON.parse(stored);
         const remote = await fetchUserInfo(user.id);
         if (remote.success && remote.data?.coins != null) {
-            const updatedUser = {
+            const current = {
                 ...user,
                 coins: remote.data.coins,
                 gifted: remote.data.gifted,
                 giftNoticeShown: remote.data.giftNoticeShown,
             };
-            await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
+            await AsyncStorage.setItem('user', JSON.stringify(current));
         }
     }
 };

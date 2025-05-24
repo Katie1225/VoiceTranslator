@@ -60,12 +60,12 @@ router.post('/', async (req, res) => {
 
 
   // ✅ 防止非儲值卻加金幣（最關鍵）
-  if (action !== 'topup' && rest.value > 0) {
-    return res.status(400).json({
-      success: false,
-      message: '非儲值操作不得增加金幣'
-    });
-  }
+if (!['topup', 'signup_bonus'].includes(action) && rest.value > 0) {
+  return res.status(400).json({
+    success: false,
+    message: '非儲值操作不得增加金幣'
+  });
+}
 
   // ✅ 傳給 Google Sheet（無論是否驗證）
   try {

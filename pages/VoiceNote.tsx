@@ -53,7 +53,6 @@ import { productIds, productToCoins, purchaseManager, } from '../utils/iap';
 import { APP_VARIANT } from '../constants/variant';
 import RecorderHeader from '../components/RecorderHeader';
 import { debugLog, debugWarn, debugError } from '../utils/debugLog';
-import { maybeSyncCoins } from '../utils/coinSync';
 
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 GoogleSignin.configure({
@@ -157,7 +156,7 @@ const RecorderPageVoiceNote = () => {
       setCustomPrimaryColor(color);
     }
   };
-  
+
 
   const toggleTheme = () => {
     const newMode = !isDarkMode;
@@ -176,35 +175,53 @@ const RecorderPageVoiceNote = () => {
 
 
   // 替換原有的 handlePurchase 函數
-  const handleTopUp = async (productId: string) => {
-    try {
-      await purchaseManager.requestPurchase(productId);
-      setShowTopUpModal(false);
+const handleTopUp = async (productId: string) => {
+  try {
+    // 1. 請求儲值
+    await purchaseManager.requestPurchase(productId);
+    setShowTopUpModal(false);
 
-      // 加值成功後自動繼續之前操作
-      if (resumeAfterTopUp?.index !== undefined) {
-        await handleTranscribe(resumeAfterTopUp.index);
+    // 2. 等待金幣更新（不再需要手動同步，因為 handlePurchaseUpdate 已經處理）
+    // 3. 清除中斷操作的標記
+    setResumeAfterTopUp(null);
+    
+  } catch (err) {
+    Alert.alert('購買失敗', err instanceof Error ? err.message : '請稍後再試');
+  }
+};
+
+// 在組件中添加 useEffect 來監聽 pendingActions
+useEffect(() => {
+  const checkPendingActions = async () => {
+    // 使用公共方法替代直接訪問私有屬性
+    if (purchaseManager.hasPendingActions()) {
+      const actions = purchaseManager.getPendingActions();
+      const action = actions[0];
+      
+      if (action.type === 'transcribe' && action.index !== undefined) {
+        const freshUser = await AsyncStorage.getItem('user');
+        if (freshUser) {
+          const user = JSON.parse(freshUser);
+          if (user.coins > 0) { // 確保金幣已更新
+            const indexToResume = action.index;
+            purchaseManager.clearPendingActions();
+            setTimeout(() => {
+              handleTranscribe(indexToResume);
+            }, 500);
+          }
+        }
       }
-      setResumeAfterTopUp(null);
-    } catch (err) {
-      Alert.alert('購買失敗', err instanceof Error ? err.message : '請稍後再試');
     }
   };
 
+  checkPendingActions();
+}, [purchaseManager]); // 依賴 purchaseManager 實例
 
   // useEffect 初始化桌面色彩
   useEffect(() => {
     loadThemePreference();
     loadPrimaryColorPreference();
   }, []);
-  
-
-/*
-  // 每日更新本地及雲端金額
-useEffect(() => {
-  maybeSyncCoins();
-}, []);
-*/
 
   // 在組件掛載時初始化 IAP
   useEffect(() => {
@@ -910,6 +927,10 @@ useEffect(() => {
 
     try {
       const stored = await AsyncStorage.getItem('user');
+        debugLog('📦 本地 user 資料:', stored);
+
+          let user = null;
+
       if (!stored) {
         setIsTranscribingIndex(null);
         Alert.alert("請先登入", "使用錄音筆記功能需要登入", [
@@ -923,12 +944,14 @@ useEffect(() => {
           }
         ]);
         return;
-      }
+      } 
+      user = JSON.parse(stored);
 
-      await loadUserAndSync();
-      const fresh = await AsyncStorage.getItem('user');
-      if (!fresh) throw new Error("無法取得使用者資料");
-      const user = JSON.parse(fresh);
+          // 強制同步最新 user 資料
+   // await loadUserAndSync();
+   // const freshUser = await AsyncStorage.getItem('user');
+   // const updatedUser = freshUser ? JSON.parse(freshUser) : user;
+  
 
       const { sound, status } = await Audio.Sound.createAsync({ uri: item.uri });
       if (!status.isLoaded) throw new Error("無法取得音檔長度");
@@ -938,6 +961,7 @@ useEffect(() => {
       const coinsToDeduct = Math.ceil(durationSec / (COIN_UNIT_MINUTES * 60)) * COIN_COST_PER_UNIT;
 
       if (user.coins < coinsToDeduct) {
+
         purchaseManager.addPendingAction({ type: 'transcribe', index });
         Alert.alert(
           "金幣不足",
@@ -1001,6 +1025,8 @@ useEffect(() => {
 
       const coinResult = await logCoinUsage({
         id: user.id,
+        email: user.email,
+        name: user.name,
         action: 'transcript',
         value: -coinsToDeduct,
         note: `轉文字：${item.displayName || item.name || ''}，長度 ${durationSec}s，扣 ${coinsToDeduct} 金幣`
@@ -1008,10 +1034,8 @@ useEffect(() => {
 
       if (!coinResult.success) {
         Alert.alert("轉換成功，但扣金幣失敗", coinResult.message || "請稍後再試");
-      } else {
-        user.coins -= coinsToDeduct;
-        await AsyncStorage.setItem('user', JSON.stringify(user));
       }
+
 
     } catch (err) {
       Alert.alert("❌ 錯誤", (err as Error).message || "轉換失敗，這次不會扣金幣");
@@ -1051,7 +1075,7 @@ useEffect(() => {
         return;
       }
 
-      await loadUserAndSync();
+    // 取消上雲端節省時間  await loadUserAndSync();
       const fresh = await AsyncStorage.getItem('user');
       if (!fresh) {
         Alert.alert("錯誤", "無法取得使用者資料");
@@ -1107,14 +1131,13 @@ useEffect(() => {
       if (requirePayment && user) {
 
         const result = await logCoinUsage({
-          id: user.id,
+        id: user.id,
+        email: user.email,
+        name: user.name,
           action: mode,
           value: -COIN_COST_AI,
           note: `${mode}：${item.displayName || item.name} 扣 ${COIN_COST_AI} 金幣`,
         });
-
-        user.coins -= COIN_COST_AI;
-        await AsyncStorage.setItem('user', JSON.stringify(user));
       }
 
       // ✅ 顯示摘要
@@ -1127,8 +1150,6 @@ useEffect(() => {
       setIsSummarizingIndex(null);
     }
   };
-
-
 
   return (
     <TouchableWithoutFeedback onPress={() => closeAllMenus(false)}>

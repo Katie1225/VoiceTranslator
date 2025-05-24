@@ -14,11 +14,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { logCoinUsage, checkCoinUsage } from './googleSheetAPI';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { debugValue } from '../constants/variant'
-
-
-
-
-
+import { debugLog, debugWarn, debugError } from './debugLog';
 
 
 // 產品配置
@@ -66,7 +62,7 @@ class PurchaseManager {
 
             return true;
         } catch (err) {
-            console.error('IAP初始化失敗:', err);
+            debugError('IAP初始化失敗:', err);
             return false;
         }
     }
@@ -74,9 +70,9 @@ class PurchaseManager {
     private async loadProducts() {
         try {
             const products = await getProducts({ skus: productIds });
-            console.log('✅ 加載產品列表成功', products);
+            debugLog('✅ 加載產品列表成功', products);
         } catch (err) {
-            console.error('❌ 加載產品列表失敗:', err);
+            debugError('❌ 加載產品列表失敗:', err);
         }
     }
 
@@ -87,60 +83,72 @@ class PurchaseManager {
                 await finishTransaction({ purchase: p, isConsumable: true });
             }
         } catch (err) {
-            console.warn('清理殘留交易失敗:', err);
+            debugWarn('清理殘留交易失敗:', err);
         }
+    }
+
+    public getPendingActions() {
+        return [...this.pendingActions]; // 返回副本以避免外部修改
+    }
+
+    // 添加公共方法來檢查是否有 pendingActions
+    public hasPendingActions() {
+        return this.pendingActions.length > 0;
     }
 
     private async handlePurchaseUpdate(purchase: Purchase) {
         try {
             if (!purchase.transactionReceipt) {
-                console.warn('交易未完成，略過');
+                debugWarn('交易未完成，略過');
                 return;
             }
 
             // 完成交易
             await finishTransaction({ purchase, isConsumable: true });
-
-            console.log('✅ google交易已完成，使用者完成付款');
+            debugLog('✅ google交易已完成，使用者完成付款');
 
             // 驗證產品
             const coinsToAdd = productToCoins[purchase.productId];
             if (!coinsToAdd) {
                 throw new Error(`無效產品ID: ${purchase.productId}`);
             }
-            console.log('✅ 有效產品 ID');
+            debugLog('✅ 有效產品 ID');
 
             // 記錄金幣
             const user = JSON.parse(await AsyncStorage.getItem('user') || '{}');
-
-            console.log('✅ 紀錄金幣');
+            debugLog('✅ 紀錄金幣');
 
             const result = await checkCoinUsage({
                 id: user.id,
+                email: user.email,
+                name: user.name,
                 action: 'topup',
                 value: coinsToAdd,
                 note: `購買 ${coinsToAdd} 金幣`
             });
 
-            console.log('✅ 上傳金幣');
+            debugLog('✅ 上傳金幣');
+                        debugLog(result);
 
             if (!result.success) {
                 throw new Error(result.message || '金幣記錄失敗');
             }
 
-            // 更新本地金幣
-            user.coins = (user.coins || 0) + coinsToAdd;
-            await AsyncStorage.setItem('user', JSON.stringify(user));
+            // 更新本地金幣已在CheckCoinUsage 完成
 
-            // 處理等待中的操作
+
+            // 強制同步最新 user 資料
+            //    await loadUserAndSync();
+
+            // 顯示加值成功提示
+            Alert.alert('✅ 加值成功', `已獲得 ${coinsToAdd} 金幣`);
+
+            // 處理等待中的操作（現在確保金幣已更新後才執行）
             if (this.pendingActions.length > 0) {
-                Alert.alert('✅ 加值成功', `已獲得 ${coinsToAdd} 金幣，繼續之前操作`);
                 const actions = [...this.pendingActions];
                 this.clearPendingActions();
                 return actions;
             }
-
-            Alert.alert('✅ 加值成功', `已獲得 ${coinsToAdd} 金幣`);
         } catch (err) {
             Alert.alert('❌ 購買處理失敗', err instanceof Error ? err.message : '未知錯誤');
         }
@@ -163,7 +171,7 @@ class PurchaseManager {
 
             return true;
         } catch (err) {
-            console.error('購買請求失敗:', err);
+            debugError('購買請求失敗:', err);
             throw err; // 重新拋出讓調用方處理
         }
     }
