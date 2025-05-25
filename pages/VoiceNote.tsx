@@ -53,6 +53,7 @@ import { productIds, productToCoins, purchaseManager, setTopUpProcessingCallback
 import { APP_VARIANT } from '../constants/variant';
 import RecorderHeader from '../components/RecorderHeader';
 import { debugLog, debugWarn, debugError } from '../utils/debugLog';
+import { shareRecordingNote, shareRecordingFile } from '../utils/editingHelpers';
 
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 GoogleSignin.configure({
@@ -174,19 +175,19 @@ const RecorderPageVoiceNote = () => {
   const onTopUpProcessingChangeRef = useRef<(isProcessing: boolean) => void>();
 
   //儲值中
-const [isTopUpProcessing, setIsTopUpProcessing] = useState(false);
+  const [isTopUpProcessing, setIsTopUpProcessing] = useState(false);
 
-useEffect(() => {
-  const callback = (isProcessing: boolean) => {
-    setIsTopUpProcessing(isProcessing);
-  };
-  
-  setTopUpProcessingCallback(callback);
-  
-  return () => {
-    setTopUpProcessingCallback(null); // 清理時取消回調
-  };
-}, []);
+  useEffect(() => {
+    const callback = (isProcessing: boolean) => {
+      setIsTopUpProcessing(isProcessing);
+    };
+
+    setTopUpProcessingCallback(callback);
+
+    return () => {
+      setTopUpProcessingCallback(null); // 清理時取消回調
+    };
+  }, []);
 
 
   // 替換原有的 handlePurchase 函數
@@ -274,34 +275,6 @@ useEffect(() => {
     index: number | null;
     text: string;
   }>({ type: null, index: null, text: '' });
-
-  const shareText = async (text: string, type: 'transcript' | 'summary' | 'notes', filename?: string) => {
-    if (!text || text.trim() === '') {
-      Alert.alert('無法分享', '內容為空');
-      return;
-    }
-
-    let prefix = '';
-    if (filename) {
-      let label = '';
-      if (type === 'transcript') {
-        label = '錄音文檔';
-      } else if (type === 'summary') {
-        const found = summarizeModes.find(m => m.key === summaryMode);
-        label = found?.label || '重點整理';
-      } else if (type === 'notes') {
-        label = '談話筆記';
-      }
-
-      prefix = `${filename} - ${label}\n\n`;
-    }
-
-    try {
-      await Share.share({ message: prefix + text });
-    } catch (err) {
-      Alert.alert('分享失敗', (err as Error).message);
-    }
-  };
 
   const [recordings, setRecordings] = useState<RecordingItem[]>([]);
 
@@ -673,22 +646,6 @@ useEffect(() => {
     setSelectedIndex(null);
   };
 
-
-  // 分享錄音
-  const shareRecording = async (uri: string) => {
-    try {
-      if (!(await Sharing.isAvailableAsync())) {
-        Alert.alert("分享功能不可用", "您的設備不支持分享功能");
-        return;
-      }
-      await Sharing.shareAsync(uri);
-    } catch (err) {
-      Alert.alert("分享失敗", (err as Error).message);
-    }
-    setSelectedIndex(null); // 關閉菜單
-  };
-
-
   // 格式化時間
   const formatTime = (ms: number) => {
     const totalSeconds = Math.floor(ms / 1000);
@@ -908,18 +865,9 @@ useEffect(() => {
       },
 
       onShare: async () => {
-        const item = recordings[index];
-        const textToShare =
-          type === 'summary'
-            ? (item.summaries?.[summaryMode] || '')
-            : type === 'transcript'
-              ? (item.transcript || '')
-              : (item.notes || '');
-
-        await shareText(textToShare, type, item.displayName || item.name || item.notes);
-
+        await shareRecordingNote(recordings[index], type, summaryMode);
         if (type === 'summary') {
-          setIsSummarizingIndex(null); // 分享完清 loading
+          setIsSummarizingIndex(null);
         }
       },
       styles,
@@ -1652,9 +1600,9 @@ useEffect(() => {
                     startEditing(index, 'name')
                   }, 0);
                 }}
-                onShare={(uri) => {
-                  shareRecording(uri);
-                }}
+onShare={(uri) => {
+  shareRecordingFile(uri, () => setSelectedIndex(null));
+}}
                 onDelete={(index) => {
                   deleteRecording(index); // 一次刪整包
                   setShowTranscriptIndex(null);
