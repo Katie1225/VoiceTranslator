@@ -2,6 +2,7 @@ import { FFmpegKit, ReturnCode } from 'ffmpeg-kit-react-native';
 import * as FileSystem from 'expo-file-system';
 import { Audio } from 'expo-av';
 import { nginxVersion } from '../constants/variant';
+import { debugLog, debugWarn,debugError } from './debugLog';
 
 export type RecordingItem = {
   uri: string;
@@ -64,7 +65,7 @@ export const trimSilence = async (uri: string, name: string): Promise<RecordingI
   // 如果剪過就直接回傳
   const fileInfo = await FileSystem.getInfoAsync(outputPath);
   if (fileInfo.exists && fileInfo.size > 0) {
-    console.log(`⚠️ 剪輯檔已存在：${outputName}`);
+    debugLog(`⚠️ 剪輯檔已存在：${outputName}`);
     return {
       uri: outputPath,
       name: outputName,
@@ -73,7 +74,7 @@ export const trimSilence = async (uri: string, name: string): Promise<RecordingI
     };
   }
 
-  console.log(`✂️ 開始剪輯：${outputName}`);
+  debugLog(`✂️ 開始剪輯：${outputName}`);
   const command = `-i "${uri}" -af silenceremove=start_periods=1:start_silence=0.3:start_threshold=-40dB:stop_periods=-1:stop_silence=0.3:stop_threshold=-40dB -y "${outputPath}"`;
   const session = await FFmpegKit.execute(command);
   const returnCode = await session.getReturnCode();
@@ -233,13 +234,13 @@ export const transcribeAudio = async (
       const command = `-i "${wavUri}" -ss ${start} -t 30 -ar 16000 -ac 1 "${segmentPath}"`;
       await FFmpegKit.execute(command);
       const { duration: segmentDuration } = await getAudioDuration(segmentPath);
-      console.log(`⏱️ 第 ${i + 1} 段時長: ${segmentDuration.toFixed(2)}秒`);
+      debugLog(`⏱️ 第 ${i + 1} 段時長: ${segmentDuration.toFixed(2)}秒`);
       if (segmentDuration < 1) {
-        console.log(`⏭️ 跳過過短分段 (${segmentDuration}s)`);
+        debugLog(`⏭️ 跳過過短分段 (${segmentDuration}s)`);
         continue;
       }
 
-      console.log(`📤 上傳第 ${i + 1} 段`);
+      debugLog(`📤 上傳第 ${i + 1} 段`);
       const formData = new FormData();
       formData.append('audio', {
         uri: segmentPath,
@@ -268,10 +269,10 @@ export const transcribeAudio = async (
 
       const raw = await response.text();
       if (!response.ok) {
-        console.error(`❌ 第 ${i + 1} 段錯誤：`, raw);
+        debugError(`❌ 第 ${i + 1} 段錯誤：`, raw);
         throw new Error(`第 ${i + 1} 段轉文字失敗：HTTP ${response.status}`);
       } else {
-        console.log('✅ 呼叫 Whisper API 成功');
+        debugLog('✅ 呼叫 Whisper API 成功');
       }
 
       let text = '';
@@ -303,7 +304,7 @@ export const transcribeAudio = async (
     return { transcript: { text: accumulated.trim() } };
 
   } catch (err) {
-    console.error('❌ transcribeAudio 全域錯誤：', err);
+    debugError('❌ transcribeAudio 全域錯誤：', err);
     throw err;
   }
 };
@@ -335,7 +336,7 @@ export const summarizeModes = [
   {
     key: 'ai_answer',
     label: 'AI給答案',
-    prompt: `${basePrompt}將這段文字，直接給出一個完整詳細的回答。`,
+    prompt: `${basePrompt} 請回答這段文字所提出的問題。`,
   },
 ];
 

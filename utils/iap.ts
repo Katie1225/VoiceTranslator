@@ -16,7 +16,11 @@ import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { debugValue } from '../constants/variant'
 import { debugLog, debugWarn, debugError } from './debugLog';
 
+let onTopUpProcessingChange: ((isProcessing: boolean) => void) | null = null;
 
+export const setTopUpProcessingCallback = (fn: ((isProcessing: boolean) => void) | null) => {
+  onTopUpProcessingChange = fn;
+};
 // 產品配置
 export const productToCoins: Record<string, number> = {
     'topup_100': debugValue === '1' ? 10 : 100,
@@ -45,6 +49,7 @@ class PurchaseManager {
 
     public async initialize(): Promise<boolean> {
         try {
+
             // 初始化IAP連接
             const connected = await initConnection();
             if (!connected) {
@@ -61,10 +66,11 @@ class PurchaseManager {
             await this.loadProducts();
 
             return true;
+
         } catch (err) {
             debugError('IAP初始化失敗:', err);
             return false;
-        }
+        } 
     }
 
     private async loadProducts() {
@@ -98,6 +104,8 @@ class PurchaseManager {
 
     private async handlePurchaseUpdate(purchase: Purchase) {
         try {
+    // 開始處理時顯示遮罩
+    if (onTopUpProcessingChange) onTopUpProcessingChange(true);
             if (!purchase.transactionReceipt) {
                 debugWarn('交易未完成，略過');
                 return;
@@ -128,7 +136,7 @@ class PurchaseManager {
             });
 
             debugLog('✅ 上傳金幣');
-                        debugLog(result);
+            debugLog(result);
 
             if (!result.success) {
                 throw new Error(result.message || '金幣記錄失敗');
@@ -151,7 +159,10 @@ class PurchaseManager {
             }
         } catch (err) {
             Alert.alert('❌ 購買處理失敗', err instanceof Error ? err.message : '未知錯誤');
-        }
+        }finally {
+    // 無論成功失敗都關閉遮罩
+    if (onTopUpProcessingChange) onTopUpProcessingChange(false);
+  }
     }
 
     public async requestPurchase(productId: string): Promise<boolean> {

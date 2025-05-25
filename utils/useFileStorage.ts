@@ -3,6 +3,7 @@ import * as FileSystem from 'expo-file-system';
 import RNFS from 'react-native-fs';
 import { Alert } from 'react-native';
 import { RecordingItem } from './audioHelpers';
+import { debugLog, debugWarn,debugError } from './debugLog';
 
 export const useFileStorage = (setRecordings: React.Dispatch<React.SetStateAction<RecordingItem[]>>) => {
   const [isLoading, setIsLoading] = useState(true);
@@ -28,7 +29,7 @@ export const useFileStorage = (setRecordings: React.Dispatch<React.SetStateActio
       const backupPath = `${RNFS.ExternalDirectoryPath}/recordings_backup.json`;
       await RNFS.writeFile(backupPath, JSON.stringify(filteredItems), 'utf8');
     } catch (err) {
-      console.error('儲存錄音列表失敗:', err);
+      debugError('儲存錄音列表失敗:', err);
     }
   };
 
@@ -43,9 +44,9 @@ export const useFileStorage = (setRecordings: React.Dispatch<React.SetStateActio
       let existingData: RecordingItem[] = await loadExistingRecords(internalPath, backupPath);
 
       const files = await RNFS.readDir(RNFS.ExternalDirectoryPath);
-console.log('📂 實際資料夾裡的所有檔案：');
+debugLog('📂 實際資料夾裡的所有檔案：');
 for (const file of files) {
-  console.log('🎧', file.name);
+  debugLog('🎧', file.name);
 }
   
       // 2. 掃描實際音檔
@@ -58,9 +59,9 @@ for (const file of files) {
       setRecordings(validatedRecordings);
       await saveRecordings(validatedRecordings);
   
-      console.log('✅ 錄音列表載入完成，有效記錄數:', validatedRecordings.length);
+      debugLog('✅ 錄音列表載入完成，有效記錄數:', validatedRecordings.length);
     } catch (err) {
-      console.error('🔴 載入錄音列表失敗:', err);
+      debugError('🔴 載入錄音列表失敗:', err);
     } finally {
       setIsLoading(false);
     }
@@ -79,13 +80,13 @@ for (const file of files) {
       // 次之嘗試讀取外部備份
       if (await RNFS.exists(backupPath)) {
         const backupContent = await RNFS.readFile(backupPath, 'utf8');
-        console.log('✅ 從外部備份還原 recordings.json');
+        debugLog('✅ 從外部備份還原 recordings.json');
         return JSON.parse(backupContent);
       }
   
       return [];
     } catch (error) {
-      console.warn('載入現有記錄失敗，將返回空陣列', error);
+      debugWarn('載入現有記錄失敗，將返回空陣列', error);
       return [];
     }
   };
@@ -96,12 +97,12 @@ for (const file of files) {
       const audioFiles = await RNFS.readDir(RNFS.ExternalDirectoryPath);
       const m4aFiles = audioFiles.filter(file => /\.m4a$/i.test(file.name));
       
-      console.log('📂 掃描到的音檔:');
-      m4aFiles.forEach(file => console.log('🎧', file.name));
+      debugLog('📂 掃描到的音檔:');
+      m4aFiles.forEach(file => debugLog('🎧', file.name));
       
       return m4aFiles;
     } catch (error) {
-      console.warn('掃描音檔失敗', error);
+      debugWarn('掃描音檔失敗', error);
       return [];
     }
   };
@@ -131,10 +132,10 @@ for (const file of files) {
         if (await RNFS.exists(path)) {
           result.push(item);
         } else {
-          console.warn('移除不存在檔案的記錄:', item.uri);
+          debugWarn('移除不存在檔案的記錄:', item.uri);
         }
       } catch (error) {
-        console.warn('驗證記錄時出錯:', item.uri, error);
+        debugWarn('驗證記錄時出錯:', item.uri, error);
       }
     }
   
@@ -152,10 +153,10 @@ for (const file of files) {
             derivedFiles: {},
             date: (file.mtime ? new Date(file.mtime).toISOString() : new Date().toISOString()), // 添加檔案修改時間
           });
-          console.log('➕ 新增未記錄音檔:', file.name);
+          debugLog('➕ 新增未記錄音檔:', file.name);
         }
       } catch (error) {
-        console.warn('處理新音檔時出錯:', file.name, error);
+        debugWarn('處理新音檔時出錯:', file.name, error);
       }
     }
   
@@ -174,7 +175,7 @@ for (const file of files) {
 
       const exists = await RNFS.exists(path);
       if (!exists) {
-        console.warn("⚠️ 檔案不存在，略過刪除:", path);
+        debugWarn("⚠️ 檔案不存在，略過刪除:", path);
         return;
       }
 
@@ -186,7 +187,7 @@ for (const file of files) {
         }
 
     } catch (err) {
-      console.error("❌ safeDeleteFile 刪除失敗:", err);
+      debugError("❌ safeDeleteFile 刪除失敗:", err);
       Alert.alert("刪除失敗", (err as Error).message);
       throw err;
     }

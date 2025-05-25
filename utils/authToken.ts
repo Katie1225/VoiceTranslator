@@ -1,4 +1,5 @@
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import { debugLog, debugWarn,debugError } from './debugLog';
 
 export const ensureFreshIdToken = async (): Promise<string> => {
   try {
@@ -8,7 +9,7 @@ export const ensureFreshIdToken = async (): Promise<string> => {
     if (!tokens.idToken) throw new Error('靜默登入無 idToken');
     return tokens.idToken;
   } catch (err) {
-    console.warn('⚠️ 靜默登入失敗，轉為互動登入:', err);
+    debugWarn('⚠️ 靜默登入失敗，轉為互動登入:', err);
 
     try {
       await GoogleSignin.signOut(); // 乾淨重新登入
@@ -17,7 +18,7 @@ export const ensureFreshIdToken = async (): Promise<string> => {
       if (!tokens.idToken) throw new Error('互動登入也無 idToken');
       return tokens.idToken;
     } catch (err2) {
-      console.error('❌ 強制登入也失敗:', err2);
+      debugError('❌ 強制登入也失敗:', err2);
       throw new Error('請重新登入後再試');
     }
   }

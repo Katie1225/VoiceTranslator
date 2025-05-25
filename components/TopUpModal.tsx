@@ -1,5 +1,6 @@
 import { View, Text, TouchableOpacity, Modal, FlatList } from 'react-native';
 import React, { useState } from 'react';
+import { debugLog, debugWarn,debugError } from '../utils/debugLog';
 
 
 type Props = {
@@ -44,7 +45,7 @@ const TopUpModal = ({ visible, onClose, onSelect, styles, colors, products }: Pr
               <TouchableOpacity
                 style={[styles.planCard, isProcessing && { opacity: 0.5 }]}
                 onPress={() => {
-                  console.log("🟢 購買商品 ID:", item.id);
+                  debugLog("🟢 購買商品 ID:", item.id);
                   if (!isProcessing) {
                     setIsProcessing(true);
                     onSelect(item.id);

@@ -49,7 +49,7 @@ import { uFPermissions } from '../src/hooks/uFPermissions';
 import { logCoinUsage } from '../utils/googleSheetAPI';
 import { handleLogin, loadUserAndSync, COIN_UNIT_MINUTES, COIN_COST_PER_UNIT, COIN_COST_AI } from '../utils/loginHelpers';
 import TopUpModal from '../components/TopUpModal';
-import { productIds, productToCoins, purchaseManager, } from '../utils/iap';
+import { productIds, productToCoins, purchaseManager, setTopUpProcessingCallback } from '../utils/iap';
 import { APP_VARIANT } from '../constants/variant';
 import RecorderHeader from '../components/RecorderHeader';
 import { debugLog, debugWarn, debugError } from '../utils/debugLog';
@@ -171,51 +171,66 @@ const RecorderPageVoiceNote = () => {
 
 
   const [resumeAfterTopUp, setResumeAfterTopUp] = useState<null | { index: number }>(null);
+  const onTopUpProcessingChangeRef = useRef<(isProcessing: boolean) => void>();
 
+  //儲值中
+const [isTopUpProcessing, setIsTopUpProcessing] = useState(false);
+
+useEffect(() => {
+  const callback = (isProcessing: boolean) => {
+    setIsTopUpProcessing(isProcessing);
+  };
+  
+  setTopUpProcessingCallback(callback);
+  
+  return () => {
+    setTopUpProcessingCallback(null); // 清理時取消回調
+  };
+}, []);
 
 
   // 替換原有的 handlePurchase 函數
-const handleTopUp = async (productId: string) => {
-  try {
-    // 1. 請求儲值
-    await purchaseManager.requestPurchase(productId);
-    setShowTopUpModal(false);
+  const handleTopUp = async (productId: string) => {
+    try {
+      // 1. 請求儲值
+      await purchaseManager.requestPurchase(productId);
+      setShowTopUpModal(false);
 
-    // 2. 等待金幣更新（不再需要手動同步，因為 handlePurchaseUpdate 已經處理）
-    // 3. 清除中斷操作的標記
-    setResumeAfterTopUp(null);
-    
-  } catch (err) {
-    Alert.alert('購買失敗', err instanceof Error ? err.message : '請稍後再試');
-  }
-};
+      // 2. 等待金幣更新（不再需要手動同步，因為 handlePurchaseUpdate 已經處理）
+      // 3. 清除中斷操作的標記
+      setResumeAfterTopUp(null);
 
-// 在組件中添加 useEffect 來監聽 pendingActions
-useEffect(() => {
-  const checkPendingActions = async () => {
-    // 使用公共方法替代直接訪問私有屬性
-    if (purchaseManager.hasPendingActions()) {
-      const actions = purchaseManager.getPendingActions();
-      const action = actions[0];
-      
-      if (action.type === 'transcribe' && action.index !== undefined) {
-        const freshUser = await AsyncStorage.getItem('user');
-        if (freshUser) {
-          const user = JSON.parse(freshUser);
-          if (user.coins > 0) { // 確保金幣已更新
-            const indexToResume = action.index;
-            purchaseManager.clearPendingActions();
-            setTimeout(() => {
-              handleTranscribe(indexToResume);
-            }, 500);
-          }
-        }
-      }
+    } catch (err) {
+      Alert.alert('購買失敗', err instanceof Error ? err.message : '請稍後再試');
     }
   };
 
-  checkPendingActions();
-}, [purchaseManager]); // 依賴 purchaseManager 實例
+  // 在組件中添加 useEffect 來監聽 pendingActions
+  useEffect(() => {
+    const checkPendingActions = async () => {
+      // 使用公共方法替代直接訪問私有屬性
+      if (purchaseManager.hasPendingActions()) {
+        const actions = purchaseManager.getPendingActions();
+        const action = actions[0];
+
+        if (action.type === 'transcribe' && action.index !== undefined) {
+          const freshUser = await AsyncStorage.getItem('user');
+          if (freshUser) {
+            const user = JSON.parse(freshUser);
+            if (user.coins > 0) { // 確保金幣已更新
+              const indexToResume = action.index;
+              purchaseManager.clearPendingActions();
+              setTimeout(() => {
+                handleTranscribe(indexToResume);
+              }, 500);
+            }
+          }
+        }
+      }
+    };
+
+    checkPendingActions();
+  }, [purchaseManager]); // 依賴 purchaseManager 實例
 
   // useEffect 初始化桌面色彩
   useEffect(() => {
@@ -927,9 +942,9 @@ useEffect(() => {
 
     try {
       const stored = await AsyncStorage.getItem('user');
-        debugLog('📦 本地 user 資料:', stored);
+      debugLog('📦 本地 user 資料:', stored);
 
-          let user = null;
+      let user = null;
 
       if (!stored) {
         setIsTranscribingIndex(null);
@@ -944,14 +959,14 @@ useEffect(() => {
           }
         ]);
         return;
-      } 
+      }
       user = JSON.parse(stored);
 
-          // 強制同步最新 user 資料
-   // await loadUserAndSync();
-   // const freshUser = await AsyncStorage.getItem('user');
-   // const updatedUser = freshUser ? JSON.parse(freshUser) : user;
-  
+      // 強制同步最新 user 資料
+      // await loadUserAndSync();
+      // const freshUser = await AsyncStorage.getItem('user');
+      // const updatedUser = freshUser ? JSON.parse(freshUser) : user;
+
 
       const { sound, status } = await Audio.Sound.createAsync({ uri: item.uri });
       if (!status.isLoaded) throw new Error("無法取得音檔長度");
@@ -1075,7 +1090,7 @@ useEffect(() => {
         return;
       }
 
-    // 取消上雲端節省時間  await loadUserAndSync();
+      // 取消上雲端節省時間  await loadUserAndSync();
       const fresh = await AsyncStorage.getItem('user');
       if (!fresh) {
         Alert.alert("錯誤", "無法取得使用者資料");
@@ -1131,9 +1146,9 @@ useEffect(() => {
       if (requirePayment && user) {
 
         const result = await logCoinUsage({
-        id: user.id,
-        email: user.email,
-        name: user.name,
+          id: user.id,
+          email: user.email,
+          name: user.name,
           action: mode,
           value: -COIN_COST_AI,
           note: `${mode}：${item.displayName || item.name} 扣 ${COIN_COST_AI} 金幣`,
@@ -1200,7 +1215,7 @@ useEffect(() => {
               <View style={{ paddingHorizontal: 12, paddingVertical: 10, backgroundColor: colors.container, borderRadius: 12, margin: 10 }}>
                 <Text style={{ color: colors.text, fontWeight: 'bold', marginBottom: 4 }}>📝 談話關鍵字</Text>
                 <TextInput
-                  placeholder="輸入關鍵字或複製貼上Agenda"
+                  placeholder="輸入關鍵字或複製貼上會議通知"
                   placeholderTextColor={colors.text + '80'}
                   value={notesEditing}
                   onChangeText={setNotesEditing}
@@ -1741,6 +1756,7 @@ useEffect(() => {
             )}
 
             {/* 放在這裡！不要放在 map 循環內部 */}
+            {/* 加速器 */}
             {speedMenuIndex !== null && speedMenuPosition && (
               <View style={{
                 position: 'absolute',
@@ -1780,6 +1796,7 @@ useEffect(() => {
 
           </>
         )}
+        {/* 回頂端的球 */}
         {recordings.length > 10 && editingState.index === null && (
           <TouchableOpacity
             onPress={() => flatListRef.current?.scrollToOffset({ animated: true, offset: 0 })}
@@ -1801,6 +1818,7 @@ useEffect(() => {
             <Text style={{ color: 'white', fontSize: 18 }}>↑</Text>
           </TouchableOpacity>
         )}
+        {/* 登入遮罩 */}
         {isLoggingIn && (
           <View style={{
             position: 'absolute',
@@ -1822,6 +1840,29 @@ useEffect(() => {
             </View>
           </View>
         )}
+        {isTopUpProcessing && (
+          <View style={{
+            position: 'absolute',
+            top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: colors.background,
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 9999,
+            elevation: 9999,
+          }}>
+            <View style={{
+              backgroundColor: colors.background,
+              padding: 24,
+              borderRadius: 12,
+              alignItems: 'center'
+            }}>
+              <Text style={{ color: colors.text, fontSize: 18, marginBottom: 10 }}>💰 處理儲值中...</Text>
+              <Text style={{ color: colors.text, fontSize: 14 }}>請稍候，正在驗證與加值</Text>
+            </View>
+          </View>
+        )}
+
+
         <TopUpModal
           visible={showTopUpModal}
           onClose={() => setShowTopUpModal(false)}

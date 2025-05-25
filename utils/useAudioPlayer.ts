@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Audio } from 'expo-av';
+import { debugLog, debugWarn,debugError } from './debugLog';
 
 export const useAudioPlayer = () => {
     const [currentSound, setCurrentSound] = useState<Audio.Sound | null>(null);
@@ -64,7 +65,7 @@ if (status.isLoaded && status.durationMillis) {
                 startProgressTimer(); // ✅ 撥放時開始 timer
             }
         } catch (err) {
-            console.error('播放失敗:', err);
+            debugError('播放失敗:', err);
         }
     };
 
@@ -91,10 +92,10 @@ if (status.isLoaded && status.durationMillis) {
                 const status = await currentSound.getStatusAsync();
                 if (status.isLoaded) {
                     await currentSound.setRateAsync(rate, true); // true 代表啟用 pitch 校正
-                    console.log("✅ 播放速度已設定為", rate);
+                    debugLog("✅ 播放速度已設定為", rate);
                 }
             } catch (err) {
-                console.error("❌ 設定播放速度失敗：", err);
+                debugError("❌ 設定播放速度失敗：", err);
             }
         }
     };

@@ -5,15 +5,13 @@ export const debugLog = (...args: any[]) => {
     console.log('[DEBUG]', ...args);
   }
 };
-
 export const debugWarn = (...args: any[]) => {
   if (debugValue === '1') {
-    console.warn('[WARN]', ...args);
+    console.warn('[DEBUG]', ...args);
   }
 };
-
 export const debugError = (...args: any[]) => {
   if (debugValue === '1') {
-    console.error('[ERROR]', ...args);
+    console.error('[DEBUG]', ...args);
   }
 };
