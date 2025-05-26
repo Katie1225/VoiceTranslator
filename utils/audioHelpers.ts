@@ -3,6 +3,7 @@ import * as FileSystem from 'expo-file-system';
 import { Audio } from 'expo-av';
 import { nginxVersion } from '../constants/variant';
 import { debugLog, debugWarn,debugError } from './debugLog';
+import * as RNFS from 'react-native-fs';
 
 export type RecordingItem = {
   uri: string;
@@ -321,12 +322,12 @@ export const summarizeModes = [
   {
     key: 'analysis',
     label: '會議記錄',
-    prompt: `${basePrompt}將這段文字整理成會議記錄, 包含參與者(如果有提及), 會議時間(如果有提及), 討論項目, 下一步行動(依照日期排列)。`,
+    prompt: `${basePrompt}將這段文字整理成會議記錄, 包含參與者(如果有提及), 會議時間(使用音檔時間), 討論項目, 下一步行動(依照日期排列)。`,
   },
   {
     key: 'email',
     label: '信件撰寫',
-    prompt: `${basePrompt}幫我把這段文字整理成一封正式的商業郵件，語氣禮貌。`,
+    prompt: `${basePrompt}把這段文字整理成一封正式的商業郵件，語氣禮貌。`,
   },
   {
     key: 'news',
@@ -336,7 +337,7 @@ export const summarizeModes = [
   {
     key: 'ai_answer',
     label: 'AI給答案',
-    prompt: `${basePrompt} 請回答這段文字所提出的問題。`,
+    prompt: `${basePrompt} 將這段文字整理分析內容並回答文字中的問題。`,
   },
 ];
 
@@ -345,12 +346,19 @@ export const summarizeModes = [
 export async function summarizeWithMode(
   transcript: string,
   modeKey: string,
-  targetLang: 'tw' | 'cn' = 'tw'
+  targetLang: 'tw' | 'cn' = 'tw',
+    metadata?: { startTime?: string; date?: string }
 ) {
   const mode = summarizeModes.find(m => m.key === modeKey);
   if (!mode) throw new Error('未知的摘要模式');
 
-  const finalPrompt = `${mode.prompt}\n\n使用者的主機語言是 ${targetLang}，請用此語言回覆。`;
+  const timeStr =
+  metadata?.date && metadata?.startTime
+    ? `事件發生時間 ${metadata.date} ${metadata.startTime}`
+    : '';
+
+  const finalPrompt = `${mode.prompt}\n${timeStr}\n使用者的主機語言是 ${targetLang}，用此語言回覆。`;
+  debugLog(finalPrompt);
 
   let BASE_URL: string;
 
@@ -382,5 +390,69 @@ export async function summarizeWithMode(
   return data.result.trim();
 }
 
+// 取得檔名時解開
+export function parseDateTimeFromDisplayName(displayName: string): { startTime?: string; date?: string } {
+  const timeMatch = displayName.match(/(\d{1,2}:\d{2}:\d{2})/);
+  const dateMatch = displayName.match(/(\d{1,2})\/(\d{1,2})/);
+
+  if (!timeMatch || !dateMatch) return {};
+
+  const time = timeMatch[1];
+  const [month, day] = [dateMatch[1], dateMatch[2]];
+  const year = new Date().getFullYear(); // 預設當年度
+
+  return {
+    startTime: time,
+    date: `${year}/${month}/${day}`
+  };
+}
+
+// 存檔時封裝
+export async function generateRecordingMetadata(uri: string): Promise<{
+  displayName: string;
+  date: string; // ISO 格式
+  durationSec: number;
+}> {
+  let durationSec = 0;
+  let durationText = '?秒';
+  let startDate = new Date();
+
+  const now = new Date(); // fallback 用
+  const { sound, status } = await Audio.Sound.createAsync({ uri });
+
+  if ('isLoaded' in status && status.isLoaded && status.durationMillis != null) {
+    durationSec = Math.round(status.durationMillis / 1000);
+
+    try {
+      const stat = await RNFS.stat(uri);
+      const fileEnd = new Date(stat.mtime);
+      startDate = new Date(fileEnd.getTime() - durationSec * 1000);
+    } catch {
+      startDate = new Date(now.getTime() - durationSec * 1000);
+    }
+
+    const h = Math.floor(durationSec / 3600);
+    const m = Math.floor((durationSec % 3600) / 60);
+    const s = durationSec % 60;
+
+    if (h > 0) durationText = `${h}小${m}分${s}秒`;
+    else if (m > 0) durationText = `${m}分${s}秒`;
+    else durationText = `${s}秒`;
+  }
+
+  await sound.unloadAsync();
+
+  const hh = startDate.getHours().toString().padStart(2, '0');
+  const mm = startDate.getMinutes().toString().padStart(2, '0');
+  const ss = startDate.getSeconds().toString().padStart(2, '0');
+
+  const displayName = `[錄音] ${durationText} ${hh}:${mm}:${ss} ${startDate.getMonth() + 1}/${startDate.getDate()}`;
+
+  return {
+    displayName,
+    date: startDate.toISOString(),
+    durationSec,
+  };
+}
 
 

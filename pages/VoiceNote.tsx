@@ -9,13 +9,11 @@ import {
   Alert,
   ActivityIndicator,
   TouchableWithoutFeedback,
-  Share,
   FlatList,
   Dimensions
 } from 'react-native';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
-import * as Sharing from 'expo-sharing';
 import { useKeepAwake } from 'expo-keep-awake';
 import Slider from '@react-native-community/slider';
 import AudioRecorderPlayer from 'react-native-audio-recorder-player';
@@ -29,10 +27,9 @@ import * as Localization from 'expo-localization';
 
 import {
   RecordingItem,
-  enhanceAudio,
-  trimSilence,
-  transcribeAudio,
-  summarizeWithMode, summarizeModes
+  enhanceAudio, trimSilence,
+  transcribeAudio, summarizeWithMode, summarizeModes,
+  parseDateTimeFromDisplayName, generateRecordingMetadata,
 } from '../utils/audioHelpers';
 import { useFileStorage } from '../utils/useFileStorage';
 import { useAudioPlayer } from '../utils/useAudioPlayer';
@@ -53,7 +50,7 @@ import { productIds, productToCoins, purchaseManager, setTopUpProcessingCallback
 import { APP_VARIANT } from '../constants/variant';
 import RecorderHeader from '../components/RecorderHeader';
 import { debugLog, debugWarn, debugError } from '../utils/debugLog';
-import { shareRecordingNote, shareRecordingFile } from '../utils/editingHelpers';
+import { shareRecordingNote, shareRecordingFile, saveEditedRecording, deleteTextRecording, prepareEditing } from '../utils/editingHelpers';
 
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 GoogleSignin.configure({
@@ -81,9 +78,10 @@ const RecorderPageVoiceNote = () => {
   const [dbHistory, setDbHistory] = useState<number[]>([]);
   const audioRecorderPlayer = useRef(new AudioRecorderPlayer()).current;
   const [isTranscribingIndex, setIsTranscribingIndex] = useState<number | null>(null);
-  const [isSummarizingIndex, setIsSummarizingIndex] = useState<number | null>(null);
+  const [summarizingState, setSummarizingState] = useState<{ index: number; mode: string; } | null>(null);
   const [isEditingNotesIndex, setIsEditingNotesIndex] = useState<number | null>(null);
-  const isAnyProcessing = isTranscribingIndex !== null || isSummarizingIndex !== null || isEditingNotesIndex !== null;
+  const isAnyProcessing = isTranscribingIndex !== null || summarizingState !== null || isEditingNotesIndex !== null;
+
   const [summaryMode, setSummaryMode] = useState('summary');
   const [notesEditing, setNotesEditing] = useState<string>('');
   const [showNotesIndex, setShowNotesIndex] = useState<number | null>(null);
@@ -274,6 +272,7 @@ const RecorderPageVoiceNote = () => {
     type: 'transcript' | 'summary' | 'name' | 'notes' | null;
     index: number | null;
     text: string;
+    mode?: string; // ✅ optional，未來加多摘要時會用到
   }>({ type: null, index: null, text: '' });
 
   const [recordings, setRecordings] = useState<RecordingItem[]>([]);
@@ -528,50 +527,18 @@ const RecorderPageVoiceNote = () => {
 
 
       debugLog("📄 錄音檔案資訊:", fileInfo);
+      const name = uri.split('/').pop() || `rec_${Date.now()}.m4a`;
 
       if (fileInfo.size > 0) {
-        const now = new Date();
-        const name = uri.split('/').pop() || `rec_${now.getTime()}.m4a`;
-
-        // 取得錄音長度（秒）
-
-        let durationText = '?秒';
-
-        try {
-          const { sound, status } = await Audio.Sound.createAsync({ uri: normalizedUri });
-          if (status.isLoaded && status.durationMillis != null) {
-            const totalSeconds = Math.round(status.durationMillis / 1000);
-            const hours = Math.floor(totalSeconds / 3600);
-            const minutes = Math.floor((totalSeconds % 3600) / 60);
-            const seconds = totalSeconds % 60;
-
-            if (hours > 0) {
-              durationText = `${hours}小${minutes}分${seconds}秒`;
-            } else if (minutes > 0) {
-              durationText = `${minutes}分${seconds}秒`;
-            } else {
-              durationText = `${seconds}秒`;
-            }
-          }
-          await sound.unloadAsync();
-        } catch (e) {
-          debugWarn("⚠️ 無法取得音檔長度", e);
-        }
-
-        // 組合顯示名稱
-        const hours = now.getHours().toString().padStart(2, '0');
-        const minutes = now.getMinutes().toString().padStart(2, '0');
-        const seconds = now.getSeconds().toString().padStart(2, '0');
-        const dateStr = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
-        const displayName = `[錄音] ${durationText} ${hours}:${minutes}:${seconds} ${now.getMonth() + 1}/${now.getDate()}`;
-
+        const { displayName, date, durationSec } = await generateRecordingMetadata(normalizedUri);
         const newItem: RecordingItem = {
           uri: normalizedUri,
           name,
-          displayName,
+          displayName,     // ✅ 來自 generateRecordingMetadata
           derivedFiles: {},
-          date: now.toISOString(),
-          notes: notesEditing, // ✅ 存進去
+          date,            // ✅ 正確的錄音開始時間（ISO）
+          notes: notesEditing,
+
         };
 
         setShowTranscriptIndex(null);   // 🔧 錄音完後，確保不會自動顯示 transcript
@@ -659,6 +626,7 @@ const RecorderPageVoiceNote = () => {
   };
 
   // 取得音檔
+
   const pickAudio = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -671,32 +639,24 @@ const RecorderPageVoiceNote = () => {
         const asset = result.assets[0];
         const { uri, name } = asset;
 
-        // 讀取音檔長度
-        const { sound, status } = await Audio.Sound.createAsync({ uri });
-        let durationText = '?秒';
-        if (status.isLoaded && status.durationMillis != null) {
-          const seconds = Math.round(status.durationMillis / 1000);
-          durationText = `${seconds}秒`;
-        }
-        await sound.unloadAsync();
+   const { displayName, date, durationSec } = await generateRecordingMetadata(uri);
 
-        // 組 displayName
-        const now = new Date();
-        const hours = now.getHours().toString().padStart(2, '0');
-        const minutes = now.getMinutes().toString().padStart(2, '0');
-        const secondsStr = now.getSeconds().toString().padStart(2, '0');
+const newItem: RecordingItem = {
+  uri,
+  name,
+  displayName,
+  derivedFiles: {},
+  date,
+  notes: notesEditing,
+};
 
-        const displayName = `[錄音] ${durationText} ${hours}:${minutes}:${secondsStr} ${now.getMonth() + 1}/${now.getDate()}`;
+debugLog('📥 匯入錄音 metadata:', { name, displayName, date, durationSec });
 
-        const newItem: RecordingItem = {
-          uri,
-          name,
-          displayName,
-          derivedFiles: {},
-        };
+setRecordings(prev => [newItem, ...prev]);
 
-        setRecordings(prev => [newItem, ...prev]);
+
       }
+
     } catch (err) {
       debugError('❌ 選取音檔失敗', err);
     }
@@ -730,46 +690,38 @@ const RecorderPageVoiceNote = () => {
     );
   }
 
+  // 刪除 summary 其中一項的對應邏輯
+  const handleDeleteSummary = async (index: number) => {
+    const updated = deleteTextRecording(recordings, index, 'summary', summaryMode);
+    setRecordings(updated);
+    await saveRecordings(updated);
+
+    const remainingModes = Object.keys(updated[index]?.summaries || {})
+      .filter(k => updated[index]?.summaries?.[k]);
+
+    if (remainingModes.length > 0) {
+      const preferredOrder = ['summary', 'analysis', 'email', 'news', 'ai_answer'];
+      const nextMode = preferredOrder.find(k => remainingModes.includes(k)) || remainingModes[0];
+      setSummaryMode(nextMode);
+    } else {
+      setSummaryMode('summary'); // reset
+      setShowSummaryIndex(null);
+    }
+
+    setSummarizingState(null);
+  };
+
 
   // 所有的文字編輯邏輯
-  const startEditing = (index: number, type: 'name' | 'transcript' | 'summary' | 'notes') => {
-    const raw = type === 'name'
-      ? recordings[index]?.displayName || recordings[index]?.name
-      : type === 'transcript'
-        ? recordings[index]?.transcript
-        : type === 'summary'
-          ? recordings[index]?.summaries?.[summaryMode] || ''
-          : recordings[index]?.notes || '';
-    ;
 
-    setEditingState({ type, index, text: raw || '' });
+  const startEditing = (index: number, type: 'name' | 'transcript' | 'summary' | 'notes') => {
+    const editing = prepareEditing(recordings, index, type, summaryMode);
+    setEditingState(editing);
     setSelectedIndex(null);
   };
 
   const saveEditing = () => {
-    const { type, index, text } = editingState;
-    if (index === null || !text.trim()) return;
-
-    const updated = recordings.map((rec, i) => {
-      if (i !== index) return rec;
-
-      if (type === 'name') {
-        return { ...rec, displayName: text };
-      } else if (type === 'transcript') {
-        return { ...rec, transcript: text };
-      } else if (type === 'summary') {
-        return {
-          ...rec,
-          summaries: {
-            ...(rec.summaries || {}),
-            [summaryMode]: text,
-          },
-        };
-      } else if (type === 'notes') {
-        return { ...rec, notes: text };
-      }
-      return rec;
-    });
+    const updated = saveEditedRecording(recordings, editingState, summaryMode);
 
     setRecordings(updated);
     saveRecordings(updated);
@@ -814,60 +766,27 @@ const RecorderPageVoiceNote = () => {
       },
       onDelete: async () => {
         if (type === 'summary') {
-          const updated = recordings.map((rec, i) => {
-            if (i !== index) return rec;
-            const newSummaries = { ...(rec.summaries || {}) };
-            delete newSummaries[summaryMode];
-            return { ...rec, summaries: newSummaries };
-          });
-
-          setRecordings(updated);
-          await saveRecordings(updated);
-
-          // 檢查剩餘可用的摘要模式
-          const remainingModes = Object.keys(updated[index]?.summaries || {})
-            .filter(k => updated[index]?.summaries?.[k]);
-
-          if (remainingModes.length > 0) {
-            // 優先選擇預設模式順序
-            const preferredOrder = ['summary', 'analysis', 'email', 'news', 'ai_answer'];
-            const nextMode = preferredOrder.find(k => remainingModes.includes(k)) || remainingModes[0];
-            setSummaryMode(nextMode); // 更新全局摘要模式
-          } else {
-            setSummaryMode('summary'); // 重置為預設模式
-          }
-
-          setShowSummaryIndex(null);
-          setIsSummarizingIndex(null);
-        }
-        if (type === 'transcript') {
-          const updated = recordings.map((rec, i) => {
-            if (i !== index) return rec;
-            return { ...rec, transcript: '' };
-          });
-
-          setRecordings(updated);
-          await saveRecordings(updated);
-          setShowTranscriptIndex(null);
-          setIsTranscribingIndex(null);
-        }
-        if (type === 'notes') {
-          const updated = recordings.map((rec, i) => {
-            if (i !== index) return rec;
-            return { ...rec, notes: '' };
-          });
-
+          await handleDeleteSummary(index);
+        } else {
+          const updated = deleteTextRecording(recordings, index, type, summaryMode);
           setRecordings(updated);
           await saveRecordings(updated);
           resetEditingState();
-          setIsEditingNotesIndex(null);
+
+          if (type === 'transcript') {
+            setShowTranscriptIndex(null);  // 控制「哪一筆錄音顯示 transcript 區塊」
+            setIsTranscribingIndex(null);  // 控制「哪一筆正在轉文字（轉錄）中」
+          } else if (type === 'notes') {
+            setIsEditingNotesIndex(null);
+          }
         }
       },
+
 
       onShare: async () => {
         await shareRecordingNote(recordings[index], type, summaryMode);
         if (type === 'summary') {
-          setIsSummarizingIndex(null);
+          setSummarizingState(null);
         }
       },
       styles,
@@ -1016,6 +935,21 @@ const RecorderPageVoiceNote = () => {
   ) => {
 
     const item = recordings[index];
+    let startTime = '';
+    let date = '';
+
+    if (item.date) {
+      const dateObj = new Date(item.date);
+      startTime = `${dateObj.getHours().toString().padStart(2, '0')}:${dateObj.getMinutes().toString().padStart(2, '0')}:${dateObj.getSeconds().toString().padStart(2, '0')}`;
+      date = `${dateObj.getFullYear()}/${dateObj.getMonth() + 1}/${dateObj.getDate()}`;
+    } else {
+      // fallback：從 displayName 擷取
+      const parsed = parseDateTimeFromDisplayName(item.displayName || item.name || '');
+      if (parsed.startTime) startTime = parsed.startTime;
+      if (parsed.date) date = parsed.date;
+    }
+
+
 
     // ✅ 已有摘要就直接顯示
     if (item.summaries?.[mode]) {
@@ -1061,7 +995,7 @@ const RecorderPageVoiceNote = () => {
     }
 
     // ✅ 開始處理摘要
-    setIsSummarizingIndex(index);
+    setSummarizingState({ index, mode });
 
     try {
       const fullPrompt = item.notes?.trim()
@@ -1071,9 +1005,9 @@ const RecorderPageVoiceNote = () => {
       const summary = await summarizeWithMode(
         fullPrompt,
         mode,
-        userLang.includes('CN') ? 'cn' : 'tw'
+        userLang.includes('CN') ? 'cn' : 'tw',
+        { startTime, date }
       );
-
 
       const updated = recordings.map((rec, i) =>
         i === index
@@ -1090,19 +1024,6 @@ const RecorderPageVoiceNote = () => {
       setRecordings(updated);
       await saveRecordings(updated);
 
-      // ✅ 如果是付費，扣金幣
-      if (requirePayment && user) {
-
-        const result = await logCoinUsage({
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          action: mode,
-          value: -COIN_COST_AI,
-          note: `${mode}：${item.displayName || item.name} 扣 ${COIN_COST_AI} 金幣`,
-        });
-      }
-
       // ✅ 顯示摘要
       setSummaryMode(mode);
       setShowTranscriptIndex(null);
@@ -1110,7 +1031,19 @@ const RecorderPageVoiceNote = () => {
     } catch (err) {
       Alert.alert("❌ 摘要失敗", (err as Error).message || "處理失敗");
     } finally {
-      setIsSummarizingIndex(null);
+      setSummarizingState(null);
+    }
+    // ✅ 如果是付費，扣金幣
+    if (requirePayment && user) {
+
+      await logCoinUsage({
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        action: mode,
+        value: -COIN_COST_AI,
+        note: `${mode}：${item.displayName || item.name} 扣 ${COIN_COST_AI} 金幣`,
+      });
     }
   };
 
@@ -1296,7 +1229,21 @@ const RecorderPageVoiceNote = () => {
                                     onBlur={saveEditing}
                                   />
                                 ) : (
-                                  <TouchableOpacity onPress={() => startEditing(index, 'name')}>
+                                  <TouchableOpacity
+                                    onPress={async () => {
+                                      closeAllMenus();
+                                      await togglePlayback(item.uri, index);
+                                      setSelectedPlayingIndex(index);
+                                      if (item.transcript) {
+                                        setShowTranscriptIndex(index);
+                                        setShowSummaryIndex(null);
+                                      } else {
+                                        setShowTranscriptIndex(null);
+                                        setShowSummaryIndex(null);
+                                      }
+                                    }}
+                                    onLongPress={() => startEditing(index, 'name')}
+                                  >
                                     <Text
                                       style={[styles.recordingName, isCurrentPlaying && styles.playingText]}
                                       numberOfLines={1}
@@ -1305,6 +1252,7 @@ const RecorderPageVoiceNote = () => {
                                       {item.displayName || item.name}
                                     </Text>
                                   </TouchableOpacity>
+
                                 )
                               }
                             </View>
@@ -1521,18 +1469,15 @@ const RecorderPageVoiceNote = () => {
                           )}
 
                           {/* 處理中loading（兄弟，不包進 actionButtons） */}
-                          {(isTranscribingIndex === index || isSummarizingIndex === index || isEditingNotesIndex !== null) && (
-                            <View style={{ marginTop: 6, alignItems: 'flex-start', paddingHorizontal: 12 }}>
-                              {isTranscribingIndex === index && (
-                                <Text style={{ color: colors.primary }}>⏳ 錄音筆記處理中...</Text>
-                              )}
-                              {isSummarizingIndex === index && !item.summaries?.[summaryMode] && (
-                                <Text style={{ color: colors.primary }}>
-                                  ⏳ {summarizeModes.find((m) => m.key === summaryMode)?.label || '重點整理'}處理中...
-                                </Text>
-                              )}
-                            </View>
+                          {(isTranscribingIndex === index || summarizingState?.index === index) && (
+                            <Text style={{ color: colors.primary }}>
+                              ⏳ {isTranscribingIndex === index
+                                ? '錄音筆記處理中...'
+                                : summarizeModes.find((m) => m.key === summarizingState?.mode)?.label + '處理中...'
+                              }
+                            </Text>
                           )}
+
 
                           {/* 內容顯示區 */}
                           {(isCurrentPlaying) && (
@@ -1546,7 +1491,6 @@ const RecorderPageVoiceNote = () => {
                                           : 'transcript')}
                                 </>
                               )}
-
                             </>
                           )}
 
@@ -1600,9 +1544,9 @@ const RecorderPageVoiceNote = () => {
                     startEditing(index, 'name')
                   }, 0);
                 }}
-onShare={(uri) => {
-  shareRecordingFile(uri, () => setSelectedIndex(null));
-}}
+                onShare={(uri) => {
+                  shareRecordingFile(uri, () => setSelectedIndex(null));
+                }}
                 onDelete={(index) => {
                   deleteRecording(index); // 一次刪整包
                   setShowTranscriptIndex(null);

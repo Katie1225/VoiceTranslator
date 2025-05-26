@@ -149,10 +149,7 @@ export const renderNoteBlock = (props: {
                 <View
                     style={{
                         maxHeight: 400,
-
-
                         backgroundColor: colors.background,
-
                     }}
                 >
                     {/* 添加 ScrollView 並設置 nestedScrollEnabled */}
@@ -196,7 +193,13 @@ export const renderNoteBlock = (props: {
                 </View>
             ) : (
                 <>
-                    <Text style={styles.transcriptText}>{value}</Text>
+                    <Text
+                        style={styles.transcriptText}
+                        selectable={true}
+                        selectionColor={colors.primary} // 可選：選取底色
+                    >
+                        {value}
+                    </Text>
                     <View
                         style={{
                             flexDirection: 'row',
@@ -212,17 +215,16 @@ export const renderNoteBlock = (props: {
                             <Text style={styles.transcriptActionButton}>📤 轉發</Text>
                         </TouchableOpacity>
 
-{/*         */}  
-{APP_VARIANT === 'notedebug' && (
-  <TouchableOpacity onPress={onDelete}>
-    <Text style={styles.transcriptActionButton}>🗑️ 刪除</Text>
-  </TouchableOpacity>
-)}
-                        
+                        {/*         */}
+                        {APP_VARIANT === 'notedebug' && (
+                            <TouchableOpacity onPress={onDelete}>
+                                <Text style={styles.transcriptActionButton}>🗑️ 刪除</Text>
+                            </TouchableOpacity>
+                        )}
+
                     </View>
                 </>
             )}
         </View>
     );
 };
-  
