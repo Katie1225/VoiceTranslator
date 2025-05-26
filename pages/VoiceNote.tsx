@@ -525,12 +525,12 @@ const RecorderPageVoiceNote = () => {
         return;
       }
 
-
       debugLog("📄 錄音檔案資訊:", fileInfo);
       const name = uri.split('/').pop() || `rec_${Date.now()}.m4a`;
 
       if (fileInfo.size > 0) {
         const { displayName, date, durationSec } = await generateRecordingMetadata(normalizedUri);
+
         const newItem: RecordingItem = {
           uri: normalizedUri,
           name,
@@ -538,7 +538,6 @@ const RecorderPageVoiceNote = () => {
           derivedFiles: {},
           date,            // ✅ 正確的錄音開始時間（ISO）
           notes: notesEditing,
-
         };
 
         setShowTranscriptIndex(null);   // 🔧 錄音完後，確保不會自動顯示 transcript

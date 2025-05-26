@@ -87,8 +87,12 @@ export const trimSilence = async (uri: string, name: string): Promise<RecordingI
   return { uri: outputPath, name: outputName, originalUri: uri, isTrimmed: true };
 };
 
-export async function speedUpAudio(uri: string, speed: number) {
-  const outputUri = `${FileSystem.cacheDirectory}sped_up_${Date.now()}_x${speed}.wav`;
+export async function speedUpAudio(uri: string, speed: number, outputName?: string) {
+  const fileName = outputName
+    ? `sped_up_${outputName}_x${speed}.wav`
+    : `sped_up_${Date.now()}_x${speed}.wav`;
+
+  const outputUri = `${FileSystem.cacheDirectory}${fileName}`;
 
   const cmd = [
     `-i "${uri}"`,
@@ -109,8 +113,6 @@ export async function speedUpAudio(uri: string, speed: number) {
   }
 }
 
-
-
 // 切段工具
 export const splitAudioIntoSegments = async (
   uri: string,
@@ -127,7 +129,7 @@ export const splitAudioIntoSegments = async (
   );
 
   // 強制關鍵幀切割
-  const command = `-i "${uri}" -f segment -segment_time ${seconds} -force_key_frames "expr:gte(n, n_forced*${seconds})" -c copy "${outputPattern}"`;
+  const command = `-i "${uri}" -f segment -segment_time ${seconds} -ar 16000 -ac 1 -c:a pcm_s16le "${outputPattern}"`;
 
   const session = await FFmpegKit.execute(command);
   const returnCode = await session.getReturnCode();
@@ -157,35 +159,54 @@ export async function getAudioDuration(uri: string): Promise<{ duration: number 
   return { duration };
 }
 
-
-export const transcribeAudio = async (
-  item: RecordingItem,
-  onPartial?: (text: string, index: number, total: number) => void,
-  targetLang: 'tw' | 'cn' = 'tw'
-): Promise<{ transcript: { text: string } }> => {
-
-
+export const sendToWhisper = async (
+  wavUri: string,
+  lang: 'tw' | 'cn' = 'tw'
+): Promise<string> => {
   try {
-    if (!item.uri || !item.name) {
-      throw new Error('音檔資訊不完整（uri 或 name 為 null）');
+
+        let apiUrl : string;
+      if (nginxVersion === 'blue') {
+        apiUrl  = 'https://katielab.com/transcribe/';
+      } else if (nginxVersion === 'green') {
+        apiUrl  = 'https://katielab.com/v1/transcribe/';
+      } else {
+        throw new Error('未知的 nginxVersion');
+      }
+
+    const fileStat = await FileSystem.getInfoAsync(wavUri);
+    if (!fileStat.exists) {
+      throw new Error(`音檔不存在: ${wavUri}`);
     }
 
+    const formData = new FormData();
+    formData.append('audio', {
+      uri: wavUri,
+      name: 'audio.wav',
+      type: 'audio/wav',
+    } as any); // ⚠️ React Native 環境下需加 `as any` 避開 TS 檢查
 
-    const trimmedRecording = await trimSilence(item.uri, item.name);
-    const wavUri = await speedUpAudio(trimmedRecording.uri, 1.5);
+    formData.append('lang', lang);
 
-    const fileInfo = await FileSystem.getInfoAsync(wavUri);
-    if (!fileInfo.exists || typeof fileInfo.size !== 'number') {
-      throw new Error('轉換後的檔案不存在或無法取得大小');
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Whisper API 失敗: ${response.status} - ${errText}`);
     }
-
-    // 🧠 定義可疑語句
+    const data = await response.json();
+   let text = data?.text || data?.transcript || '';
+       // 定義可疑語句
     const suspiciousPhrases = [
       '社群提供',
       '社區提供',
-      '節目由',
-      '贊助',
-      '製作單位',
+      '節目由','贊助','製作單位',
       '感謝本集',
       '請勿模仿',
       '純屬虛構',
@@ -195,119 +216,77 @@ export const transcribeAudio = async (
       '網友朋友',
       '今天的節目',
       '忽略任何字幕來源',
-      '廣告內容',
-      '請不吝點贊訂閱',
-      '請不吝點贊訂閱欄目',
-      '請不吝點贊訂閱轉發打賞支持明鏡與點點欄目',
+      '廣告','內容',
+      '請不吝點贊','訂閱','欄目', '轉發', '打賞', '支持', '明鏡與點點欄目',
       '字幕by索蘭婭╰╯╯',
     ];
 
-    const isSuspicious = (text: string) => {
-      return suspiciousPhrases.some(phrase => text.includes(phrase));
-    };
+    // ✅ 清洗句子內容
+    const sentences: string[] = text.split(/(?<=[。！？!?\n])/);
+    const filtered = sentences.filter(s => !suspiciousPhrases.some(p => s.includes(p))); // 移除廣告句
+    const cleaned = filtered.join('').trim(); // 合併為單段文字
 
-    // ✅ 每段切出來後壓縮：內部函式定義
-    const compressSegment = async (uri: string): Promise<string> => {
-      const output = uri.replace('.wav', '_small.wav');
-      const command = `-y -i "${uri}" -ac 1 -ar 16000 -sample_fmt s16 "${output}"`;
-
-      const session = await FFmpegKit.execute(command);
-      const returnCode = await session.getReturnCode();
-
-      if (!ReturnCode.isSuccess(returnCode)) {
-        throw new Error(`段落壓縮失敗：${uri}`);
-      }
-
-      return output;
-    };
-
-    let accumulated = '';
-
-    const { duration } = await getAudioDuration(wavUri);
-    const segmentCount = Math.ceil(duration / 30);
-    const now = Date.now();
-
-    for (let i = 0; i < segmentCount; i++) {
-      const start = i * 30;
-      const segmentName = `segment_${i}_${Date.now()}.wav`;
-      const segmentPath = `${FileSystem.cacheDirectory}${segmentName}`;
-
-      const command = `-i "${wavUri}" -ss ${start} -t 30 -ar 16000 -ac 1 "${segmentPath}"`;
-      await FFmpegKit.execute(command);
-      const { duration: segmentDuration } = await getAudioDuration(segmentPath);
-      debugLog(`⏱️ 第 ${i + 1} 段時長: ${segmentDuration.toFixed(2)}秒`);
-      if (segmentDuration < 1) {
-        debugLog(`⏭️ 跳過過短分段 (${segmentDuration}s)`);
-        continue;
-      }
-
-      debugLog(`📤 上傳第 ${i + 1} 段`);
-      const formData = new FormData();
-      formData.append('audio', {
-        uri: segmentPath,
-        name: segmentName,
-        type: 'audio/wav',
-      } as any);
-      formData.append('targetLang', targetLang);
-
-      let BASE_URL: string;
-      if (nginxVersion === 'blue') {
-        BASE_URL = 'https://katielab.com/transcribe/';
-      } else if (nginxVersion === 'green') {
-        BASE_URL = 'https://katielab.com/v1/transcribe/';
-      } else {
-        throw new Error('未知的 nginxVersion');
-      }
-
-      const response = await fetch(BASE_URL, {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'multipart/form-data',
-        },
-        body: formData,
-      });
-
-      const raw = await response.text();
-      if (!response.ok) {
-        debugError(`❌ 第 ${i + 1} 段錯誤：`, raw);
-        throw new Error(`第 ${i + 1} 段轉文字失敗：HTTP ${response.status}`);
-      } else {
-        debugLog('✅ 呼叫 Whisper API 成功');
-      }
-
-      let text = '';
-      try {
-        const parsed = JSON.parse(raw);
-        text = parsed.text;
-      } catch (err) {
-        const match = raw.match(/\{.*"text"\s*:\s*".*"\s*\}/s);
-        if (match) {
-          const parsed = JSON.parse(match[0]);
-          text = parsed.text;
-        } else {
-          throw new Error(`第 ${i + 1} 段回傳格式錯誤`);
-        }
-      }
-
-      const sentences = text.split(/(?<=[。！？!?\n])/);
-      const filtered = sentences.filter(s => !suspiciousPhrases.some(p => s.includes(p)));
-      text = filtered.join('').trim();
-
-      if (text.trim()) {
-        accumulated += text + '\n';
-      }
-
-      onPartial?.(accumulated.trim(), i + 1, segmentCount);
-      await FileSystem.deleteAsync(segmentPath, { idempotent: true });  // 清除暫存段落檔案
-    }
-
-    return { transcript: { text: accumulated.trim() } };
-
+    return cleaned;
   } catch (err) {
-    debugError('❌ transcribeAudio 全域錯誤：', err);
+    console.error('❌ sendToWhisper 錯誤:', err);
     throw err;
   }
+};
+
+export const transcribeAudio = async (
+  item: RecordingItem,
+  onPartial?: (text: string, index: number, total: number) => void,
+  targetLang: 'tw' | 'cn' = 'tw'
+): Promise<{ transcript: { text: string } }> => {
+  if (!item.uri || !item.name) {
+    throw new Error('音檔資訊不完整（uri 或 name 為 null）');
+  }
+
+  // 1. Split into segments
+  const segmentUris = await splitAudioIntoSegments(item.uri, 30);
+  let accumulatedText = '';
+  const baseName = item.name.replace(/\.[^/.]+$/, '');
+
+  // 2. Process each segment sequentially
+  for (let index = 0; index < segmentUris.length; index++) {
+    try {
+      const segmentUri = segmentUris[index];
+      
+      // 2.1 Trim silence
+      debugLog(`✂️ 開始剪輯第 ${index + 1} 段`);
+      const trimmed = await trimSilence(segmentUri, `${baseName}_seg${index}`);
+      
+      // 2.2 Speed up
+      debugLog(`⏩ 加速處理第 ${index + 1} 段`);
+      const spedUp = await speedUpAudio(trimmed.uri, 1.5, `${baseName}_seg${index}`);
+      
+      // 2.3 Send to Whisper
+      debugLog(`📤 上傳第 ${index + 1} 段至 Whisper`);
+      const text = await sendToWhisper(spedUp, targetLang);
+      
+      // 2.4 Accumulate results
+      if (text.trim()) {
+        accumulatedText += text + '\n';
+      }
+      
+      // 2.5 Callback with progress
+      onPartial?.(accumulatedText.trim(), index + 1, segmentUris.length);
+      
+      // 2.6 Clean up
+      await FileSystem.deleteAsync(trimmed.uri, { idempotent: true });
+      await FileSystem.deleteAsync(spedUp, { idempotent: true });
+      await FileSystem.deleteAsync(segmentUri, { idempotent: true });
+      
+      debugLog(`✅ 第 ${index + 1} 段處理完成`);
+    } catch (err) {
+      console.error(`❌ 第 ${index + 1} 段處理失敗：`, err);
+      // Continue with next segment even if one fails
+      accumulatedText += `[第 ${index + 1} 段處理失敗]\n`;
+      onPartial?.(accumulatedText.trim(), index + 1, segmentUris.length);
+    }
+  }
+
+  return { transcript: { text: accumulatedText.trim() } };
 };
 
 const basePrompt =
