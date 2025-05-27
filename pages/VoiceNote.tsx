@@ -67,7 +67,7 @@ const GlobalRecorderState = {
 const RecorderPageVoiceNote = () => {
   const title = "  Voice Note";
 
-  // useKeepAwake(); // 保持清醒
+  useKeepAwake(); // 保持清醒
   const { permissionStatus, requestPermissions } = uFPermissions();
   // 核心狀態
   const [recording, setRecording] = useState(false);
@@ -379,6 +379,7 @@ const RecorderPageVoiceNote = () => {
 
   // 在組件掛載時載入
   useEffect(() => {
+      debugLog('🔁 useEffect: 初次掛載，載入錄音');
     loadRecordings();
   }, []);
 
@@ -490,7 +491,13 @@ const RecorderPageVoiceNote = () => {
 
 
   // 停止錄音
+  let stopInProgress = false; // 👈 加在模組頂部最外層
   const stopRecording = async () => {
+      if (stopInProgress) {
+    debugWarn('⛔️ stopRecording 已在執行中，跳過');
+    return;
+  }
+  stopInProgress = true;
     try {
       const uri = await audioRecorderPlayer.stopRecorder();
       await audioRecorderPlayer.removeRecordBackListener();
@@ -505,7 +512,7 @@ const RecorderPageVoiceNote = () => {
 
       // 確保路徑格式正確
       const normalizedUri = uri.startsWith('file://') ? uri : `file://${uri}`;
-
+      
       // 使用 RNFS 檢查檔案
       const fileExists = await RNFS.exists(uri);
       if (!fileExists) {
@@ -544,7 +551,20 @@ const RecorderPageVoiceNote = () => {
         setShowSummaryIndex(null);      // 🔧 順便清掉 summary 展開
         resetEditingState(); // 清除所有編輯狀態
 
-        setRecordings(prev => [newItem, ...prev]);
+     // 換下面那些log   setRecordings(prev => [newItem, ...prev]);
+debugLog('📌 準備建立新錄音項目', { name, displayName, date });
+
+setRecordings(prev => {
+  const now = Date.now();
+  const recentItem = prev[0];
+  if (recentItem && Math.abs(now - parseInt(recentItem.name.replace('rec_', '').replace('.m4a', ''))) < 2000) {
+    debugWarn('⛔️ 距離上一筆錄音太近，疑似重複寫入，已跳過');
+    return prev;
+  }
+  return [newItem, ...prev];
+});
+
+
         setSelectedPlayingIndex(0);
 
       } else {
@@ -652,7 +672,6 @@ const newItem: RecordingItem = {
 debugLog('📥 匯入錄音 metadata:', { name, displayName, date, durationSec });
 
 setRecordings(prev => [newItem, ...prev]);
-
 
       }
 

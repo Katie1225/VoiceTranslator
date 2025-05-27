@@ -28,6 +28,7 @@ export const useFileStorage = (setRecordings: React.Dispatch<React.SetStateActio
       
       const backupPath = `${RNFS.ExternalDirectoryPath}/recordings_backup.json`;
       await RNFS.writeFile(backupPath, JSON.stringify(filteredItems), 'utf8');
+      
     } catch (err) {
       debugError('儲存錄音列表失敗:', err);
     }
@@ -35,7 +36,7 @@ export const useFileStorage = (setRecordings: React.Dispatch<React.SetStateActio
 
   // 從本地檔案載入錄音列表
   const loadRecordings = async () => {
- 
+     
     try {
       const internalPath = `${FileSystem.documentDirectory}recordings.json`;
       const backupPath = `${RNFS.ExternalDirectoryPath}/recordings_backup.json`;
@@ -83,6 +84,7 @@ for (const file of files) {
         debugLog('✅ 從外部備份還原 recordings.json');
         return JSON.parse(backupContent);
       }
+      
   
       return [];
     } catch (error) {
