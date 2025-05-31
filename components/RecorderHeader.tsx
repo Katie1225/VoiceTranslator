@@ -133,18 +133,6 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = ({
                     )}
                 </View>
 
-
-                {/* <View style={{
-                    flex: 4.5,
-                    marginRight: 0,
-                }}>
-                    <Text numberOfLines={1}
-                        ellipsizeMode="tail"
-                        style={{ color: colors.primary, fontSize: 26, fontWeight: '500', fontStyle: 'italic' }}>
-                        {recording ? `⏱ ${formatTime(displayTime * 1000)}` : title}
-                    </Text>
-                </View> */}
-
                 {/* 中間 45%：錄音按鈕 */}
                 <View style={{ flex: 4, marginRight: 0 }}>
                     <TouchableOpacity
