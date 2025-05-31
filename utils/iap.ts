@@ -16,6 +16,12 @@ import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { debugValue } from '../constants/variant'
 import { debugLog, debugWarn, debugError } from './debugLog';
 
+let onTopUpCompleted: (() => void) | null = null;
+
+export const setTopUpCompletedCallback = (fn: (() => void) | null) => {
+  onTopUpCompleted = fn;
+};
+
 let onTopUpProcessingChange: ((isProcessing: boolean) => void) | null = null;
 
 export const setTopUpProcessingCallback = (fn: ((isProcessing: boolean) => void) | null) => {
@@ -151,12 +157,18 @@ class PurchaseManager {
             // 顯示加值成功提示
             Alert.alert('✅ 加值成功', `已獲得 ${coinsToAdd} 金幣`);
 
+if (onTopUpCompleted) {
+  debugLog('🔁 呼叫儲值完成 callback');
+  onTopUpCompleted();
+  onTopUpCompleted = null;
+}
+            
             // 處理等待中的操作（現在確保金幣已更新後才執行）
-            if (this.pendingActions.length > 0) {
+     /*       if (this.pendingActions.length > 0) {
                 const actions = [...this.pendingActions];
                 this.clearPendingActions();
                 return actions;
-            }
+            } */
         } catch (err) {
             Alert.alert('❌ 購買處理失敗', err instanceof Error ? err.message : '未知錯誤');
         }finally {

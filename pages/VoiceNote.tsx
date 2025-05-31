@@ -46,7 +46,7 @@ import { uFPermissions } from '../src/hooks/uFPermissions';
 import { logCoinUsage } from '../utils/googleSheetAPI';
 import { handleLogin, loadUserAndSync, COIN_UNIT_MINUTES, COIN_COST_PER_UNIT, COIN_COST_AI } from '../utils/loginHelpers';
 import TopUpModal from '../components/TopUpModal';
-import { productIds, productToCoins, purchaseManager, setTopUpProcessingCallback } from '../utils/iap';
+import { productIds, productToCoins, purchaseManager, setTopUpProcessingCallback, setTopUpCompletedCallback } from '../utils/iap';
 import { APP_VARIANT } from '../constants/variant';
 import RecorderHeader from '../components/RecorderHeader';
 import { debugLog, debugWarn, debugError } from '../utils/debugLog';
@@ -168,8 +168,10 @@ const RecorderPageVoiceNote = () => {
     savePrimaryColorPreference(color);
   };
 
+  const resumeAfterTopUp = useRef<
+    null | { type: 'transcribe'; index: number } | { type: 'summary'; index: number; mode: string }
+  >(null);
 
-  const [resumeAfterTopUp, setResumeAfterTopUp] = useState<null | { index: number }>(null);
   const onTopUpProcessingChangeRef = useRef<(isProcessing: boolean) => void>();
 
   //儲值中
@@ -197,7 +199,6 @@ const RecorderPageVoiceNote = () => {
 
       // 2. 等待金幣更新（不再需要手動同步，因為 handlePurchaseUpdate 已經處理）
       // 3. 清除中斷操作的標記
-      setResumeAfterTopUp(null);
 
     } catch (err) {
       Alert.alert('購買失敗', err instanceof Error ? err.message : '請稍後再試');
@@ -259,6 +260,42 @@ const RecorderPageVoiceNote = () => {
     index: number;
     position: { x: number; y: number };
   } | null>(null);
+
+  // 接續先前工作
+  useEffect(() => {
+    debugLog('📌 掛載儲值完成 callback');
+
+    setTopUpCompletedCallback(async () => {
+      debugLog('📥 VoiceNote 收到儲值完成');
+      debugLog('🎯 resumeAfterTopUp 當下狀態:', resumeAfterTopUp.current);
+
+      if (resumeAfterTopUp.current?.index !== undefined) {
+        if (resumeAfterTopUp.current?.type === 'transcribe') {
+          handleTranscribe(resumeAfterTopUp.current.index);
+        } else if (resumeAfterTopUp.current?.type === 'summary') {
+  try {
+    debugLog('🚀 呼叫 handleSummarize', resumeAfterTopUp.current);
+    await handleSummarize(
+      resumeAfterTopUp.current.index,
+      resumeAfterTopUp.current.mode
+    );
+    debugLog('✅ handleSummarize 結束');
+  } catch (err) {
+    console.error('❌ handleSummarize 錯誤:', err);
+  }
+        }
+        resumeAfterTopUp.current = null;
+      } else {
+        debugLog('⛔ resumeAfterTopUp 無 index，不執行');
+      }
+    });
+
+    return () => {
+      debugLog('🧹 清除 callback');
+      setTopUpCompletedCallback(null);
+    };
+  }, []);
+
 
   // 變速播放
   const [speedMenuIndex, setSpeedMenuIndex] = useState<number | null>(null);
@@ -379,7 +416,7 @@ const RecorderPageVoiceNote = () => {
 
   // 在組件掛載時載入
   useEffect(() => {
-      debugLog('🔁 useEffect: 初次掛載，載入錄音');
+    debugLog('🔁 useEffect: 初次掛載，載入錄音');
     loadRecordings();
   }, []);
 
@@ -493,11 +530,11 @@ const RecorderPageVoiceNote = () => {
   // 停止錄音
   let stopInProgress = false; // 👈 加在模組頂部最外層
   const stopRecording = async () => {
-      if (stopInProgress) {
-    debugWarn('⛔️ stopRecording 已在執行中，跳過');
-    return;
-  }
-  stopInProgress = true;
+    if (stopInProgress) {
+      debugWarn('⛔️ stopRecording 已在執行中，跳過');
+      return;
+    }
+    stopInProgress = true;
     try {
       const uri = await audioRecorderPlayer.stopRecorder();
       await audioRecorderPlayer.removeRecordBackListener();
@@ -512,7 +549,7 @@ const RecorderPageVoiceNote = () => {
 
       // 確保路徑格式正確
       const normalizedUri = uri.startsWith('file://') ? uri : `file://${uri}`;
-      
+
       // 使用 RNFS 檢查檔案
       const fileExists = await RNFS.exists(uri);
       if (!fileExists) {
@@ -551,18 +588,18 @@ const RecorderPageVoiceNote = () => {
         setShowSummaryIndex(null);      // 🔧 順便清掉 summary 展開
         resetEditingState(); // 清除所有編輯狀態
 
-     // 換下面那些log   setRecordings(prev => [newItem, ...prev]);
-debugLog('📌 準備建立新錄音項目', { name, displayName, date });
+        // 換下面那些log   setRecordings(prev => [newItem, ...prev]);
+        debugLog('📌 準備建立新錄音項目', { name, displayName, date });
 
-setRecordings(prev => {
-  const now = Date.now();
-  const recentItem = prev[0];
-  if (recentItem && Math.abs(now - parseInt(recentItem.name.replace('rec_', '').replace('.m4a', ''))) < 2000) {
-    debugWarn('⛔️ 距離上一筆錄音太近，疑似重複寫入，已跳過');
-    return prev;
-  }
-  return [newItem, ...prev];
-});
+        setRecordings(prev => {
+          const now = Date.now();
+          const recentItem = prev[0];
+          if (recentItem && Math.abs(now - parseInt(recentItem.name.replace('rec_', '').replace('.m4a', ''))) < 2000) {
+            debugWarn('⛔️ 距離上一筆錄音太近，疑似重複寫入，已跳過');
+            return prev;
+          }
+          return [newItem, ...prev];
+        });
 
 
         setSelectedPlayingIndex(0);
@@ -658,20 +695,20 @@ setRecordings(prev => {
         const asset = result.assets[0];
         const { uri, name } = asset;
 
-   const { displayName, date, durationSec } = await generateRecordingMetadata(uri);
+        const { displayName, date, durationSec } = await generateRecordingMetadata(uri);
 
-const newItem: RecordingItem = {
-  uri,
-  name,
-  displayName,
-  derivedFiles: {},
-  date,
-  notes: notesEditing,
-};
+        const newItem: RecordingItem = {
+          uri,
+          name,
+          displayName,
+          derivedFiles: {},
+          date,
+          notes: notesEditing,
+        };
 
-debugLog('📥 匯入錄音 metadata:', { name, displayName, date, durationSec });
+        debugLog('📥 匯入錄音 metadata:', { name, displayName, date, durationSec });
 
-setRecordings(prev => [newItem, ...prev]);
+        setRecordings(prev => [newItem, ...prev]);
 
       }
 
@@ -837,21 +874,31 @@ setRecordings(prev => [newItem, ...prev]);
           { text: "取消", style: "cancel" },
           {
             text: "登入",
-            onPress: () => {
-              setIsTranscribingIndex(null);
-              handleLogin(setIsLoggingIn);
-            }
+onPress: async () => {
+  setShowTranscriptIndex(null);
+  const result = await handleLogin(setIsLoggingIn);
+  if (result) {
+    const { user, message } = result;
+
+    Alert.alert('✅ 登入成功', message, [
+      {
+        text: '繼續',
+        onPress: () => {
+            handleTranscribe(index);
+        },
+      },
+    ]);
+  }
+}
+
+
+
+
           }
         ]);
         return;
       }
       user = JSON.parse(stored);
-
-      // 強制同步最新 user 資料
-      // await loadUserAndSync();
-      // const freshUser = await AsyncStorage.getItem('user');
-      // const updatedUser = freshUser ? JSON.parse(freshUser) : user;
-
 
       const { sound, status } = await Audio.Sound.createAsync({ uri: item.uri });
       if (!status.isLoaded) throw new Error("無法取得音檔長度");
@@ -871,7 +918,8 @@ setRecordings(prev => [newItem, ...prev]);
             {
               text: "立即儲值",
               onPress: () => {
-                setResumeAfterTopUp({ index });
+                resumeAfterTopUp.current = { type: 'transcribe', index };
+                debugLog('✅ 已記錄儲值後要繼續執行的 index:', index);
                 setShowTopUpModal(true);
               }
             }
@@ -946,11 +994,11 @@ setRecordings(prev => [newItem, ...prev]);
 
   // 重點摘要AI工具箱邏輯
   const handleSummarize = async (
-
     index: number,
     mode: string = 'summary',
-    requirePayment: boolean = false
+    requirePayment?: boolean  // ← 可選
   ) => {
+    const pay = requirePayment ?? (mode !== 'summary'); // ← 決定實際是否要扣金幣
 
     const item = recordings[index];
     let startTime = '';
@@ -967,7 +1015,7 @@ setRecordings(prev => [newItem, ...prev]);
       if (parsed.date) date = parsed.date;
     }
 
-
+    debugLog('1', mode);
 
     // ✅ 已有摘要就直接顯示
     if (item.summaries?.[mode]) {
@@ -977,18 +1025,37 @@ setRecordings(prev => [newItem, ...prev]);
       return;
     }
 
+    debugLog('2', mode);
     let user: any = null;
 
     // ✅ 需要付費 → 確認登入與金幣
-    if (requirePayment) {
+    if (pay) {
       const stored = await AsyncStorage.getItem('user');
       if (!stored) {
         Alert.alert("請先登入", "使用 AI 工具箱需要登入", [
-          { text: "取消", style: "cancel" },
-          { text: "登入", onPress: () => handleLogin(setIsLoggingIn) },
+          { text: "取消", onPress: () => setShowSummaryIndex(null) },
+          {
+            text: "登入", onPress: async () => {
+  setShowTranscriptIndex(null);
+  const result = await handleLogin(setIsLoggingIn);
+  if (result) {
+    const { user, message } = result;
+
+    Alert.alert('✅ 登入成功', message, [
+      {
+        text: '繼續',
+        onPress: () => {
+          handleSummarize(index, mode);
+        },
+      },
+    ]);
+  }
+}
+          },
         ]);
         return;
       }
+      debugLog('3', mode);
 
       // 取消上雲端節省時間  await loadUserAndSync();
       const fresh = await AsyncStorage.getItem('user');
@@ -997,6 +1064,7 @@ setRecordings(prev => [newItem, ...prev]);
         return;
       }
 
+      debugLog('4', mode);
       user = JSON.parse(fresh);
 
       if (user.coins < COIN_COST_AI) {
@@ -1005,16 +1073,21 @@ setRecordings(prev => [newItem, ...prev]);
           `「${summarizeModes.find(m => m.key === mode)?.label || 'AI 工具'}」需要 ${COIN_COST_AI} 金幣，你目前剩餘 ${user.coins} 金幣`,
           [
             { text: "取消", style: "cancel" },
-            { text: "儲值", onPress: () => setShowTopUpModal(true) },
+            {
+              text: "儲值", onPress: () => {
+                resumeAfterTopUp.current = { type: 'summary', index, mode };
+                setShowTopUpModal(true)
+              }
+            },
           ]
         );
         return;
       }
     }
+    debugLog('5', mode);
 
     // ✅ 開始處理摘要
     setSummarizingState({ index, mode });
-
     try {
       const fullPrompt = item.notes?.trim()
         ? `使用者補充筆記：${item.notes} 錄音文字如下：${item.transcript}`
@@ -1039,6 +1112,7 @@ setRecordings(prev => [newItem, ...prev]);
           : rec
       );
 
+      debugLog('6', mode);
       setRecordings(updated);
       await saveRecordings(updated);
 
@@ -1046,22 +1120,24 @@ setRecordings(prev => [newItem, ...prev]);
       setSummaryMode(mode);
       setShowTranscriptIndex(null);
       setShowSummaryIndex(index);
+      debugLog('7', mode);
+
+      if (pay && user) {
+
+        await logCoinUsage({
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          action: mode,
+          value: -COIN_COST_AI,
+          note: `${mode}：${item.displayName || item.name} 扣 ${COIN_COST_AI} 金幣`,
+        });
+      }
+      debugLog('8', mode);
     } catch (err) {
       Alert.alert("❌ 摘要失敗", (err as Error).message || "處理失敗");
     } finally {
       setSummarizingState(null);
-    }
-    // ✅ 如果是付費，扣金幣
-    if (requirePayment && user) {
-
-      await logCoinUsage({
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        action: mode,
-        value: -COIN_COST_AI,
-        note: `${mode}：${item.displayName || item.name} 扣 ${COIN_COST_AI} 金幣`,
-      });
     }
   };
 
@@ -1772,7 +1848,6 @@ setRecordings(prev => [newItem, ...prev]);
           </View>
         )}
 
-
         <TopUpModal
           visible={showTopUpModal}
           onClose={() => setShowTopUpModal(false)}
@@ -1783,8 +1858,6 @@ setRecordings(prev => [newItem, ...prev]);
         />
       </SafeAreaView>
     </TouchableWithoutFeedback>
-
-
   );
 };
 

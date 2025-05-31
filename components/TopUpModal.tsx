@@ -1,6 +1,6 @@
 import { View, Text, TouchableOpacity, Modal, FlatList } from 'react-native';
 import React, { useState } from 'react';
-import { debugLog, debugWarn,debugError } from '../utils/debugLog';
+import { debugLog, debugWarn, debugError } from '../utils/debugLog';
 
 
 type Props = {
@@ -12,7 +12,7 @@ type Props = {
   products: any[]; // 從 getProducts 回傳的陣列
 };
 
-const TopUpModal = ({ visible, onClose, onSelect, styles, colors, products }: Props) => {
+const TopUpModal = ({ visible, onClose, onSelect, styles, colors, products}: Props) => {
   const [isProcessing, setIsProcessing] = useState(false);
   // Sort products by price (low to high)
   const sortedProducts = [...products].sort((a, b) => {
@@ -29,7 +29,7 @@ const TopUpModal = ({ visible, onClose, onSelect, styles, colors, products }: Pr
   return (
     <Modal transparent visible={visible} animationType="fade">
       <View style={styles.modalOverlay}>
-        <View style={[styles.modalContainer, { backgroundColor: colors.container }]}>         
+        <View style={[styles.modalContainer, { backgroundColor: colors.container }]}>
           <Text style={[styles.modalTitle, { color: colors.primary, textAlign: 'center' }]}>
             💰 儲值金幣{"\n"}
           </Text>
@@ -40,7 +40,7 @@ const TopUpModal = ({ visible, onClose, onSelect, styles, colors, products }: Pr
 
           <FlatList
             data={sortedProducts}
-            keyExtractor={(item) =>  item.id}
+            keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
               <TouchableOpacity
                 style={[styles.planCard, isProcessing && { opacity: 0.5 }]}

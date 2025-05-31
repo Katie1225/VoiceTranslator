@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { logCoinUsage, fetchUserInfo, checkCoinUsage } from './googleSheetAPI';
 import { Alert } from 'react-native';
 import { ensureFreshIdToken } from './authToken';
-import { debugLog, debugWarn,debugError } from './debugLog';
+import { debugLog, debugWarn, debugError } from './debugLog';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
 
@@ -19,34 +19,29 @@ export const COINS_PER_MINUTE = COIN_COST_PER_UNIT / COIN_UNIT_MINUTES;
 // 手動登入
 export const handleLogin = async (
     setLoading?: (v: boolean) => void
-): Promise<boolean> => {
+): Promise<{ user: any; message: string } | null> => {
     if (setLoading) setLoading(true);
 
     try {
         const result = await GoogleSignin.signIn();            //google 登入取得使用者資訊
         const user = (result as any)?.data?.user || {};
-        
+
         if (!user.id || !user.email) throw new Error("無法取得使用者資訊");
 
         //分析使用者資訊
-        let  baseUser = {
+        let baseUser = {
             id: user.id,
             email: user.email,
             name: user.name || user.email.split('@')[0],
-        };             
+        };
 
         // 將資訊同步到本地
-        await AsyncStorage.setItem('user', JSON.stringify(baseUser)); 
+        await AsyncStorage.setItem('user', JSON.stringify(baseUser));
+        await checkCoinUsage({ ...baseUser, action: 'signup', value: 0, note: '登入紀錄' });
 
-        debugLog(baseUser);
-
-       await checkCoinUsage({ ...baseUser, action: 'signup', value: 0, note: '登入紀錄' });
-
-
-
-            // ✅ 初次登入送金幣
-    const stored = await AsyncStorage.getItem('user');
-    const current = stored ? JSON.parse(stored) : null;
+        // ✅ 初次登入送金幣
+        const stored = await AsyncStorage.getItem('user');
+        const current = stored ? JSON.parse(stored) : null;
 
         let message = `你好，${current.name}！`;
 
@@ -60,28 +55,16 @@ export const handleLogin = async (
             current.coins = INITIAL_GIFT_COINS;
             current.gifted = true;
             message += `\n\n🎁 首次登入已免費送你 ${INITIAL_GIFT_COINS} 金幣！`;
-
-        }
-
-        if (!current.giftNoticeShown) {
-            await logCoinUsage({
-                ...baseUser,
-                action: 'gift_notice_ack',
-                value: 0,
-                note: '首次登入提示已顯示',
-            });
-            current.giftNoticeShown = true;
         }
 
         message += `\n\n💰 你目前擁有 ${current.coins} 金幣`;
         message += `\n\n📌 錄音轉文字每 1 分鐘 ${COINS_PER_MINUTE} 金幣, 並獲得重點摘要`;
         message += `\n\n📌 AI 工具箱每次使用 ${COIN_COST_AI} 金幣`;
 
-        Alert.alert('✅ 登入成功', message);
-        return true;
+        return { user: current, message }; // ✅ 回傳給 VoiceNote
     } catch (err) {
         Alert.alert('❌ 登入失敗', err instanceof Error ? err.message : '未知錯誤');
-        return false;
+        return null;
     } finally {
         if (setLoading) setLoading(false);
     }
