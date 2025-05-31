@@ -273,16 +273,16 @@ const RecorderPageVoiceNote = () => {
         if (resumeAfterTopUp.current?.type === 'transcribe') {
           handleTranscribe(resumeAfterTopUp.current.index);
         } else if (resumeAfterTopUp.current?.type === 'summary') {
-  try {
-    debugLog('🚀 呼叫 handleSummarize', resumeAfterTopUp.current);
-    await handleSummarize(
-      resumeAfterTopUp.current.index,
-      resumeAfterTopUp.current.mode
-    );
-    debugLog('✅ handleSummarize 結束');
-  } catch (err) {
-    console.error('❌ handleSummarize 錯誤:', err);
-  }
+          try {
+            debugLog('🚀 呼叫 handleSummarize', resumeAfterTopUp.current);
+            await handleSummarize(
+              resumeAfterTopUp.current.index,
+              resumeAfterTopUp.current.mode
+            );
+            debugLog('✅ handleSummarize 結束');
+          } catch (err) {
+            console.error('❌ handleSummarize 錯誤:', err);
+          }
         }
         resumeAfterTopUp.current = null;
       } else {
@@ -874,26 +874,22 @@ const RecorderPageVoiceNote = () => {
           { text: "取消", style: "cancel" },
           {
             text: "登入",
-onPress: async () => {
-  setShowTranscriptIndex(null);
-  const result = await handleLogin(setIsLoggingIn);
-  if (result) {
-    const { user, message } = result;
+            onPress: async () => {
+              setShowTranscriptIndex(null);
+              const result = await handleLogin(setIsLoggingIn);
+              if (result) {
+                const { user, message } = result;
 
-    Alert.alert('✅ 登入成功', message, [
-      {
-        text: '繼續',
-        onPress: () => {
-            handleTranscribe(index);
-        },
-      },
-    ]);
-  }
-}
-
-
-
-
+                Alert.alert('✅ 登入成功', message, [
+                  {
+                    text: '繼續',
+                    onPress: () => {
+                      handleTranscribe(index);
+                    },
+                  },
+                ]);
+              }
+            }
           }
         ]);
         return;
@@ -1036,21 +1032,21 @@ onPress: async () => {
           { text: "取消", onPress: () => setShowSummaryIndex(null) },
           {
             text: "登入", onPress: async () => {
-  setShowTranscriptIndex(null);
-  const result = await handleLogin(setIsLoggingIn);
-  if (result) {
-    const { user, message } = result;
+              setShowTranscriptIndex(null);
+              const result = await handleLogin(setIsLoggingIn);
+              if (result) {
+                const { user, message } = result;
 
-    Alert.alert('✅ 登入成功', message, [
-      {
-        text: '繼續',
-        onPress: () => {
-          handleSummarize(index, mode);
-        },
-      },
-    ]);
-  }
-}
+                Alert.alert('✅ 登入成功', message, [
+                  {
+                    text: '繼續',
+                    onPress: () => {
+                      handleSummarize(index, mode);
+                    },
+                  },
+                ]);
+              }
+            }
           },
         ]);
         return;
