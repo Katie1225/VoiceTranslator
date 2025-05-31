@@ -1,6 +1,6 @@
 // components/RecorderHeader.tsx
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, Alert } from 'react-native';
 import HamburgerMenu from './HamburgerMenu';
 import { handleLogin } from '../utils/loginHelpers';
 
@@ -18,6 +18,7 @@ interface RecorderHeaderProps {
     styles: any;
     colors: any;
     title?: string;
+    currentDecibels: number;
 }
 
 const RecorderHeader: React.FC<RecorderHeaderProps> = ({
@@ -34,9 +35,11 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = ({
     styles,
     colors,
     title = 'Voice Note',
+    currentDecibels,
 }) => {
     const [displayTime, setDisplayTime] = useState(0);
     const [menuVisible, setMenuVisible] = useState(false);
+    const [decibelHistory, setDecibelHistory] = useState<number[]>([]);
 
     useEffect(() => {
         const timer = setInterval(() => {
@@ -44,6 +47,20 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = ({
         }, 1000);
         return () => clearInterval(timer);
     }, []);
+
+    useEffect(() => {
+        setDecibelHistory((prev) => {
+            const next = [...prev, currentDecibels];
+            if (next.length > 40) next.shift(); // 只保留最近 40 筆
+            return next;
+        });
+    }, [currentDecibels]);
+
+    useEffect(() => {
+        if (!recording) {
+            setDecibelHistory([]); // ✅ 停止錄音時清空記錄
+        }
+    }, [recording]);
 
     const formatTime = (ms: number) => {
         const totalSeconds = Math.floor(ms / 1000);
@@ -64,13 +81,69 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = ({
                 minHeight: 70,
             }}>
                 {/* 左邊 45%：時間 / 標題 */}
-                <View style={{ flex: 4.5, marginRight: 0 }}>
+
+                <View style={{ flex: 4.5, alignItems: 'center', justifyContent: 'center' }}>
+                    {recording ? (
+                        <>
+                            <Text
+                                style={{
+                                    color: colors.primary,
+                                    fontSize: 16,
+                                    fontWeight: '500',
+                                    fontStyle: 'italic',
+                                    textAlign: 'center',
+                                }}
+                            >
+                                ⏱ {formatTime(displayTime * 1000)}
+                            </Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center',height: 30, overflow: 'hidden' }}>
+                                {decibelHistory.map((dB, index) => {
+                                    const height = dB < -90
+                                        ? 0 : ((Math.max(-90, Math.min(dB, 0)) + 90) / 90) * 30;
+                                    return (
+                                        <View
+                                            key={index}
+                                            style={{
+                                                width: 2,
+                                                height,
+                                                backgroundColor: colors.primary + '80',
+                                                marginHorizontal: 0.6,
+                                            }}
+                                        />
+                                    );
+                                })
+                           /*      }).reverse()右到左 */}
+                            </View>
+                        </>
+                    ) : (
+                        <Text
+                            numberOfLines={1}
+                            ellipsizeMode="tail"
+                            style={{
+                                color: colors.primary,
+                                fontSize: 26,
+                                fontWeight: '500',
+                                fontStyle: 'italic',
+                                textAlign: 'center',
+                                marginRight: 10,
+                            }}
+                        >
+                            {title}
+                        </Text>
+                    )}
+                </View>
+
+
+                {/* <View style={{
+                    flex: 4.5,
+                    marginRight: 0,
+                }}>
                     <Text numberOfLines={1}
                         ellipsizeMode="tail"
                         style={{ color: colors.primary, fontSize: 26, fontWeight: '500', fontStyle: 'italic' }}>
                         {recording ? `⏱ ${formatTime(displayTime * 1000)}` : title}
                     </Text>
-                </View>
+                </View> */}
 
                 {/* 中間 45%：錄音按鈕 */}
                 <View style={{ flex: 4, marginRight: 0 }}>
@@ -111,7 +184,17 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = ({
                 customPrimaryColor={customPrimaryColor}
                 setCustomPrimaryColor={setCustomPrimaryColor}
                 styles={styles}
-                onLoginPress={() => handleLogin(setIsLoggingIn)}
+                onLoginPress={async () => {
+                    const result = await handleLogin(setIsLoggingIn);
+                    if (result) {
+                        Alert.alert('✅ 登入成功', result.message, [
+                            { text: '繼續', onPress: () => setMenuVisible(false) }
+                        ]);
+                        return true;
+                    } else {
+                        return false;
+                    }
+                }}
                 onLoginSuccess={() => setMenuVisible(false)}
             />
         </>

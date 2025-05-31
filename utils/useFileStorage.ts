@@ -209,8 +209,6 @@ export const useFileStorage = (setRecordings: React.Dispatch<React.SetStateActio
     await saveRecordings(updated);
   };
 
-
-
   return {
     isLoading,
     loadRecordings,

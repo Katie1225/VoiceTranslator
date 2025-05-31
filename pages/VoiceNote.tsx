@@ -12,6 +12,7 @@ import {
   FlatList,
   Dimensions
 } from 'react-native';
+import SoundLevel from 'react-native-sound-level';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import { useKeepAwake } from 'expo-keep-awake';
@@ -394,8 +395,32 @@ const RecorderPageVoiceNote = () => {
     return () => clearInterval(timer);
   }, [recording]);
 
+  // 分貝
+useEffect(() => {
+  if (recording) {
+    SoundLevel.start();
 
-  /*
+    SoundLevel.onNewFrame = (data) => {
+      setCurrentDecibels(data.value);
+    };
+  } else {
+    SoundLevel.stop(); // 當錄音關閉時停止
+  }
+
+  return () => {
+    SoundLevel.stop(); // 安全保底：離開頁面或重新啟動時清除
+  };
+}, [recording]);
+
+
+useEffect(() => {
+  return () => {
+    SoundLevel.stop(); // 避免離開頁面還在偵聽
+  };
+}, []);
+
+/*掛載分貝
+
   const dbHistoryRef = useRef<number[]>([]);
   
   useEffect(() => {
@@ -411,8 +436,8 @@ const RecorderPageVoiceNote = () => {
   
     return () => clearInterval(dbTimer);
   }, [recording]);
-  
   */
+
 
   // 在組件掛載時載入
   useEffect(() => {
@@ -1176,6 +1201,7 @@ const RecorderPageVoiceNote = () => {
                   styles={styles}
                   colors={colors}
                   title={title}
+                  currentDecibels={currentDecibels}
                 />
               </View>
             </View>
