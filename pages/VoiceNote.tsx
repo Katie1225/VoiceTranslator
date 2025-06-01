@@ -25,12 +25,12 @@ import * as DocumentPicker from 'expo-document-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Localization from 'expo-localization';
 
-
 import {
   RecordingItem,
   enhanceAudio, trimSilence,
   transcribeAudio, summarizeWithMode, summarizeModes,
   parseDateTimeFromDisplayName, generateRecordingMetadata,
+  splitAudioByInterval,
 } from '../utils/audioHelpers';
 import { useFileStorage } from '../utils/useFileStorage';
 import { useAudioPlayer } from '../utils/useAudioPlayer';
@@ -52,6 +52,7 @@ import { APP_VARIANT } from '../constants/variant';
 import RecorderHeader from '../components/RecorderHeader';
 import { debugLog, debugWarn, debugError } from '../utils/debugLog';
 import { shareRecordingNote, shareRecordingFile, saveEditedRecording, deleteTextRecording, prepareEditing } from '../utils/editingHelpers';
+import SplitPromptModal , { splitTimeInSeconds} from '../components/SplitPromptModal';
 
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 GoogleSignin.configure({
@@ -78,6 +79,8 @@ const RecorderPageVoiceNote = () => {
 
   const [dbHistory, setDbHistory] = useState<number[]>([]);
   const audioRecorderPlayer = useRef(new AudioRecorderPlayer()).current;
+  const [pendingTranscribe, setPendingTranscribe] = useState<{ index: number; durationSec: number } | null>(null);
+  const [showSplitPrompt, setShowSplitPrompt] = useState(false);
   const [isTranscribingIndex, setIsTranscribingIndex] = useState<number | null>(null);
   const [summarizingState, setSummarizingState] = useState<{ index: number; mode: string; } | null>(null);
   const [isEditingNotesIndex, setIsEditingNotesIndex] = useState<number | null>(null);
@@ -222,6 +225,7 @@ const RecorderPageVoiceNote = () => {
             if (user.coins > 0) { // 確保金幣已更新
               const indexToResume = action.index;
               purchaseManager.clearPendingActions();
+                    setSelectedPlayingIndex(indexToResume);
               setTimeout(() => {
                 handleTranscribe(indexToResume);
               }, 500);
@@ -738,9 +742,7 @@ const RecorderPageVoiceNote = () => {
     setSummarizingState(null);
   };
 
-
   // 所有的文字編輯邏輯
-
   const startEditing = (index: number, type: 'name' | 'transcript' | 'summary' | 'notes') => {
     const editing = prepareEditing(recordings, index, type, summaryMode);
     setEditingState(editing);
@@ -809,7 +811,6 @@ const RecorderPageVoiceNote = () => {
         }
       },
 
-
       onShare: async () => {
         await shareRecordingNote(recordings[index], type, summaryMode);
         if (type === 'summary') {
@@ -821,15 +822,19 @@ const RecorderPageVoiceNote = () => {
     });
   };
 
-  // 確認登入以及金幣
+  // 確認金幣
   const ensureCoins = async (requiredCoins: number): Promise<boolean> => {
-    const stored = await AsyncStorage.getItem('user');
+    // 先檢查登入狀態
+    let stored = await AsyncStorage.getItem('user');
+
+    // 如果未登入，要求登入
     if (!stored) {
-      return new Promise((resolve) => {
+      const loginResult = await new Promise<boolean>((resolve) => {
         Alert.alert("請先登入", "使用此功能需要登入", [
           { text: "取消", onPress: () => resolve(false) },
           {
-            text: "登入", onPress: async () => {
+            text: "登入",
+            onPress: async () => {
               const result = await handleLogin(setIsLoggingIn);
               if (result) {
                 Alert.alert('✅ 登入成功', result.message, [
@@ -842,11 +847,24 @@ const RecorderPageVoiceNote = () => {
           }
         ]);
       });
+
+      // 如果登入失敗或取消，直接返回 false
+      if (!loginResult) return false;
+
+      // 登入成功後重新獲取用戶資料
+      stored = await AsyncStorage.getItem('user');
+      if (!stored) return false;
     }
 
-    let user = JSON.parse(stored);
+    // 解析用戶資料
+    const user = JSON.parse(stored);
+    debugLog('確認點 2: 使用者有', user.coins, '需要', requiredCoins);
+
+    // 檢查金幣數量
     if (user.coins >= requiredCoins) return true;
 
+    // 金幣不足處理
+    debugLog('確認點 3:進入處理');
     return new Promise((resolve) => {
       Alert.alert("金幣不足", `此操作需要 ${requiredCoins} 金幣，你目前剩餘 ${user.coins} 金幣`, [
         { text: "取消", style: "cancel", onPress: () => resolve(false) },
@@ -854,7 +872,7 @@ const RecorderPageVoiceNote = () => {
           text: "立即儲值",
           onPress: async () => {
             setShowTopUpModal(true);
-            const coinsAdded = await waitForTopUp(); // ✅ 等待儲值完成
+            const coinsAdded = await waitForTopUp(); // 等待儲值完成
             const refreshed = await AsyncStorage.getItem('user');
             const updatedUser = refreshed ? JSON.parse(refreshed) : user;
             resolve(updatedUser.coins >= requiredCoins);
@@ -865,16 +883,14 @@ const RecorderPageVoiceNote = () => {
   };
 
   //轉文字邏輯
-  const handleTranscribe = async (index: number) => {
-
+  const handleTranscribe = async (index: number, forceFull = false) => {
+setSelectedPlayingIndex(index); 
     const item = recordings[index];
-
     if (item.transcript) {
       setShowTranscriptIndex(index);
       setShowSummaryIndex(null);
       return;
     }
-
     setIsTranscribingIndex(index);
 
     try {
@@ -894,49 +910,25 @@ const RecorderPageVoiceNote = () => {
           }
         });
       });
-
+/*
+  if (!forceFull && durationSec > splitTimeInSeconds) {
+  // 中斷轉文字流程，觸發 UI 彈窗
+  setPendingTranscribe({ index, durationSec });
+  setShowSplitPrompt(true); // 顯示 SplitPromptModal
+  setIsTranscribingIndex(null); // ❗記得解除 loading 狀態
+  return;
+}*/
       const coinsToDeduct = Math.ceil(durationSec / (COIN_UNIT_MINUTES * 60)) * COIN_COST_PER_UNIT;
 
-      const stored = await AsyncStorage.getItem('user');
-      debugLog('📦 本地 user 資料:', stored);
-
-      let user = null;
-
-      if (!stored) {
-        setIsTranscribingIndex(null);
-        Alert.alert("請先登入", "使用錄音筆記功能需要登入", [
-          { text: "取消", style: "cancel" },
-          {
-            text: "登入",
-            onPress: async () => {
-              setShowTranscriptIndex(null);
-              const result = await handleLogin(setIsLoggingIn);
-              if (result) {
-                const { user, message } = result;
-
-                Alert.alert('✅ 登入成功', message, [
-                  {
-                    text: '繼續',
-                    onPress: () => {
-                      handleTranscribe(index);
-                    },
-                  },
-                ]);
-              }
-            }
-          }
-        ]);
-        return;
-      }
-      user = JSON.parse(stored);
-      debugLog('轉文字1');
-
       const ok = await ensureCoins(coinsToDeduct);
+
       if (!ok) {
         setIsTranscribingIndex(null);
         return;
       }
-      debugLog('轉文字3');
+      const stored = await AsyncStorage.getItem('user');
+      const user = JSON.parse(stored!);
+
       const result = await transcribeAudio(item, async (updatedTranscript) => {
         setRecordings(prev => {
           const updated = prev.map((rec, i) =>
@@ -945,6 +937,7 @@ const RecorderPageVoiceNote = () => {
           saveRecordings(updated).catch(e => debugError('保存失敗:', e));
           return updated;
         });
+        debugLog('✅render 1');
         setShowTranscriptIndex(index);
         setShowSummaryIndex(null);
       }, userLang.includes('CN') ? 'cn' : 'tw');
@@ -952,11 +945,14 @@ const RecorderPageVoiceNote = () => {
       if (!result?.transcript?.text?.trim()) {
         throw new Error("無法取得有效的轉譯結果");
       }
+              debugLog('✅render 2');
+        setShowTranscriptIndex(index);
+        setShowSummaryIndex(null);
 
       let finalUpdated = recordings.map((rec, i) =>
         i === index ? { ...rec, transcript: result.transcript.text } : rec
       );
-      debugLog('轉文字4');
+
       try {
         const summary = await summarizeWithMode(result.transcript.text, 'summary', userLang.includes('CN') ? 'cn' : 'tw');
         finalUpdated = finalUpdated.map((rec, i) =>
@@ -973,7 +969,7 @@ const RecorderPageVoiceNote = () => {
       } catch (err) {
         debugWarn('❌ 自動摘要失敗:', err);
       }
-      debugLog('轉文字5');
+              debugLog('✅render 3');
       setRecordings(finalUpdated);
       await saveRecordings(finalUpdated);
       setShowTranscriptIndex(null);
@@ -992,7 +988,10 @@ const RecorderPageVoiceNote = () => {
       if (!coinResult.success) {
         Alert.alert("轉換成功，但扣金幣失敗", coinResult.message || "請稍後再試");
       }
-      debugLog('轉文字6');
+              debugLog('✅render 4');
+setSummaryMode('summary');
+setShowSummaryIndex(index);
+setShowTranscriptIndex(null);
 
     } catch (err) {
       Alert.alert("❌ 錯誤", (err as Error).message || "轉換失敗，這次不會扣金幣");
@@ -1037,49 +1036,17 @@ const RecorderPageVoiceNote = () => {
     debugLog('2', mode);
     let user: any = null;
 
-    // ✅ 需要付費 → 確認登入與金幣
     if (pay) {
-      const stored = await AsyncStorage.getItem('user');
-      if (!stored) {
-        Alert.alert("請先登入", "使用 AI 工具箱需要登入", [
-          { text: "取消", onPress: () => setShowSummaryIndex(null) },
-          {
-            text: "登入", onPress: async () => {
-              setShowTranscriptIndex(null);
-              const result = await handleLogin(setIsLoggingIn);
-              if (result) {
-                const { user, message } = result;
+      const ok = await ensureCoins(COIN_COST_AI);
+      if (!ok) return;
 
-                Alert.alert('✅ 登入成功', message, [
-                  {
-                    text: '繼續',
-                    onPress: () => {
-                      handleSummarize(index, mode);
-                    },
-                  },
-                ]);
-              }
-            }
-          },
-        ]);
-        return;
-      }
-      debugLog('3', mode);
-
-      // 取消上雲端節省時間  await loadUserAndSync();
       const fresh = await AsyncStorage.getItem('user');
       if (!fresh) {
         Alert.alert("錯誤", "無法取得使用者資料");
         return;
       }
-
-      debugLog('4', mode);
       user = JSON.parse(fresh);
-
-      const ok = await ensureCoins(COIN_COST_AI);
-      if (!ok) return;
     }
-    debugLog('5', mode);
 
     // ✅ 開始處理摘要
     setSummarizingState({ index, mode });
@@ -1366,7 +1333,7 @@ const RecorderPageVoiceNote = () => {
 
                           {/* 第二行：兩行小字摘要 */}
                           <View pointerEvents="box-none">
-                            {(!isCurrentPlaying) && (
+                            {(!isCurrentPlaying && isTranscribingIndex !== index && summarizingState?.index !== index && showTranscriptIndex !== index && showSummaryIndex !== index && showNotesIndex !== index && item.transcript) && (
                               <TouchableOpacity
                                 onPress={async () => {
                                   closeAllMenus();
@@ -1453,8 +1420,8 @@ const RecorderPageVoiceNote = () => {
                               </View>
                             ))}
 
-                          {/* 轉文字 & 重點摘要按鈕 */}
-                          {(isCurrentPlaying || !item.transcript) && (
+                          {/* 轉文字 & 重點摘要按鈕*/}
+                          {(isCurrentPlaying || !item.transcript || isTranscribingIndex === index || summarizingState?.index === index ||  selectedPlayingIndex === index || showTranscriptIndex === index ||   showSummaryIndex === index) && (
                             <View style={styles.actionButtons}>
                               <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 }}>
                                 {/* 談話筆記 */}
@@ -1814,6 +1781,35 @@ const RecorderPageVoiceNote = () => {
           colors={colors}
           products={productIds.map(id => ({ id, coins: productToCoins[id] }))} // 傳遞產品資訊
         />
+
+<SplitPromptModal
+  visible={showSplitPrompt}
+  onCancel={() => {
+    setShowSplitPrompt(false);
+    setPendingTranscribe(null);
+  }}
+  onSplit={async () => {
+    if (!pendingTranscribe) return;
+    setShowSplitPrompt(false);
+    const item = recordings[pendingTranscribe.index];
+    const parts = await splitAudioByInterval(item.uri);
+ // 加入主列表
+const newItems = parts.map(p => ({
+  ...p,
+  date: new Date().toISOString(),
+}));
+setRecordings(prev => [...newItems, ...prev]);
+    setPendingTranscribe(null);
+  }}
+  onFull={async () => {
+    if (!pendingTranscribe) return;
+    setShowSplitPrompt(false);
+    await handleTranscribe(pendingTranscribe.index, true); // ⬅️ forceFull
+    setPendingTranscribe(null);
+  }}
+/>
+
+
       </SafeAreaView>
     </TouchableWithoutFeedback>
   );

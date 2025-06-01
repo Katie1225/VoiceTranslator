@@ -4,6 +4,7 @@ import Sound from 'react-native-sound';
 import { nginxVersion } from '../constants/variant';
 import { debugLog, debugWarn,debugError } from './debugLog';
 import * as RNFS from 'react-native-fs';
+import { splitTimeInSeconds } from '../components/SplitPromptModal';
 
 export type RecordingItem = {
   uri: string;
@@ -435,4 +436,56 @@ export async function generateRecordingMetadata(uri: string): Promise<{
   };
 }
 
+// 根據指定秒數進行音檔分割（用於使用者點擊後切段）
+export const splitAudioByInterval = async (
+  uri: string,
+  seconds: number = splitTimeInSeconds
+): Promise<RecordingItem[]> => {
+  const folder = FileSystem.cacheDirectory!;
+  const baseName = uri.split('/').pop()?.replace(/\.(m4a|wav)$/, '') || `rec_${Date.now()}`;
+
+  const outputPattern = `${folder}split_${baseName}_%03d.wav`;
+
+  // 清除舊的切割檔
+  const existingFiles = await FileSystem.readDirectoryAsync(folder);
+  await Promise.all(
+    existingFiles
+      .filter(f => f.startsWith(`split_${baseName}_`) && f.endsWith('.wav'))
+      .map(f => FileSystem.deleteAsync(folder + f))
+  );
+
+  // 切割音檔
+  debugLog(`📎 開始分割音檔，每段 ${seconds} 秒`);
+  const adjustedSeconds = seconds > 1 ? seconds - 1 : seconds;
+const command = `-i "${uri}" -f segment -segment_time ${adjustedSeconds} -ar 16000 -ac 1 -c:a pcm_s16le "${outputPattern}"`;
+
+  const session = await FFmpegKit.execute(command);
+  const returnCode = await session.getReturnCode();
+
+  if (!ReturnCode.isSuccess(returnCode)) {
+    debugError('❌ 分割音檔失敗');
+    throw new Error('音檔分段失敗');
+  }
+
+  // 讀取並整理所有段落
+  const outputFiles = (await FileSystem.readDirectoryAsync(folder))
+    .filter(f => f.startsWith(`split_${baseName}_`) && f.endsWith('.wav'))
+    .sort((a, b) => a.localeCompare(b)); // 按照 001、002 排序
+
+  const items: RecordingItem[] = outputFiles.map((filename, i) => {
+    return {
+      uri: `${folder}${filename}`,
+      name: filename,
+      originalUri: uri,
+      isTrimmed: false,
+      isEnhanced: false,
+      transcript: '',
+      summaries: {},
+      displayName: `${baseName}_part${i + 1}`,
+    };
+  });
+
+  debugLog(`✅ 共分割 ${items.length} 段`);
+  return items;
+};
 
