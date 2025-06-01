@@ -47,7 +47,7 @@ import { uFPermissions } from '../src/hooks/uFPermissions';
 import { logCoinUsage } from '../utils/googleSheetAPI';
 import { handleLogin, loadUserAndSync, COIN_UNIT_MINUTES, COIN_COST_PER_UNIT, COIN_COST_AI } from '../utils/loginHelpers';
 import TopUpModal from '../components/TopUpModal';
-import { productIds, productToCoins, purchaseManager, setTopUpProcessingCallback, setTopUpCompletedCallback,waitForTopUp } from '../utils/iap';
+import { productIds, productToCoins, purchaseManager, setTopUpProcessingCallback, setTopUpCompletedCallback, waitForTopUp } from '../utils/iap';
 import { APP_VARIANT } from '../constants/variant';
 import RecorderHeader from '../components/RecorderHeader';
 import { debugLog, debugWarn, debugError } from '../utils/debugLog';
@@ -821,48 +821,48 @@ const RecorderPageVoiceNote = () => {
     });
   };
 
-const ensureCoins = async (requiredCoins: number): Promise<boolean> => {
-  const stored = await AsyncStorage.getItem('user');
-  if (!stored) {
-    return new Promise((resolve) => {
-      Alert.alert("請先登入", "使用此功能需要登入", [
-        { text: "取消", onPress: () => resolve(false) },
-        {
-          text: "登入", onPress: async () => {
-            const result = await handleLogin(setIsLoggingIn);
-            if (result) {
-              Alert.alert('✅ 登入成功', result.message, [
-                { text: '繼續', onPress: () => resolve(true) }
-              ]);
-            } else {
-              resolve(false);
+  // 確認登入以及金幣
+  const ensureCoins = async (requiredCoins: number): Promise<boolean> => {
+    const stored = await AsyncStorage.getItem('user');
+    if (!stored) {
+      return new Promise((resolve) => {
+        Alert.alert("請先登入", "使用此功能需要登入", [
+          { text: "取消", onPress: () => resolve(false) },
+          {
+            text: "登入", onPress: async () => {
+              const result = await handleLogin(setIsLoggingIn);
+              if (result) {
+                Alert.alert('✅ 登入成功', result.message, [
+                  { text: '繼續', onPress: () => resolve(true) }
+                ]);
+              } else {
+                resolve(false);
+              }
             }
+          }
+        ]);
+      });
+    }
+
+    let user = JSON.parse(stored);
+    if (user.coins >= requiredCoins) return true;
+
+    return new Promise((resolve) => {
+      Alert.alert("金幣不足", `此操作需要 ${requiredCoins} 金幣，你目前剩餘 ${user.coins} 金幣`, [
+        { text: "取消", style: "cancel", onPress: () => resolve(false) },
+        {
+          text: "立即儲值",
+          onPress: async () => {
+            setShowTopUpModal(true);
+            const coinsAdded = await waitForTopUp(); // ✅ 等待儲值完成
+            const refreshed = await AsyncStorage.getItem('user');
+            const updatedUser = refreshed ? JSON.parse(refreshed) : user;
+            resolve(updatedUser.coins >= requiredCoins);
           }
         }
       ]);
     });
-  }
-
-  let user = JSON.parse(stored);
-  if (user.coins >= requiredCoins) return true;
-
-  return new Promise((resolve) => {
-    Alert.alert("金幣不足", `此操作需要 ${requiredCoins} 金幣，你目前剩餘 ${user.coins} 金幣`, [
-      { text: "取消", style: "cancel", onPress: () => resolve(false) },
-      {
-        text: "立即儲值",
-        onPress: async () => {
-          setShowTopUpModal(true);
-          const coinsAdded = await waitForTopUp(); // ✅ 等待儲值完成
-          const refreshed = await AsyncStorage.getItem('user');
-          const updatedUser = refreshed ? JSON.parse(refreshed) : user;
-          resolve(updatedUser.coins >= requiredCoins);
-        }
-      }
-    ]);
-  });
-};
-
+  };
 
   //轉文字邏輯
   const handleTranscribe = async (index: number) => {
@@ -878,6 +878,25 @@ const ensureCoins = async (requiredCoins: number): Promise<boolean> => {
     setIsTranscribingIndex(index);
 
     try {
+      //先確認音檔長度跟需要金額
+      const durationSec = await new Promise<number>((resolve, reject) => {
+        const sound = new Sound(item.uri, '', (error) => {
+          if (error) {
+            reject(new Error("無法載入音訊：" + error.message));
+            return;
+          }
+          const duration = sound.getDuration();
+          sound.release(); // ✅ 記得釋放資源
+          if (duration === 0) {
+            reject(new Error("無法取得音檔長度"));
+          } else {
+            resolve(Math.ceil(duration));
+          }
+        });
+      });
+
+      const coinsToDeduct = Math.ceil(durationSec / (COIN_UNIT_MINUTES * 60)) * COIN_COST_PER_UNIT;
+
       const stored = await AsyncStorage.getItem('user');
       debugLog('📦 本地 user 資料:', stored);
 
@@ -910,31 +929,14 @@ const ensureCoins = async (requiredCoins: number): Promise<boolean> => {
         return;
       }
       user = JSON.parse(stored);
-debugLog('轉文字1');
-      const durationSec = await new Promise<number>((resolve, reject) => {
-        const sound = new Sound(item.uri, '', (error) => {
-          if (error) {
-            reject(new Error("無法載入音訊：" + error.message));
-            return;
-          }
-          const duration = sound.getDuration();
-          sound.release(); // ✅ 記得釋放資源
-          if (duration === 0) {
-            reject(new Error("無法取得音檔長度"));
-          } else {
-            resolve(Math.ceil(duration));
-          }
-        });
-      });
-debugLog('轉文字2');
-      // 確認金額
-      const coinsToDeduct = Math.ceil(durationSec / (COIN_UNIT_MINUTES * 60)) * COIN_COST_PER_UNIT;
+      debugLog('轉文字1');
+
       const ok = await ensureCoins(coinsToDeduct);
       if (!ok) {
         setIsTranscribingIndex(null);
         return;
       }
-debugLog('轉文字3');
+      debugLog('轉文字3');
       const result = await transcribeAudio(item, async (updatedTranscript) => {
         setRecordings(prev => {
           const updated = prev.map((rec, i) =>
@@ -954,7 +956,7 @@ debugLog('轉文字3');
       let finalUpdated = recordings.map((rec, i) =>
         i === index ? { ...rec, transcript: result.transcript.text } : rec
       );
-debugLog('轉文字4');
+      debugLog('轉文字4');
       try {
         const summary = await summarizeWithMode(result.transcript.text, 'summary', userLang.includes('CN') ? 'cn' : 'tw');
         finalUpdated = finalUpdated.map((rec, i) =>
@@ -971,7 +973,7 @@ debugLog('轉文字4');
       } catch (err) {
         debugWarn('❌ 自動摘要失敗:', err);
       }
-debugLog('轉文字5');
+      debugLog('轉文字5');
       setRecordings(finalUpdated);
       await saveRecordings(finalUpdated);
       setShowTranscriptIndex(null);
@@ -990,7 +992,7 @@ debugLog('轉文字5');
       if (!coinResult.success) {
         Alert.alert("轉換成功，但扣金幣失敗", coinResult.message || "請稍後再試");
       }
-debugLog('轉文字6');
+      debugLog('轉文字6');
 
     } catch (err) {
       Alert.alert("❌ 錯誤", (err as Error).message || "轉換失敗，這次不會扣金幣");
