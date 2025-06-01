@@ -1,3 +1,4 @@
+import { debugError } from '@/utils/debugLog';
 import { useState, useEffect } from 'react';
 import { Platform, PermissionsAndroid, Alert, Linking } from 'react-native';
 
@@ -34,7 +35,7 @@ export const uFPermissions = () => {
       setStatus(granted ? 'granted' : 'denied');
       return granted;
     } catch (err) {
-      console.error('權限請求錯誤:', err);
+      debugError('權限請求錯誤:', err);
       if (!silent) Alert.alert('錯誤', '檢查權限時發生錯誤');
       setStatus('denied');
       return false;

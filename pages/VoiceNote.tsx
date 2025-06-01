@@ -13,7 +13,7 @@ import {
   Dimensions
 } from 'react-native';
 import SoundLevel from 'react-native-sound-level';
-import { Audio } from 'expo-av';
+import Sound from 'react-native-sound';
 import * as FileSystem from 'expo-file-system';
 import { useKeepAwake } from 'expo-keep-awake';
 import Slider from '@react-native-community/slider';
@@ -47,7 +47,7 @@ import { uFPermissions } from '../src/hooks/uFPermissions';
 import { logCoinUsage } from '../utils/googleSheetAPI';
 import { handleLogin, loadUserAndSync, COIN_UNIT_MINUTES, COIN_COST_PER_UNIT, COIN_COST_AI } from '../utils/loginHelpers';
 import TopUpModal from '../components/TopUpModal';
-import { productIds, productToCoins, purchaseManager, setTopUpProcessingCallback, setTopUpCompletedCallback } from '../utils/iap';
+import { productIds, productToCoins, purchaseManager, setTopUpProcessingCallback, setTopUpCompletedCallback,waitForTopUp } from '../utils/iap';
 import { APP_VARIANT } from '../constants/variant';
 import RecorderHeader from '../components/RecorderHeader';
 import { debugLog, debugWarn, debugError } from '../utils/debugLog';
@@ -193,6 +193,7 @@ const RecorderPageVoiceNote = () => {
 
   // 替換原有的 handlePurchase 函數
   const handleTopUp = async (productId: string) => {
+    debugLog('🟢 handleTopUp called with productId:', productId);
     try {
       // 1. 請求儲值
       await purchaseManager.requestPurchase(productId);
@@ -261,42 +262,6 @@ const RecorderPageVoiceNote = () => {
     index: number;
     position: { x: number; y: number };
   } | null>(null);
-
-  // 接續先前工作
-  useEffect(() => {
-    debugLog('📌 掛載儲值完成 callback');
-
-    setTopUpCompletedCallback(async () => {
-      debugLog('📥 VoiceNote 收到儲值完成');
-      debugLog('🎯 resumeAfterTopUp 當下狀態:', resumeAfterTopUp.current);
-
-      if (resumeAfterTopUp.current?.index !== undefined) {
-        if (resumeAfterTopUp.current?.type === 'transcribe') {
-          handleTranscribe(resumeAfterTopUp.current.index);
-        } else if (resumeAfterTopUp.current?.type === 'summary') {
-          try {
-            debugLog('🚀 呼叫 handleSummarize', resumeAfterTopUp.current);
-            await handleSummarize(
-              resumeAfterTopUp.current.index,
-              resumeAfterTopUp.current.mode
-            );
-            debugLog('✅ handleSummarize 結束');
-          } catch (err) {
-            console.error('❌ handleSummarize 錯誤:', err);
-          }
-        }
-        resumeAfterTopUp.current = null;
-      } else {
-        debugLog('⛔ resumeAfterTopUp 無 index，不執行');
-      }
-    });
-
-    return () => {
-      debugLog('🧹 清除 callback');
-      setTopUpCompletedCallback(null);
-    };
-  }, []);
-
 
   // 變速播放
   const [speedMenuIndex, setSpeedMenuIndex] = useState<number | null>(null);
@@ -382,61 +347,46 @@ const RecorderPageVoiceNote = () => {
     }
   }, []);
 
+  // 進度條更新
   useEffect(() => {
     let timer: NodeJS.Timeout;
 
-    if (recording) {
-      recordingTimeRef.current = 0;
+    if (isPlaying && currentSound) {
       timer = setInterval(() => {
-        recordingTimeRef.current += 1;
-      }, 1000);
+        currentSound.getCurrentTime((seconds) => {
+          setPlaybackPosition(seconds * 1000); // 單位：毫秒
+        });
+      }, 300); // 每 300 毫秒更新一次
     }
 
-    return () => clearInterval(timer);
-  }, [recording]);
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [isPlaying, currentSound]);
 
   // 分貝
-useEffect(() => {
-  if (recording) {
-    SoundLevel.start();
-
-    SoundLevel.onNewFrame = (data) => {
-      setCurrentDecibels(data.value);
-    };
-  } else {
-    SoundLevel.stop(); // 當錄音關閉時停止
-  }
-
-  return () => {
-    SoundLevel.stop(); // 安全保底：離開頁面或重新啟動時清除
-  };
-}, [recording]);
-
-
-useEffect(() => {
-  return () => {
-    SoundLevel.stop(); // 避免離開頁面還在偵聽
-  };
-}, []);
-
-/*掛載分貝
-
-  const dbHistoryRef = useRef<number[]>([]);
-  
   useEffect(() => {
-    let dbTimer: NodeJS.Timeout;
-  
     if (recording) {
-      dbTimer = setInterval(() => {
-        dbHistoryRef.current = Array.from({ length: 20 }, () =>
-          -Math.floor(Math.random() * 60 + 40)
-        );
-      }, 500);
+      SoundLevel.start();
+
+      SoundLevel.onNewFrame = (data) => {
+        setCurrentDecibels(data.value);
+      };
+    } else {
+      SoundLevel.stop(); // 當錄音關閉時停止
     }
-  
-    return () => clearInterval(dbTimer);
+
+    return () => {
+      SoundLevel.stop(); // 安全保底：離開頁面或重新啟動時清除
+    };
   }, [recording]);
-  */
+
+
+  useEffect(() => {
+    return () => {
+      SoundLevel.stop(); // 避免離開頁面還在偵聽
+    };
+  }, []);
 
 
   // 在組件掛載時載入
@@ -542,15 +492,12 @@ useEffect(() => {
         }
       }, 180 * 60 * 1000);
       // 測試版用結束
-
-
     } catch (err) {
       debugError("❌ 錄音啟動錯誤：", err);
       Alert.alert("錄音失敗", (err as Error).message || "請檢查權限或儲存空間");
       setRecording(false);
     }
   };
-
 
   // 停止錄音
   let stopInProgress = false; // 👈 加在模組頂部最外層
@@ -874,6 +821,49 @@ useEffect(() => {
     });
   };
 
+const ensureCoins = async (requiredCoins: number): Promise<boolean> => {
+  const stored = await AsyncStorage.getItem('user');
+  if (!stored) {
+    return new Promise((resolve) => {
+      Alert.alert("請先登入", "使用此功能需要登入", [
+        { text: "取消", onPress: () => resolve(false) },
+        {
+          text: "登入", onPress: async () => {
+            const result = await handleLogin(setIsLoggingIn);
+            if (result) {
+              Alert.alert('✅ 登入成功', result.message, [
+                { text: '繼續', onPress: () => resolve(true) }
+              ]);
+            } else {
+              resolve(false);
+            }
+          }
+        }
+      ]);
+    });
+  }
+
+  let user = JSON.parse(stored);
+  if (user.coins >= requiredCoins) return true;
+
+  return new Promise((resolve) => {
+    Alert.alert("金幣不足", `此操作需要 ${requiredCoins} 金幣，你目前剩餘 ${user.coins} 金幣`, [
+      { text: "取消", style: "cancel", onPress: () => resolve(false) },
+      {
+        text: "立即儲值",
+        onPress: async () => {
+          setShowTopUpModal(true);
+          const coinsAdded = await waitForTopUp(); // ✅ 等待儲值完成
+          const refreshed = await AsyncStorage.getItem('user');
+          const updatedUser = refreshed ? JSON.parse(refreshed) : user;
+          resolve(updatedUser.coins >= requiredCoins);
+        }
+      }
+    ]);
+  });
+};
+
+
   //轉文字邏輯
   const handleTranscribe = async (index: number) => {
 
@@ -920,35 +910,31 @@ useEffect(() => {
         return;
       }
       user = JSON.parse(stored);
-
-      const { sound, status } = await Audio.Sound.createAsync({ uri: item.uri });
-      if (!status.isLoaded) throw new Error("無法取得音檔長度");
-      const durationSec = Math.ceil((status.durationMillis ?? 0) / 1000);
-      await sound.unloadAsync();
-
+debugLog('轉文字1');
+      const durationSec = await new Promise<number>((resolve, reject) => {
+        const sound = new Sound(item.uri, '', (error) => {
+          if (error) {
+            reject(new Error("無法載入音訊：" + error.message));
+            return;
+          }
+          const duration = sound.getDuration();
+          sound.release(); // ✅ 記得釋放資源
+          if (duration === 0) {
+            reject(new Error("無法取得音檔長度"));
+          } else {
+            resolve(Math.ceil(duration));
+          }
+        });
+      });
+debugLog('轉文字2');
+      // 確認金額
       const coinsToDeduct = Math.ceil(durationSec / (COIN_UNIT_MINUTES * 60)) * COIN_COST_PER_UNIT;
-
-      if (user.coins < coinsToDeduct) {
-
-        purchaseManager.addPendingAction({ type: 'transcribe', index });
-        Alert.alert(
-          "金幣不足",
-          `此錄音需要 ${coinsToDeduct} 金幣，你目前剩餘 ${user.coins} 金幣`,
-          [
-            { text: "取消", onPress: () => setIsTranscribingIndex(null) },
-            {
-              text: "立即儲值",
-              onPress: () => {
-                resumeAfterTopUp.current = { type: 'transcribe', index };
-                debugLog('✅ 已記錄儲值後要繼續執行的 index:', index);
-                setShowTopUpModal(true);
-              }
-            }
-          ]
-        );
+      const ok = await ensureCoins(coinsToDeduct);
+      if (!ok) {
+        setIsTranscribingIndex(null);
         return;
       }
-
+debugLog('轉文字3');
       const result = await transcribeAudio(item, async (updatedTranscript) => {
         setRecordings(prev => {
           const updated = prev.map((rec, i) =>
@@ -968,7 +954,7 @@ useEffect(() => {
       let finalUpdated = recordings.map((rec, i) =>
         i === index ? { ...rec, transcript: result.transcript.text } : rec
       );
-
+debugLog('轉文字4');
       try {
         const summary = await summarizeWithMode(result.transcript.text, 'summary', userLang.includes('CN') ? 'cn' : 'tw');
         finalUpdated = finalUpdated.map((rec, i) =>
@@ -985,7 +971,7 @@ useEffect(() => {
       } catch (err) {
         debugWarn('❌ 自動摘要失敗:', err);
       }
-
+debugLog('轉文字5');
       setRecordings(finalUpdated);
       await saveRecordings(finalUpdated);
       setShowTranscriptIndex(null);
@@ -1004,7 +990,7 @@ useEffect(() => {
       if (!coinResult.success) {
         Alert.alert("轉換成功，但扣金幣失敗", coinResult.message || "請稍後再試");
       }
-
+debugLog('轉文字6');
 
     } catch (err) {
       Alert.alert("❌ 錯誤", (err as Error).message || "轉換失敗，這次不會扣金幣");
@@ -1088,22 +1074,8 @@ useEffect(() => {
       debugLog('4', mode);
       user = JSON.parse(fresh);
 
-      if (user.coins < COIN_COST_AI) {
-        Alert.alert(
-          "金幣不足",
-          `「${summarizeModes.find(m => m.key === mode)?.label || 'AI 工具'}」需要 ${COIN_COST_AI} 金幣，你目前剩餘 ${user.coins} 金幣`,
-          [
-            { text: "取消", style: "cancel" },
-            {
-              text: "儲值", onPress: () => {
-                resumeAfterTopUp.current = { type: 'summary', index, mode };
-                setShowTopUpModal(true)
-              }
-            },
-          ]
-        );
-        return;
-      }
+      const ok = await ensureCoins(COIN_COST_AI);
+      if (!ok) return;
     }
     debugLog('5', mode);
 
@@ -1450,19 +1422,15 @@ useEffect(() => {
                               <View style={styles.progressContainer}>
                                 {/* 進度條和時間顯示 */}
                                 <Slider
-                                  style={{ flex: 1 }}
                                   minimumValue={0}
-                                  maximumValue={playbackDuration}
-                                  value={playbackPosition}
-                                  onSlidingComplete={async (value) => {
-                                    if (currentSound) {
-                                      await currentSound.setPositionAsync(value);
+                                  maximumValue={playingUri === item.uri ? playbackDuration : 1}
+                                  value={playingUri === item.uri ? playbackPosition : 0}
+                                  onSlidingComplete={(value) => {
+                                    if (playingUri === item.uri && currentSound) {
+                                      currentSound.setCurrentTime(value / 1000);
                                       setPlaybackPosition(value);
                                     }
                                   }}
-                                  minimumTrackTintColor={colors.primary}
-                                  maximumTrackTintColor="#ccc"
-                                  thumbTintColor={colors.primary}
                                 />
                                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
                                   <Text style={styles.timeText}>
@@ -1672,41 +1640,7 @@ useEffect(() => {
                   setSelectedContext(null);
                 }}
 
-                onTrimSilence={async (index) => {
-                  const item = recordings[index];
-                  try {
-                    const trimmed = await trimSilence(item.uri, item.name);
-                    const { sound: originalSound } = await Audio.Sound.createAsync({ uri: item.uri });
-                    const { sound: trimmedSound } = await Audio.Sound.createAsync({ uri: trimmed.uri });
-                    const origStatus = await originalSound.getStatusAsync();
-                    const trimStatus = await trimmedSound.getStatusAsync();
-                    await originalSound.unloadAsync();
-                    await trimmedSound.unloadAsync();
-                    if (origStatus.isLoaded && trimStatus.isLoaded) {
-                      const origSec = Math.round((origStatus.durationMillis ?? 0) / 1000);
-                      const trimSec = Math.round((trimStatus.durationMillis ?? 0) / 1000);
-                      setShowTranscriptIndex(null);
-                      setShowSummaryIndex(null);
-                      resetEditingState();
-                      setRecordings(prev => prev.map((rec, i) =>
-                        i === index
-                          ? {
-                            ...rec,
-                            isTrimmed: true,
-                            derivedFiles: {
-                              ...rec.derivedFiles,
-                              trimmed,
-                            },
-                          }
-                          : rec
-                      ));
 
-                      Alert.alert('靜音剪輯完成', `${item.name}\n原長：${origSec}s → 剪後：${trimSec}s`);
-                    }
-                  } catch (err) {
-                    Alert.alert('剪輯失敗', (err as Error).message);
-                  }
-                }}
               />
             )}
 

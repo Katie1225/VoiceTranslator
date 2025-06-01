@@ -7,9 +7,7 @@ import { lightTheme, darkTheme, additionalColors } from '../constants/Colors';
 import { logCoinUsage, fetchUserInfo } from '../utils/googleSheetAPI';
 import { handleLogin } from '../utils/loginHelpers';
 import { version } from '../constants/variant';
-import Constants from 'expo-constants';
 
-const appVersion = Constants.expoConfig?.version || 'unknown';
 
 type Props = {
   visible: boolean;

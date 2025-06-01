@@ -19,13 +19,13 @@ import { debugLog, debugWarn, debugError } from './debugLog';
 let onTopUpCompleted: (() => void) | null = null;
 
 export const setTopUpCompletedCallback = (fn: (() => void) | null) => {
-  onTopUpCompleted = fn;
+    onTopUpCompleted = fn;
 };
 
 let onTopUpProcessingChange: ((isProcessing: boolean) => void) | null = null;
 
 export const setTopUpProcessingCallback = (fn: ((isProcessing: boolean) => void) | null) => {
-  onTopUpProcessingChange = fn;
+    onTopUpProcessingChange = fn;
 };
 // 產品配置
 export const productToCoins: Record<string, number> = {
@@ -39,8 +39,10 @@ export const productIds = Object.keys(productToCoins);
 
 // 單例管理類
 class PurchaseManager {
+    onTopUpCompleted: ((coins: number) => void) | null = null;
     private static instance: PurchaseManager;
     private listener: EmitterSubscription | null = null;
+    private isHandlingPurchase = false;
 
     private pendingActions: Array<{ type: string, index?: number }> = [];
 
@@ -76,7 +78,7 @@ class PurchaseManager {
         } catch (err) {
             debugError('IAP初始化失敗:', err);
             return false;
-        } 
+        }
     }
 
     private async loadProducts() {
@@ -110,12 +112,17 @@ class PurchaseManager {
 
     private async handlePurchaseUpdate(purchase: Purchase) {
         try {
-    // 開始處理時顯示遮罩
-    if (onTopUpProcessingChange) onTopUpProcessingChange(true);
+            // 開始處理時顯示遮罩
+            if (onTopUpProcessingChange) onTopUpProcessingChange(true);
             if (!purchase.transactionReceipt) {
                 debugWarn('交易未完成，略過');
                 return;
             }
+              if (this.isHandlingPurchase) {
+    debugWarn('⛔️ 正在處理儲值中，跳過重複呼叫');
+    return;
+  }
+  this.isHandlingPurchase = true;
 
             // 完成交易
             await finishTransaction({ purchase, isConsumable: true });
@@ -155,29 +162,30 @@ class PurchaseManager {
             //    await loadUserAndSync();
 
             // 顯示加值成功提示
-            Alert.alert('✅ 加值成功', `已獲得 ${coinsToAdd} 金幣`);
-
-if (onTopUpCompleted) {
-  debugLog('🔁 呼叫儲值完成 callback');
-  onTopUpCompleted();
-  onTopUpCompleted = null;
+          //  Alert.alert('✅ 加值成功', `已獲得 ${coinsToAdd} 金幣`);
+if (this.onTopUpCompleted) {
+  debugLog('🔁 呼叫儲值完成 iap callback');
+  this.onTopUpCompleted(coinsToAdd); // ✅ 把 coinsToAdd 傳出去
+  this.onTopUpCompleted = null;
 }
-            
+
             // 處理等待中的操作（現在確保金幣已更新後才執行）
-     /*       if (this.pendingActions.length > 0) {
-                const actions = [...this.pendingActions];
-                this.clearPendingActions();
-                return actions;
-            } */
+            /*       if (this.pendingActions.length > 0) {
+                       const actions = [...this.pendingActions];
+                       this.clearPendingActions();
+                       return actions;
+                   } */
         } catch (err) {
             Alert.alert('❌ 購買處理失敗', err instanceof Error ? err.message : '未知錯誤');
-        }finally {
-    // 無論成功失敗都關閉遮罩
-    if (onTopUpProcessingChange) onTopUpProcessingChange(false);
-  }
+        } finally {
+            // 無論成功失敗都關閉遮罩
+            if (onTopUpProcessingChange) onTopUpProcessingChange(false);
+                this.isHandlingPurchase = false;
+        }
     }
 
     public async requestPurchase(productId: string): Promise<boolean> {
+        debugLog('🟡 requestPurchase 被呼叫, productId =', productId);
         if (!productToCoins[productId]) {
             throw new Error('無效的產品ID');
         }
@@ -223,6 +231,14 @@ if (onTopUpCompleted) {
 
 // 導出單例實例
 export const purchaseManager = PurchaseManager.getInstance();
+
+export const waitForTopUp = (): Promise<number> => {
+  return new Promise((resolve) => {
+    purchaseManager.onTopUpCompleted = (coinsAdded: number) => {
+      resolve(coinsAdded);
+    };
+  });
+};
 
 
 

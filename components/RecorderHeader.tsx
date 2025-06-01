@@ -96,10 +96,11 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = ({
                             >
                                 ⏱ {formatTime(displayTime * 1000)}
                             </Text>
-                            <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center',height: 30, overflow: 'hidden' }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', height: 30, overflow: 'hidden' }}>
                                 {decibelHistory.map((dB, index) => {
                                     const height = dB < -90
-                                        ? 0 : ((Math.max(-90, Math.min(dB, 0)) + 90) / 90) * 30;
+                                        ? 2 // ← 強制最小 2px
+                                        : Math.max(2, ((Math.max(-90, Math.min(dB, 0)) + 100) / 100) * 30);
                                     return (
                                         <View
                                             key={index}

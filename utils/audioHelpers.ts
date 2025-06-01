@@ -1,6 +1,6 @@
 import { FFmpegKit, ReturnCode } from 'ffmpeg-kit-react-native';
 import * as FileSystem from 'expo-file-system';
-import { Audio } from 'expo-av';
+import Sound from 'react-native-sound';
 import { nginxVersion } from '../constants/variant';
 import { debugLog, debugWarn,debugError } from './debugLog';
 import * as RNFS from 'react-native-fs';
@@ -147,16 +147,18 @@ export const splitAudioIntoSegments = async (
 };
 
 export async function getAudioDuration(uri: string): Promise<{ duration: number }> {
-  const { sound, status } = await Audio.Sound.createAsync({ uri }, { shouldPlay: false });
-
-  if (!status.isLoaded) {
-    throw new Error('音訊載入失敗');
-  }
-
-  const duration = status.durationMillis != null ? status.durationMillis / 1000 : 0;
-  await sound.unloadAsync(); // ✅ 記得釋放資源
-
-  return { duration };
+  return new Promise((resolve, reject) => {
+    const sound = new Sound(uri, '', (error) => {
+      if (error) {
+        reject(new Error('音訊載入失敗'));
+        return;
+      }
+      
+      const duration = sound.getDuration();
+      sound.release();
+      resolve({ duration });
+    });
+  });
 }
 
 export const sendToWhisper = async (
@@ -228,7 +230,7 @@ export const sendToWhisper = async (
 
     return cleaned;
   } catch (err) {
-    console.error('❌ sendToWhisper 錯誤:', err);
+    debugError('❌ sendToWhisper 錯誤:', err);
     throw err;
   }
 };
@@ -279,7 +281,7 @@ export const transcribeAudio = async (
       
       debugLog(`✅ 第 ${index + 1} 段處理完成`);
     } catch (err) {
-      console.error(`❌ 第 ${index + 1} 段處理失敗：`, err);
+      debugError(`❌ 第 ${index + 1} 段處理失敗：`, err);
       // Continue with next segment even if one fails
       accumulatedText += `[第 ${index + 1} 段處理失敗]\n`;
       onPartial?.(accumulatedText.trim(), index + 1, segmentUris.length);
@@ -389,24 +391,23 @@ export function parseDateTimeFromDisplayName(displayName: string): { startTime?:
 // 存檔時封裝
 export async function generateRecordingMetadata(uri: string): Promise<{
   displayName: string;
-  date: string; // ISO 格式
+  date: string;
   durationSec: number;
 }> {
   let durationSec = 0;
   let durationText = '?秒';
   let startDate = new Date();
 
-  const now = new Date(); // fallback 用
-  const { sound, status } = await Audio.Sound.createAsync({ uri });
-
-  if ('isLoaded' in status && status.isLoaded && status.durationMillis != null) {
-    durationSec = Math.round(status.durationMillis / 1000);
-
+  try {
+    const { duration } = await getAudioDuration(uri);
+    durationSec = Math.round(duration);
+    
     try {
       const stat = await RNFS.stat(uri);
       const fileEnd = new Date(stat.mtime);
       startDate = new Date(fileEnd.getTime() - durationSec * 1000);
     } catch {
+      const now = new Date();
       startDate = new Date(now.getTime() - durationSec * 1000);
     }
 
@@ -417,9 +418,9 @@ export async function generateRecordingMetadata(uri: string): Promise<{
     if (h > 0) durationText = `${h}小${m}分${s}秒`;
     else if (m > 0) durationText = `${m}分${s}秒`;
     else durationText = `${s}秒`;
+  } catch (error) {
+    debugError('獲取音檔時長失敗:', error);
   }
-
-  await sound.unloadAsync();
 
   const hh = startDate.getHours().toString().padStart(2, '0');
   const mm = startDate.getMinutes().toString().padStart(2, '0');
