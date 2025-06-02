@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { Linking, Alert, View, Text, TouchableOpacity, Image } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { lightTheme, darkTheme, additionalColors } from '../constants/Colors';
+import { partBackgrounds , additionalColors } from '../constants/Colors';
 import { logCoinUsage, fetchUserInfo } from '../utils/googleSheetAPI';
 import { handleLogin } from '../utils/loginHelpers';
 import { version } from '../constants/variant';
@@ -116,11 +116,15 @@ const HamburgerMenu = ({
       <Text style={styles.menuHeader}>主題顏色</Text>
       <View style={styles.colorOptionsContainer}>
         <TouchableOpacity
-          style={[
-            styles.colorOption,
-            { backgroundColor: isDarkMode ? darkTheme.primary : lightTheme.primary },
-            !customPrimaryColor && styles.selectedColor
-          ]}
+style={[
+  styles.colorOption,
+  {
+    backgroundColor: isDarkMode
+      ? partBackgrounds.dark.primary
+      : partBackgrounds.light.primary
+  },
+  !customPrimaryColor && styles.selectedColor
+]}
           onPress={() => { onClose(); setCustomPrimaryColor(null); }}
         />
         {Object.entries(additionalColors).map(([name, color]) => (

@@ -36,7 +36,7 @@ import { useFileStorage } from '../utils/useFileStorage';
 import { useAudioPlayer } from '../utils/useAudioPlayer';
 import { createStyles } from '../styles/audioStyles';
 import { ANDROID_AUDIO_ENCODERS, ANDROID_OUTPUT_FORMATS } from '../constants/AudioConstants';
-import { lightTheme, darkTheme, additionalColors } from '../constants/Colors';
+import { partBackgrounds, additionalColors } from '../constants/Colors';
 import MoreMenu from '../components/MoreMenu';
 import {
   renderFilename,
@@ -124,10 +124,11 @@ const RecorderPageVoiceNote = () => {
   const [customPrimaryColor, setCustomPrimaryColor] = useState<string | null>(null);
 
   // 修改顏色主題
-  const colors = {
-    ...(isDarkMode ? darkTheme : lightTheme),
-    primary: customPrimaryColor || (isDarkMode ? darkTheme.primary : lightTheme.primary)
-  };
+const themeBase = partBackgrounds?.[isDarkMode ? 'dark' : 'light'] || {};
+const colors = {
+  ...themeBase,
+  primary: customPrimaryColor || themeBase.primary || '#00C1D4',
+};
   const styles = createStyles(colors);
 
   const saveThemePreference = async (isDark: boolean) => {
@@ -696,16 +697,24 @@ const RecorderPageVoiceNote = () => {
 
 
   // 關閉所有彈出菜單
-  const closeAllMenus = (preserveEditing = false) => {
-    setSelectedIndex(null);
-    setSpeedMenuIndex(null);
-    setSelectedContext(null);
-    setSummaryMenuContext(null);
+const closeAllMenus = (options: {
+  preserveEditing?: boolean;
+  preserveSummaryMenu?: boolean;
+} = {}) => {
+  const { preserveEditing = false, preserveSummaryMenu = false } = options;
 
-    if (!preserveEditing) {
-      resetEditingState(); // 清掉正在編輯的
-    }
-  };
+  setSelectedIndex(null);
+  setSpeedMenuIndex(null);
+  setSelectedContext(null);
+
+  if (!preserveSummaryMenu) {
+    setSummaryMenuContext(null); // ✅ 保留一次就好
+  }
+
+  if (!preserveEditing) {
+    resetEditingState();
+  }
+};
 
 
   if (!isLoading && permissionStatus === 'denied') {
@@ -1104,7 +1113,8 @@ setShowTranscriptIndex(null);
   };
 
   return (
-    <TouchableWithoutFeedback onPress={() => closeAllMenus(false)}>
+<TouchableWithoutFeedback onPress={() => closeAllMenus({ preserveEditing: false })}>
+
       <SafeAreaView style={[styles.container, { marginTop: 0, paddingTop: 0 }]}>
         {isLoading ? (
           <View style={styles.loadingContainer}>
@@ -1181,7 +1191,7 @@ setShowTranscriptIndex(null);
               <FlatList
                 ref={flatListRef}
                 onScroll={() => {
-                  closeAllMenus(true); // ✅ 不清除正在編輯的內容與按鈕
+                  closeAllMenus({ preserveEditing: true }); // ✅ 不清除正在編輯的內容與按鈕
                   setSummaryMenuContext(null); // 可以額外手動清這些 popup 類的
                 }}
                 scrollEnabled={!editingState.type}  // 當有任何編輯狀態時禁用滾動
@@ -1445,7 +1455,14 @@ setShowTranscriptIndex(null);
                                     setShowNotesIndex(index);
                                   }}
                                 >
-                                  <Text style={{ color: 'white', fontSize: 13 }}>談話筆記</Text>
+  <Text
+    style={{
+      color: showNotesIndex === index ? colors.text : colors.subtext,
+      fontSize: 13,
+      textAlign: 'center',
+      fontWeight: showNotesIndex === index ? 'bold' : 'normal',
+    }}
+  >談話筆記</Text>
                                 </TouchableOpacity>
 
 
@@ -1469,7 +1486,14 @@ setShowTranscriptIndex(null);
                                     handleTranscribe(index);
                                   }}
                                 >
-                                  <Text style={{ color: 'white', fontSize: 13 }}>錄音文檔</Text>
+                                    <Text
+    style={{
+      color: showTranscriptIndex === index ? colors.text : colors.subtext,
+      fontSize: 13,
+      textAlign: 'center',
+      fontWeight: showTranscriptIndex === index ? 'bold' : 'normal',
+    }}
+  >錄音文檔</Text>
                                 </TouchableOpacity>
 
                                 {/* AI工具箱按鈕 */}
@@ -1487,7 +1511,8 @@ setShowTranscriptIndex(null);
                                   onPress={(e) => {
                                     closeAllMenus();
                                     setShowTranscriptIndex(null);
-                                    setShowSummaryIndex(null);
+  setShowSummaryIndex(index);        // ✅ 預設展開 summary
+  setSummaryMode('summary');         // ✅ 預設模式為 summary
                                     setShowNotesIndex(null);
                                     // 取得按鈕位置，彈出選單
                                     e.target.measureInWindow((x, y, width, height) => {
@@ -1495,7 +1520,14 @@ setShowTranscriptIndex(null);
                                     });
                                   }}
                                 >
-                                  <Text style={{ color: 'white', fontSize: 13, textAlign: 'center' }}>AI工具箱</Text>
+                                    <Text
+    style={{
+      color: showSummaryIndex === index ? colors.text : colors.subtext,
+      fontSize: 13,
+      textAlign: 'center',
+      fontWeight: showSummaryIndex === index ? 'bold' : 'normal',
+    }}
+  >AI工具箱</Text>
                                 </TouchableOpacity>
 
 
