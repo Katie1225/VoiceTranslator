@@ -41,12 +41,21 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = ({
     const [menuVisible, setMenuVisible] = useState(false);
     const [decibelHistory, setDecibelHistory] = useState<number[]>([]);
 
-    useEffect(() => {
-        const timer = setInterval(() => {
-            setDisplayTime(recordingTimeRef.current || 0);
-        }, 1000);
-        return () => clearInterval(timer);
-    }, []);
+useEffect(() => {
+  let timer: NodeJS.Timeout;
+
+  if (recording) {
+    timer = setInterval(() => {
+      setDisplayTime(recordingTimeRef.current || 0);
+    }, 1000);
+  } else {
+    setDisplayTime(0); // ⬅️ 停止時清空顯示
+  }
+
+  return () => {
+    if (timer) clearInterval(timer);
+  };
+}, [recording]); // ✅ 依錄音狀態啟動或重置 timer
 
     useEffect(() => {
         setDecibelHistory((prev) => {
