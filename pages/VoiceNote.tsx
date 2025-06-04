@@ -480,6 +480,7 @@ const colors = {
         },
         parameters: { path: filePath },
         allowWhileIdle: true,
+        foregroundServiceType: 'microphone',
       } as any);
 
       GlobalRecorderState.isRecording = true;

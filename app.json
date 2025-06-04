@@ -2,13 +2,13 @@
   "expo": {
     "name": "Voice Note",
     "slug": "audio-recorder-mvp",
-    "version": "1.4.5.H",
+    "version": "1.4.5.I",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "myapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-      "jsEngine": "jsc",
+"jsEngine": "hermes",
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
