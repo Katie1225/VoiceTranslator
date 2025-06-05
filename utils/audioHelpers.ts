@@ -1,10 +1,11 @@
-import { FFmpegKit, ReturnCode } from 'ffmpeg-kit-react-native';
+import { FFmpegKit, ReturnCode,  MediaInformationSession,FFprobeKit } from 'ffmpeg-kit-react-native';
 import * as FileSystem from 'expo-file-system';
 import Sound from 'react-native-sound';
 import { nginxVersion } from '../constants/variant';
 import { debugLog, debugWarn,debugError } from './debugLog';
 import * as RNFS from 'react-native-fs';
 import { splitTimeInSeconds } from '../components/SplitPromptModal';
+import { Alert,} from 'react-native';
 
 export type RecordingItem = {
   uri: string;
@@ -77,7 +78,7 @@ export const trimSilence = async (uri: string, name: string): Promise<RecordingI
   }
 
   debugLog(`✂️ 開始剪輯：${outputName}`);
-  const command = `-i "${uri}" -af silenceremove=start_periods=1:start_silence=0.3:start_threshold=-40dB:stop_periods=-1:stop_silence=0.3:stop_threshold=-40dB -y "${outputPath}"`;
+  const command = `-i "${uri}" -af silenceremove=start_periods=1:start_silence=0.3:start_threshold=-60dB:stop_periods=-1:stop_silence=0.3:stop_threshold=-40dB -y "${outputPath}"`;
   const session = await FFmpegKit.execute(command);
   const returnCode = await session.getReturnCode();
 
@@ -87,6 +88,41 @@ export const trimSilence = async (uri: string, name: string): Promise<RecordingI
 
   return { uri: outputPath, name: outputName, originalUri: uri, isTrimmed: true };
 };
+
+export async function getAudioDurationInSeconds(uri: string): Promise<number> {
+  try {
+    const session: MediaInformationSession = await FFprobeKit.getMediaInformation(uri);
+    const info = await session.getMediaInformation();
+    const durationStr = info?.getDuration();
+
+    if (!durationStr) return 0;
+const duration = parseFloat(String(durationStr ?? '0'));
+    return isNaN(duration) ? 0 : duration;
+  } catch (err) {
+    debugError('❌ 取得音訊長度失敗:', err);
+    return 0;
+  }
+}
+
+// 累計靜音時間
+export async function processTrimmedAudio(
+  uri: string,
+  counterRef: { count: number }
+): Promise<string | null> {
+  const info = await FileSystem.getInfoAsync(uri);
+  if (!info.exists || info.size === 0) return null;
+
+  const sizeKB = info.size / 1024;
+  const duration = await getAudioDurationInSeconds(uri);
+
+  if (sizeKB < 25 || duration < 1.5) {
+    counterRef.count += 1;
+    debugLog(`🛑 靜音跳過 - 檔案 ${sizeKB.toFixed(1)} KB，長度 ${duration.toFixed(2)} 秒`);
+    return null;
+  }
+
+  return uri;
+}
 
 export async function speedUpAudio(uri: string, speed: number, outputName?: string) {
   const fileName = outputName
@@ -240,7 +276,10 @@ export const transcribeAudio = async (
   item: RecordingItem,
   onPartial?: (text: string, index: number, total: number) => void,
   targetLang: 'tw' | 'cn' = 'tw'
-): Promise<{ transcript: { text: string } }> => {
+):  Promise<{
+  transcript: { text: string },
+  skippedSilentSegments: number,
+  text: string }> => {
   if (!item.uri || !item.name) {
     throw new Error('音檔資訊不完整（uri 或 name 為 null）');
   }
@@ -249,8 +288,10 @@ export const transcribeAudio = async (
   const segmentUris = await splitAudioIntoSegments(item.uri, 30);
   let accumulatedText = '';
   const baseName = item.name.replace(/\.[^/.]+$/, '');
+    const silentCounter = { count: 0 };
 
   // 2. Process each segment sequentially
+  
   for (let index = 0; index < segmentUris.length; index++) {
     try {
       const segmentUri = segmentUris[index];
@@ -258,6 +299,12 @@ export const transcribeAudio = async (
       // 2.1 Trim silence
       debugLog(`✂️ 開始剪輯第 ${index + 1} 段`);
       const trimmed = await trimSilence(segmentUri, `${baseName}_seg${index}`);
+          // 2.1.1 檢查 trimmed 檔案大小
+     const validTrimmedUri = await processTrimmedAudio(trimmed.uri, silentCounter);
+      if (!validTrimmedUri) {
+        debugLog(`🛑 第 ${index + 1} 段被視為靜音，已跳過`);
+        continue;
+      }
       
       // 2.2 Speed up
       debugLog(`⏩ 加速處理第 ${index + 1} 段`);
@@ -289,7 +336,11 @@ export const transcribeAudio = async (
     }
   }
 
-  return { transcript: { text: accumulatedText.trim() } };
+  return {
+    transcript: { text: accumulatedText.trim() },
+    skippedSilentSegments: silentCounter.count,
+    text: accumulatedText.trim() 
+  };
 };
 
 const basePrompt =

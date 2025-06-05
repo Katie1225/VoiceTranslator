@@ -952,6 +952,11 @@ setSelectedPlayingIndex(index);
         setShowSummaryIndex(null);
       }, userLang.includes('CN') ? 'cn' : 'tw');
 
+const skippedMinutes = Math.floor(result.skippedSilentSegments / 2);
+if (skippedMinutes > 0) {
+  Alert.alert(`已跳過 ${skippedMinutes} 分鐘靜音`,'\n靜音部分不扣金幣');
+}
+
       if (!result?.transcript?.text?.trim()) {
         throw new Error("無法取得有效的轉譯結果");
       }
@@ -991,7 +996,7 @@ setSelectedPlayingIndex(index);
         email: user.email,
         name: user.name,
         action: 'transcript',
-        value: -coinsToDeduct,
+        value: -coinsToDeduct+skippedMinutes,
         note: `轉文字：${item.displayName || item.name || ''}，長度 ${durationSec}s，扣 ${coinsToDeduct} 金幣`
       });
 
