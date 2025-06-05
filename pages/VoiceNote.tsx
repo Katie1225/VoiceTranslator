@@ -1165,7 +1165,8 @@ setShowTranscriptIndex(null);
                 <Text style={{ color: colors.text, fontWeight: 'bold', marginBottom: 4 }}>📝 談話關鍵字</Text>
                 <TextInput
                   placeholder="輸入關鍵字或複製貼上會議通知"
-                  placeholderTextColor={colors.text + '80'}
+placeholderTextColor="#808080"
+
                   value={notesEditing}
                   onChangeText={setNotesEditing}
                   multiline
