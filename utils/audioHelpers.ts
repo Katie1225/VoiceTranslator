@@ -78,7 +78,7 @@ export const trimSilence = async (uri: string, name: string): Promise<RecordingI
   }
 
   debugLog(`✂️ 開始剪輯：${outputName}`);
-  const command = `-i "${uri}" -af silenceremove=start_periods=1:start_silence=0.3:start_threshold=-60dB:stop_periods=-1:stop_silence=0.3:stop_threshold=-40dB -y "${outputPath}"`;
+  const command = `-i "${uri}" -af silenceremove=start_periods=1:start_silence=0.3:start_threshold=-40dB:stop_periods=-1:stop_silence=0.3:stop_threshold=-40dB -y "${outputPath}"`;
   const session = await FFmpegKit.execute(command);
   const returnCode = await session.getReturnCode();
 
@@ -226,6 +226,7 @@ export const sendToWhisper = async (
     } as any); // ⚠️ React Native 環境下需加 `as any` 避開 TS 檢查
 
     formData.append('lang', lang);
+    formData.append('temperature', '0');         // ✅ 禁止自由發揮
 
     const response = await fetch(apiUrl, {
       method: 'POST',
@@ -335,6 +336,8 @@ export const transcribeAudio = async (
       onPartial?.(accumulatedText.trim(), index + 1, segmentUris.length);
     }
   }
+  const estimatedSeconds = silentCounter.count * 30;
+ //Alert.alert('靜音剪輯結果', `共略過 ${silentCounter.count} 段（約 ${estimatedSeconds} 秒靜音）`);
 
   return {
     transcript: { text: accumulatedText.trim() },

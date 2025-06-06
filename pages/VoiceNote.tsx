@@ -52,7 +52,7 @@ import { APP_VARIANT } from '../constants/variant';
 import RecorderHeader from '../components/RecorderHeader';
 import { debugLog, debugWarn, debugError } from '../utils/debugLog';
 import { shareRecordingNote, shareRecordingFile, saveEditedRecording, deleteTextRecording, prepareEditing } from '../utils/editingHelpers';
-import SplitPromptModal , { splitTimeInSeconds} from '../components/SplitPromptModal';
+import SplitPromptModal, { splitTimeInSeconds } from '../components/SplitPromptModal';
 
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 GoogleSignin.configure({
@@ -124,11 +124,11 @@ const RecorderPageVoiceNote = () => {
   const [customPrimaryColor, setCustomPrimaryColor] = useState<string | null>(null);
 
   // 修改顏色主題
-const themeBase = partBackgrounds?.[isDarkMode ? 'dark' : 'light'] || {};
-const colors = {
-  ...themeBase,
-  primary: customPrimaryColor || themeBase.primary || '#00C1D4',
-};
+  const themeBase = partBackgrounds?.[isDarkMode ? 'dark' : 'light'] || {};
+  const colors = {
+    ...themeBase,
+    primary: customPrimaryColor || themeBase.primary || '#00C1D4',
+  };
   const styles = createStyles(colors);
 
   const saveThemePreference = async (isDark: boolean) => {
@@ -226,7 +226,7 @@ const colors = {
             if (user.coins > 0) { // 確保金幣已更新
               const indexToResume = action.index;
               purchaseManager.clearPendingActions();
-                    setSelectedPlayingIndex(indexToResume);
+              setSelectedPlayingIndex(indexToResume);
               setTimeout(() => {
                 handleTranscribe(indexToResume);
               }, 500);
@@ -698,24 +698,24 @@ const colors = {
 
 
   // 關閉所有彈出菜單
-const closeAllMenus = (options: {
-  preserveEditing?: boolean;
-  preserveSummaryMenu?: boolean;
-} = {}) => {
-  const { preserveEditing = false, preserveSummaryMenu = false } = options;
+  const closeAllMenus = (options: {
+    preserveEditing?: boolean;
+    preserveSummaryMenu?: boolean;
+  } = {}) => {
+    const { preserveEditing = false, preserveSummaryMenu = false } = options;
 
-  setSelectedIndex(null);
-  setSpeedMenuIndex(null);
-  setSelectedContext(null);
+    setSelectedIndex(null);
+    setSpeedMenuIndex(null);
+    setSelectedContext(null);
 
-  if (!preserveSummaryMenu) {
-    setSummaryMenuContext(null); // ✅ 保留一次就好
-  }
+    if (!preserveSummaryMenu) {
+      setSummaryMenuContext(null); // ✅ 保留一次就好
+    }
 
-  if (!preserveEditing) {
-    resetEditingState();
-  }
-};
+    if (!preserveEditing) {
+      resetEditingState();
+    }
+  };
 
 
   if (!isLoading && permissionStatus === 'denied') {
@@ -894,7 +894,7 @@ const closeAllMenus = (options: {
 
   //轉文字邏輯
   const handleTranscribe = async (index: number, forceFull = false) => {
-setSelectedPlayingIndex(index); 
+    setSelectedPlayingIndex(index);
     const item = recordings[index];
     if (item.transcript) {
       setShowTranscriptIndex(index);
@@ -920,14 +920,14 @@ setSelectedPlayingIndex(index);
           }
         });
       });
-/*
-  if (!forceFull && durationSec > splitTimeInSeconds) {
-  // 中斷轉文字流程，觸發 UI 彈窗
-  setPendingTranscribe({ index, durationSec });
-  setShowSplitPrompt(true); // 顯示 SplitPromptModal
-  setIsTranscribingIndex(null); // ❗記得解除 loading 狀態
-  return;
-}*/
+      /*
+        if (!forceFull && durationSec > splitTimeInSeconds) {
+        // 中斷轉文字流程，觸發 UI 彈窗
+        setPendingTranscribe({ index, durationSec });
+        setShowSplitPrompt(true); // 顯示 SplitPromptModal
+        setIsTranscribingIndex(null); // ❗記得解除 loading 狀態
+        return;
+      }*/
       const coinsToDeduct = Math.ceil(durationSec / (COIN_UNIT_MINUTES * 60)) * COIN_COST_PER_UNIT;
 
       const ok = await ensureCoins(coinsToDeduct);
@@ -952,17 +952,17 @@ setSelectedPlayingIndex(index);
         setShowSummaryIndex(null);
       }, userLang.includes('CN') ? 'cn' : 'tw');
 
-const skippedMinutes = Math.floor(result.skippedSilentSegments / 2);
-if (skippedMinutes > 0) {
-  Alert.alert(`已跳過 ${skippedMinutes} 分鐘靜音`,'\n靜音部分不扣金幣');
-}
+      const skippedMinutes = Math.floor(result.skippedSilentSegments / 2);
+      /*if (skippedMinutes > 0) {
+        Alert.alert(`已跳過 ${skippedMinutes} 分鐘靜音`,'\n靜音部分不扣金幣');
+      } */
 
-      if (!result?.transcript?.text?.trim()) {
-        throw new Error("無法取得有效的轉譯結果");
-      }
-              debugLog('✅render 2');
-        setShowTranscriptIndex(index);
-        setShowSummaryIndex(null);
+      /*   if (!result?.transcript?.text?.trim()) {
+           throw new Error("無法取得有效的轉譯結果");
+         }*/
+      debugLog('✅render 2',skippedMinutes);
+      setShowTranscriptIndex(index);
+      setShowSummaryIndex(null);
 
       let finalUpdated = recordings.map((rec, i) =>
         i === index ? { ...rec, transcript: result.transcript.text } : rec
@@ -984,7 +984,7 @@ if (skippedMinutes > 0) {
       } catch (err) {
         debugWarn('❌ 自動摘要失敗:', err);
       }
-              debugLog('✅render 3');
+      debugLog('✅render 3: skippedMinutes');
       setRecordings(finalUpdated);
       await saveRecordings(finalUpdated);
       setShowTranscriptIndex(null);
@@ -996,17 +996,18 @@ if (skippedMinutes > 0) {
         email: user.email,
         name: user.name,
         action: 'transcript',
-        value: -coinsToDeduct+skippedMinutes,
+        value: -coinsToDeduct,
+      // value: -coinsToDeduct+skippedMinutes,
         note: `轉文字：${item.displayName || item.name || ''}，長度 ${durationSec}s，扣 ${coinsToDeduct} 金幣`
       });
 
       if (!coinResult.success) {
         Alert.alert("轉換成功，但扣金幣失敗", coinResult.message || "請稍後再試");
       }
-              debugLog('✅render 4');
-setSummaryMode('summary');
-setShowSummaryIndex(index);
-setShowTranscriptIndex(null);
+      debugLog('✅render 4');
+      setSummaryMode('summary');
+      setShowSummaryIndex(index);
+      setShowTranscriptIndex(null);
 
     } catch (err) {
       Alert.alert("❌ 錯誤", (err as Error).message || "轉換失敗，這次不會扣金幣");
@@ -1119,7 +1120,7 @@ setShowTranscriptIndex(null);
   };
 
   return (
-<TouchableWithoutFeedback onPress={() => closeAllMenus({ preserveEditing: false })}>
+    <TouchableWithoutFeedback onPress={() => closeAllMenus({ preserveEditing: false })}>
 
       <SafeAreaView style={[styles.container, { marginTop: 0, paddingTop: 0 }]}>
         {isLoading ? (
@@ -1170,7 +1171,7 @@ setShowTranscriptIndex(null);
                 <Text style={{ color: colors.text, fontWeight: 'bold', marginBottom: 4 }}>📝 談話關鍵字</Text>
                 <TextInput
                   placeholder="輸入關鍵字或複製貼上會議通知"
-placeholderTextColor="#808080"
+                  placeholderTextColor="#808080"
 
                   value={notesEditing}
                   onChangeText={setNotesEditing}
@@ -1438,7 +1439,7 @@ placeholderTextColor="#808080"
                             ))}
 
                           {/* 轉文字 & 重點摘要按鈕*/}
-                          {(isCurrentPlaying || !item.transcript || isTranscribingIndex === index || summarizingState?.index === index ||  selectedPlayingIndex === index || showTranscriptIndex === index ||   showSummaryIndex === index) && (
+                          {(isCurrentPlaying || !item.transcript || isTranscribingIndex === index || summarizingState?.index === index || selectedPlayingIndex === index || showTranscriptIndex === index || showSummaryIndex === index) && (
                             <View style={styles.actionButtons}>
                               <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 }}>
                                 {/* 談話筆記 */}
@@ -1462,14 +1463,14 @@ placeholderTextColor="#808080"
                                     setShowNotesIndex(index);
                                   }}
                                 >
-  <Text
-    style={{
-      color: showNotesIndex === index ? colors.text : colors.subtext,
-      fontSize: 13,
-      textAlign: 'center',
-      fontWeight: showNotesIndex === index ? 'bold' : 'normal',
-    }}
-  >談話筆記</Text>
+                                  <Text
+                                    style={{
+                                      color: showNotesIndex === index ? colors.text : colors.subtext,
+                                      fontSize: 13,
+                                      textAlign: 'center',
+                                      fontWeight: showNotesIndex === index ? 'bold' : 'normal',
+                                    }}
+                                  >談話筆記</Text>
                                 </TouchableOpacity>
 
 
@@ -1493,14 +1494,14 @@ placeholderTextColor="#808080"
                                     handleTranscribe(index);
                                   }}
                                 >
-                                    <Text
-    style={{
-      color: showTranscriptIndex === index ? colors.text : colors.subtext,
-      fontSize: 13,
-      textAlign: 'center',
-      fontWeight: showTranscriptIndex === index ? 'bold' : 'normal',
-    }}
-  >錄音文檔</Text>
+                                  <Text
+                                    style={{
+                                      color: showTranscriptIndex === index ? colors.text : colors.subtext,
+                                      fontSize: 13,
+                                      textAlign: 'center',
+                                      fontWeight: showTranscriptIndex === index ? 'bold' : 'normal',
+                                    }}
+                                  >錄音文檔</Text>
                                 </TouchableOpacity>
 
                                 {/* AI工具箱按鈕 */}
@@ -1518,8 +1519,8 @@ placeholderTextColor="#808080"
                                   onPress={(e) => {
                                     closeAllMenus();
                                     setShowTranscriptIndex(null);
-  setShowSummaryIndex(index);        // ✅ 預設展開 summary
-  setSummaryMode('summary');         // ✅ 預設模式為 summary
+                                    setShowSummaryIndex(index);        // ✅ 預設展開 summary
+                                    setSummaryMode('summary');         // ✅ 預設模式為 summary
                                     setShowNotesIndex(null);
                                     // 取得按鈕位置，彈出選單
                                     e.target.measureInWindow((x, y, width, height) => {
@@ -1527,14 +1528,14 @@ placeholderTextColor="#808080"
                                     });
                                   }}
                                 >
-                                    <Text
-    style={{
-      color: showSummaryIndex === index ? colors.text : colors.subtext,
-      fontSize: 13,
-      textAlign: 'center',
-      fontWeight: showSummaryIndex === index ? 'bold' : 'normal',
-    }}
-  >AI工具箱</Text>
+                                  <Text
+                                    style={{
+                                      color: showSummaryIndex === index ? colors.text : colors.subtext,
+                                      fontSize: 13,
+                                      textAlign: 'center',
+                                      fontWeight: showSummaryIndex === index ? 'bold' : 'normal',
+                                    }}
+                                  >AI工具箱</Text>
                                 </TouchableOpacity>
 
 
@@ -1821,32 +1822,32 @@ placeholderTextColor="#808080"
           products={productIds.map(id => ({ id, coins: productToCoins[id] }))} // 傳遞產品資訊
         />
 
-<SplitPromptModal
-  visible={showSplitPrompt}
-  onCancel={() => {
-    setShowSplitPrompt(false);
-    setPendingTranscribe(null);
-  }}
-  onSplit={async () => {
-    if (!pendingTranscribe) return;
-    setShowSplitPrompt(false);
-    const item = recordings[pendingTranscribe.index];
-    const parts = await splitAudioByInterval(item.uri);
- // 加入主列表
-const newItems = parts.map(p => ({
-  ...p,
-  date: new Date().toISOString(),
-}));
-setRecordings(prev => [...newItems, ...prev]);
-    setPendingTranscribe(null);
-  }}
-  onFull={async () => {
-    if (!pendingTranscribe) return;
-    setShowSplitPrompt(false);
-    await handleTranscribe(pendingTranscribe.index, true); // ⬅️ forceFull
-    setPendingTranscribe(null);
-  }}
-/>
+        <SplitPromptModal
+          visible={showSplitPrompt}
+          onCancel={() => {
+            setShowSplitPrompt(false);
+            setPendingTranscribe(null);
+          }}
+          onSplit={async () => {
+            if (!pendingTranscribe) return;
+            setShowSplitPrompt(false);
+            const item = recordings[pendingTranscribe.index];
+            const parts = await splitAudioByInterval(item.uri);
+            // 加入主列表
+            const newItems = parts.map(p => ({
+              ...p,
+              date: new Date().toISOString(),
+            }));
+            setRecordings(prev => [...newItems, ...prev]);
+            setPendingTranscribe(null);
+          }}
+          onFull={async () => {
+            if (!pendingTranscribe) return;
+            setShowSplitPrompt(false);
+            await handleTranscribe(pendingTranscribe.index, true); // ⬅️ forceFull
+            setPendingTranscribe(null);
+          }}
+        />
 
 
       </SafeAreaView>
