@@ -8,6 +8,7 @@ import { splitTimeInSeconds } from '../components/SplitPromptModal';
 import { Alert,} from 'react-native';
 
 export type RecordingItem = {
+  size?: number;
   uri: string;
   name: string;
   displayName?: string;
@@ -53,7 +54,7 @@ export const enhanceAudio = async (inputUri: string, originalName: string): Prom
   const returnCode = await session.getReturnCode();
 
   if (ReturnCode.isSuccess(returnCode)) {
-    return { uri: outputUri, name: newName, originalUri: inputUri, isEnhanced: true };
+    return { uri: outputUri, name: newName, originalUri: inputUri, isEnhanced: true, size: (await RNFS.stat(outputUri)).size  };
   } else {
     throw new Error('音訊強化處理失敗');
   }
@@ -74,6 +75,7 @@ export const trimSilence = async (uri: string, name: string): Promise<RecordingI
       name: outputName,
       originalUri: uri,
       isTrimmed: true,
+      size: (await RNFS.stat(outputPath)).size 
     };
   }
 
@@ -86,7 +88,7 @@ export const trimSilence = async (uri: string, name: string): Promise<RecordingI
     throw new Error('靜音剪輯失敗');
   }
 
-  return { uri: outputPath, name: outputName, originalUri: uri, isTrimmed: true };
+  return { uri: outputPath, name: outputName, originalUri: uri, isTrimmed: true,size: (await RNFS.stat(outputPath)).size };
 };
 
 export async function getAudioDurationInSeconds(uri: string): Promise<number> {
@@ -259,11 +261,20 @@ export const sendToWhisper = async (
       '廣告','內容',
       '請不吝點贊','訂閱','欄目', '轉發', '打賞', '支持', '明鏡與點點欄目',
       '字幕by索蘭婭╰╯╯',
+      'ご視聴ありがとうございました',
+'야, 그만하고 있을걸',
+'感謝觀看',
+'위클리, 멀리 굉장히 흔쾌히 정리 되어있는데',
+'本日もご覧いただきありがとうございます',
+'良い一日を',
+'見てくれてありがとう',
+
     ];
 
     // ✅ 清洗句子內容
     const sentences: string[] = text.split(/(?<=[。！？!?\n])/);
     const filtered = sentences.filter(s => !suspiciousPhrases.some(p => s.includes(p))); // 移除廣告句
+    debugLog(filtered);
     const cleaned = filtered.join('').trim(); // 合併為單段文字
 
     return cleaned;
@@ -448,6 +459,7 @@ export async function generateRecordingMetadata(uri: string): Promise<{
   displayName: string;
   date: string;
   durationSec: number;
+    size: number;
 }> {
   let durationSec = 0;
   let durationText = '?秒';
@@ -482,11 +494,12 @@ export async function generateRecordingMetadata(uri: string): Promise<{
   const ss = startDate.getSeconds().toString().padStart(2, '0');
 
   const displayName = `[錄音] ${durationText} ${hh}:${mm}:${ss} ${startDate.getMonth() + 1}/${startDate.getDate()}`;
-
+const stat = await RNFS.stat(uri);
   return {
     displayName,
     date: startDate.toISOString(),
     durationSec,
+      size: stat.size ?? 0,
   };
 }
 
@@ -526,9 +539,13 @@ const command = `-i "${uri}" -f segment -segment_time ${adjustedSeconds} -ar 160
     .filter(f => f.startsWith(`split_${baseName}_`) && f.endsWith('.wav'))
     .sort((a, b) => a.localeCompare(b)); // 按照 001、002 排序
 
-  const items: RecordingItem[] = outputFiles.map((filename, i) => {
+const items: RecordingItem[] = await Promise.all(
+  outputFiles.map(async (filename, i) => {
+    const fullUri = `${folder}${filename}`;
+    const stat = await RNFS.stat(fullUri);
+
     return {
-      uri: `${folder}${filename}`,
+      uri: fullUri,
       name: filename,
       originalUri: uri,
       isTrimmed: false,
@@ -536,8 +553,10 @@ const command = `-i "${uri}" -f segment -segment_time ${adjustedSeconds} -ar 160
       transcript: '',
       summaries: {},
       displayName: `${baseName}_part${i + 1}`,
+      size: stat.size ?? 0, // ✅ 補上
     };
-  });
+  })
+);
 
   debugLog(`✅ 共分割 ${items.length} 段`);
   return items;

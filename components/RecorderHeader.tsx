@@ -1,207 +1,281 @@
 // components/RecorderHeader.tsx
-import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, Alert } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TouchableOpacity, TextInput } from 'react-native';
+import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import HamburgerMenu from './HamburgerMenu';
+import { useTheme } from '../constants/ThemeContext';
 import { handleLogin } from '../utils/loginHelpers';
+import { Platform } from 'react-native';
 
 interface RecorderHeaderProps {
-    recording: boolean;
-    recordingTimeRef: React.RefObject<number>;
-    startRecording: () => void;
-    stopRecording: () => void;
-    pickAudio: () => void;
-    setIsLoggingIn: (v: boolean) => void;
-    isDarkMode: boolean;
-    toggleTheme: () => void;
-    customPrimaryColor: string | null;
-    setCustomPrimaryColor: (color: string | null) => void;
-    styles: any;
-    colors: any;
-    title?: string;
-    currentDecibels: number;
+  mode?: 'main' | 'detail';
+  title?: string;
+  onBack?: () => void;
+
+  onPickAudio?: () => void;
+  onCloseAllMenus?: () => void;
+  sortOption?: 'latest' | 'oldest' | 'size' | 'name-asc' | 'name-desc';
+  setSortOption?: (opt: any) => void;
+  searchQuery?: string;
+  setSearchQuery?: (s: string) => void;
+  setIsLoggingIn?: (v: boolean) => void;
 }
 
-const RecorderHeader: React.FC<RecorderHeaderProps> = ({
-    recording,
-    recordingTimeRef,
-    startRecording,
-    stopRecording,
-    pickAudio,
-    setIsLoggingIn,
-    isDarkMode,
-    toggleTheme,
-    customPrimaryColor,
-    setCustomPrimaryColor,
-    styles,
-    colors,
-    title = 'Voice Note',
-    currentDecibels,
-}) => {
-    const [displayTime, setDisplayTime] = useState(0);
-    const [menuVisible, setMenuVisible] = useState(false);
-    const [decibelHistory, setDecibelHistory] = useState<number[]>([]);
+const labelMap: Record<string, string> = {
+  latest: '最新在上',
+  oldest: '最舊在上',
+  size: '依大小排序',
+  'name-asc': '名稱 A → Z',
+  'name-desc': '名稱 Z → A',
+};
 
-    useEffect(() => {
-        let timer: NodeJS.Timeout;
+const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
+  const noop = () => {};
+  const defaultStr = '';
 
-        if (recording) {
-            // 每次開始錄音時重置時間
-            setDisplayTime(0);
+  const {
+    mode,
+    onBack,
+    title,
+    onPickAudio = noop,
+    onCloseAllMenus = noop,
+    sortOption = 'latest',
+    setSortOption = noop,
+    searchQuery = defaultStr,
+    setSearchQuery = noop,
+    setIsLoggingIn = noop,
+  } = props;
+  const { colors } = useTheme();
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [isSortModalVisible, setIsSortModalVisible] = useState(false);
+  const [isSearchModalVisible, setIsSearchModalVisible] = useState(false);
 
-            timer = setInterval(() => {
-                // 直接使用 recordingTimeRef.current 但確保從0開始
-                const currentTime = recordingTimeRef.current || 0;
-                setDisplayTime(currentTime);
-            }, 1000);
-        } else {
-            setDisplayTime(0);
-        }
+  const toggleSort = () => {
+    onCloseAllMenus();
+    setIsSortModalVisible((v) => !v);
+  };
 
-        return () => {
-            if (timer) clearInterval(timer);
-        };
-    }, [recording]); // 只依賴 recording 狀態
+  const toggleSearch = () => {
+    onCloseAllMenus();
+    setIsSearchModalVisible((v) => !v);
+  };
 
-    useEffect(() => {
-        setDecibelHistory((prev) => {
-            const next = [...prev, currentDecibels];
-            if (next.length > 40) next.shift(); // 只保留最近 40 筆
-            return next;
-        });
-    }, [currentDecibels]);
+  return (
+    <>
+       {mode === 'detail' ? (
+      // ✅ 詳細頁模式
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: 10,
+          paddingVertical: 8,
+          backgroundColor: colors.container,
+          borderBottomWidth: 2,
+          borderBottomColor: colors.primary,
+        }}
+      >
+        <TouchableOpacity onPress={onBack}>
+          <Icon name="arrow-left" size={30} color={colors.primary} />
+        </TouchableOpacity>
 
-    useEffect(() => {
-        if (!recording) {
-            setDecibelHistory([]); // ✅ 停止錄音時清空記錄
-        }
-    }, [recording]);
+        <Text
+          numberOfLines={1}
+          style={{
+            flex: 1,
+            marginLeft: 12,
+            fontSize: 20,
+            fontWeight: '600',
+            color: colors.text,
+          }}
+        >
+          {title || '詳細內容'}
+        </Text>
+      </View>
+    ) : (
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingHorizontal: 10,
+          paddingVertical: 8,
+          backgroundColor: colors.container,
+          borderBottomWidth: 2,
+          borderBottomColor: colors.primary,
+        }}
+      >
+        <TouchableOpacity onPress={() => setMenuVisible(!menuVisible)}>
+          <Icon name="menu" size={34} color={colors.primary} />
+        </TouchableOpacity>
 
-    const formatTime = (ms: number) => {
-        const totalSeconds = Math.floor(ms / 1000);
-        const h = Math.floor(totalSeconds / 3600).toString().padStart(2, '0');
-        const m = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
-        const s = (totalSeconds % 60).toString().padStart(2, '0');
-        return `${h}:${m}:${s}`;
-    };
+        <Text
+          numberOfLines={1}
+          style={{
+            fontFamily: Platform.OS === 'ios' ? 'Avenir' : 'sans-serif-medium' ,
+            flex: 1,
+            marginLeft: 10,
+            fontSize: 20,
+            fontWeight: '600',
+            color: colors.text,
+          }}
+        >
+          Voice Note
+        </Text>
 
-    return (
-        <>
-            <View style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                paddingHorizontal: 6,
-                paddingTop: 0,
-                minHeight: 70,
-            }}>
-                {/* 左邊 45%：時間 / 標題 */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
 
-                <View style={{ flex: 4.5, alignItems: 'center', justifyContent: 'center' }}>
-                    {recording ? (
-                        <>
-                            <Text
-                                style={{
-                                    color: colors.primary,
-                                    fontSize: 16,
-                                    fontWeight: '500',
-                                    fontStyle: 'italic',
-                                    textAlign: 'center',
-                                }}
-                            >
-                                ⏱ {formatTime(displayTime * 1000)}
-                            </Text>
-                            <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', height: 30, overflow: 'hidden' }}>
-                                {decibelHistory.map((dB, index) => {
-                                    const height = dB < -90
-                                        ? 2 // ← 強制最小 2px
-                                        : Math.max(2, ((Math.max(-90, Math.min(dB, 0)) + 100) / 100) * 30);
-                                    return (
-                                        <View
-                                            key={index}
-                                            style={{
-                                                width: 2,
-                                                height,
-                                                backgroundColor: colors.primary + '80',
-                                                marginHorizontal: 0.6,
-                                            }}
-                                        />
-                                    );
-                                })
-                           /*      }).reverse()右到左 */}
-                            </View>
-                        </>
-                    ) : (
-                        <Text
-                            numberOfLines={1}
-                            ellipsizeMode="tail"
-                            style={{
-                                color: colors.primary,
-                                fontSize: 26,
-                                fontWeight: '500',
-                                fontStyle: 'italic',
-                                textAlign: 'center',
-                                marginRight: 10,
-                            }}
-                        >
-                            {title}
-                        </Text>
-                    )}
-                </View>
+                    <TouchableOpacity onPress={toggleSearch}>
+            <Icon name="magnify" size={30} color={colors.primary} />
+          </TouchableOpacity>
 
-                {/* 中間 45%：錄音按鈕 */}
-                <View style={{ flex: 4, marginRight: 0 }}>
-                    <TouchableOpacity
-                        style={recording ? styles.stopButton : styles.recordButton}
-                        onPress={recording ? stopRecording : startRecording}
-                    >
-                        <Text
-                            numberOfLines={1}
-                            ellipsizeMode="tail"
-                            style={styles.buttonText}>
-                            {recording ? '停止錄音' : '開始錄音'}
-                        </Text>
-                    </TouchableOpacity>
-                </View>
 
-                {/* 右邊 15%：上下的 ☰ / ＋ */}
-                <View style={{
-                    flex: 1.5,
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    height: 70,
-                }}>
-                    <TouchableOpacity onPress={() => setMenuVisible(!menuVisible)}>
-                        <Text style={{ fontSize: 20, color: colors.primary }}>☰</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={pickAudio}>
-                        <Text style={{ fontSize: 20, color: colors.primary }}>📂</Text>
-                    </TouchableOpacity>
-                </View>
-            </View>
-            {/* ☰ 選單 */}
-            <HamburgerMenu
-                visible={menuVisible}
-                onClose={() => setMenuVisible(false)}
-                isDarkMode={isDarkMode}
-                toggleTheme={toggleTheme}
-                customPrimaryColor={customPrimaryColor}
-                setCustomPrimaryColor={setCustomPrimaryColor}
-                styles={styles}
-                onLoginPress={async () => {
-                    const result = await handleLogin(setIsLoggingIn);
-                    if (result) {
-                        Alert.alert('✅ 登入成功', result.message, [
-                            { text: '繼續', onPress: () => setMenuVisible(false) }
-                        ]);
-                        return true;
-                    } else {
-                        return false;
-                    }
+          <TouchableOpacity onPress={toggleSort}>
+            <Icon name="sort" size={30} color={colors.primary} />
+          </TouchableOpacity>
+
+                    <TouchableOpacity onPress={onPickAudio}>
+            <Icon name="folder" size={30} color={colors.primary} />
+          </TouchableOpacity>
+
+
+        </View>
+
+        <HamburgerMenu
+          visible={menuVisible}
+          onClose={() => setMenuVisible(false)}
+          onLoginPress={async () => {
+            const result = await handleLogin(setIsLoggingIn);
+            if (result) {
+              return new Promise((resolve) => {
+                resolve(true);
+                setMenuVisible(false);
+              });
+            }
+            return false;
+          }}
+          onLoginSuccess={() => setMenuVisible(false)}
+        />
+      </View>
+)}
+      {isSortModalVisible && (
+        <View
+          style={{
+            position: 'absolute',
+            top: 70,
+            left: 100,
+            right: 10,
+            backgroundColor: colors.container,
+            borderTopLeftRadius: 12,
+            borderTopRightRadius: 12,
+            borderColor: colors.primary,
+            padding: 12,
+            elevation: 10,
+            zIndex: 999,
+          }}
+        >
+          <Text style={{ fontSize: 12, color: colors.subtext, marginBottom: 4 }}>
+            目前排序：{labelMap[sortOption]}
+          </Text>
+          <View style={{ height: 12 }} />
+          <Text
+            style={{
+              color: colors.text,
+              fontSize: 16,
+              fontWeight: 'bold',
+              marginBottom: 8,
+            }}
+          >
+            選擇排序方式
+          </Text>
+
+          {Object.entries(labelMap).map(([key, label]) => (
+            <TouchableOpacity
+              key={key}
+              style={{
+                paddingVertical: 10,
+                borderBottomWidth: 1,
+                borderColor: colors.border || '#444',
+              }}
+              onPress={() => {
+                setSortOption(key as any);
+                setIsSortModalVisible(false);
+              }}
+            >
+              <Text
+                style={{
+                  color: sortOption === key ? colors.primary : colors.text,
+                  fontWeight: sortOption === key ? 'bold' : 'normal',
                 }}
-                onLoginSuccess={() => setMenuVisible(false)}
-            />
-        </>
-    );
+              >
+                {label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+
+          <TouchableOpacity
+            onPress={() => setIsSortModalVisible(false)}
+            style={{ paddingVertical: 10, alignItems: 'center' }}
+          >
+            <Text style={{ color: colors.subtext }}>取消</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {isSearchModalVisible && (
+        <View
+          style={{
+            position: 'absolute',
+            top: 70,
+            left: 100,
+            right: 10,
+            backgroundColor: colors.container,
+            borderTopLeftRadius: 12,
+            borderTopRightRadius: 12,
+            borderColor: colors.primary,
+            padding: 12,
+            elevation: 10,
+            zIndex: 999,
+          }}
+        >
+          <Text
+            style={{
+              color: colors.text,
+              fontSize: 16,
+              fontWeight: 'bold',
+              marginBottom: 8,
+            }}
+          >
+            搜尋錄音名稱
+          </Text>
+
+          <TextInput
+            placeholder="輸入關鍵字"
+            placeholderTextColor="#888"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            style={{
+              borderColor: colors.primary,
+              borderWidth: 1,
+              padding: 10,
+              borderRadius: 8,
+              color: colors.text,
+              backgroundColor: colors.background,
+              marginBottom: 16,
+            }}
+          />
+          <TouchableOpacity
+            onPress={() => setIsSearchModalVisible(false)}
+            style={{ paddingVertical: 10, alignItems: 'center' }}
+          >
+            <Text style={{ color: colors.subtext }}>完成</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    
+    </>
+    
+  );
 };
 
 export default RecorderHeader;

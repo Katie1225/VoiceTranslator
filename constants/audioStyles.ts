@@ -20,7 +20,7 @@ export const createStyles = (colors: any) => StyleSheet.create({
     borderWidth:0.5,
 borderColor: colors.primary,
 
-    minHeight: 100,
+    minHeight: 50,
 
     flexDirection: 'column',
     justifyContent: 'flex-start',
@@ -34,7 +34,7 @@ borderColor: colors.primary,
   transcriptBlock: {                            //小字容器
     paddingHorizontal: 8,
     marginTop: 4,
-    height: 50,
+    height: 25,
   },
   
   transcriptBlockText: {                          //小字文字

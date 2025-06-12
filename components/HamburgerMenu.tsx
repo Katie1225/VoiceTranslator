@@ -3,20 +3,16 @@ import React, { useEffect, useState } from 'react';
 import { Linking, Alert, View, Text, TouchableOpacity, Image } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { partBackgrounds , additionalColors } from '../constants/Colors';
 import { logCoinUsage, fetchUserInfo } from '../utils/googleSheetAPI';
 import { handleLogin } from '../utils/loginHelpers';
 import { version } from '../constants/variant';
+import { useTheme } from '../constants/ThemeContext';
+
 
 
 type Props = {
   visible: boolean;
   onClose: () => void;
-  isDarkMode: boolean;
-  toggleTheme: () => void;
-  customPrimaryColor: string | null;
-  setCustomPrimaryColor: (color: string | null) => void;
-  styles: any;
   onLoginPress: () => Promise<boolean>;
   onLoginSuccess?: () => void;
 };
@@ -31,17 +27,8 @@ type GoogleUser = {
   coins?: number;
 };
 
-const HamburgerMenu = ({
-  visible,
-  onClose,
-  isDarkMode,
-  toggleTheme,
-  customPrimaryColor,
-  setCustomPrimaryColor,
-  styles,
-  onLoginPress,
-  onLoginSuccess
-}: Props) => {
+const HamburgerMenu = ({ visible, onClose, onLoginPress, onLoginSuccess }: Props) => {
+  const { colors, styles, isDarkMode, toggleTheme, setCustomPrimaryColor, customPrimaryColor,additionalColors } = useTheme();
   const [currentUser, setCurrentUser] = useState<GoogleUser | null>(null);
   useEffect(() => {
     const loadUser = async () => {
@@ -69,7 +56,17 @@ const HamburgerMenu = ({
   if (!visible) return null;
 
   return (
-    <View style={styles.menuContainer}>
+<View style={{
+  position: 'absolute',
+  top: 70,
+  left: 10, // 👈 調整這裡可以讓選單「往左移」
+  right: 20,
+  backgroundColor: colors.container,
+  borderRadius: 12,
+  padding: 12,
+  zIndex: 9999,
+  elevation: 10,
+}}>
 
       {currentUser ? (
         <View style={[styles.menuItemButton, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
@@ -97,9 +94,6 @@ const HamburgerMenu = ({
 
       <Text style={styles.menuItem}>版本: {version} </Text> 
 
-     {/* <Text style={styles.menuItem}>版本: {appVersion}</Text>*/}
-
-
       <TouchableOpacity
         onPress={() => {
           Linking.openURL('mailto:katie@example.com?subject=使用者回饋');
@@ -116,15 +110,7 @@ const HamburgerMenu = ({
       <Text style={styles.menuHeader}>主題顏色</Text>
       <View style={styles.colorOptionsContainer}>
         <TouchableOpacity
-style={[
-  styles.colorOption,
-  {
-    backgroundColor: isDarkMode
-      ? partBackgrounds.dark.primary
-      : partBackgrounds.light.primary
-  },
-  !customPrimaryColor && styles.selectedColor
-]}
+
           onPress={() => { onClose(); setCustomPrimaryColor(null); }}
         />
         {Object.entries(additionalColors).map(([name, color]) => (

@@ -3,7 +3,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, TextInput, ScrollView } from 'react-native';
 import { APP_VARIANT } from '../constants/variant';
 import { lightTheme, darkTheme, additionalColors } from '../constants/Colors';
-import { createStyles } from '../styles/audioStyles';
+import { createStyles } from '../constants/audioStyles';
 import { RecordingItem } from '../utils/audioHelpers';
 
 
