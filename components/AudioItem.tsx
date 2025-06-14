@@ -141,90 +141,85 @@ export const renderNoteBlock = (props: {
 
     const isEditing = editingIndex === index;
 
-    return (
-        <View style={styles.transcriptContainer}>
-            <View style={styles.bar} />
+return (
+  <View style={{
+    maxHeight: 300,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginTop: 10,
+    backgroundColor: colors.container
+  }}>
+    <ScrollView
+      style={{ padding: 12 }}
+      contentContainerStyle={{ paddingBottom: 12 }}
+      keyboardShouldPersistTaps="handled"
+    >
+      {isEditing ? (
+        <TextInput
+          value={editValue}
+          onChangeText={onChangeEdit}
+          multiline
+          scrollEnabled={true}
+          style={{
+            minHeight: 100,
+            fontSize: 16,
+            color: colors.text,
+            textAlignVertical: 'top',
+          }}
+          autoFocus
+        />
+      ) : (
+        <Text
+          style={{
+            fontSize: 16,
+            color: colors.text,
+            lineHeight: 24,
+          }}
+          selectable
+          selectionColor={colors.primary}
+        >
+          {value}
+        </Text>
+      )}
+    </ScrollView>
 
-            {isEditing ? (
-                <View
-                    style={{
-                        maxHeight: 400,
-                        backgroundColor: colors.background,
-                    }}
-                >
-                    {/* 添加 ScrollView 並設置 nestedScrollEnabled */}
-                    <ScrollView
-                        style={{ maxHeight: 400 }}
-                        contentContainerStyle={{ paddingBottom: 12 }}
-                        nestedScrollEnabled={true} // 關鍵屬性
-                        keyboardShouldPersistTaps="handled"
-                    >
-                        <TextInput
-                            value={editValue}
-                            onChangeText={onChangeEdit}
-                            multiline
-                            scrollEnabled={true}
-                            style={{
-                                minHeight: 100,
-                                padding: 12,
-                                fontSize: 16,
-                                color: colors.text,
-                                textAlignVertical: 'top',
-                            }}
-                            autoFocus
-                        />
-                    </ScrollView>
+    {/* 固定底部按鈕區 */}
+    <View style={{
+      borderTopWidth: 1,
+      borderColor: colors.primary,
+      padding: 10,
+      flexDirection: 'row',
+      justifyContent: isEditing ? 'flex-end' : 'space-between',
+      backgroundColor: colors.container
+    }}>
+      {isEditing ? (
+        <>
+          <TouchableOpacity onPress={onSave}>
+            <Text style={styles.transcriptActionButton}>💾 儲存</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onCancel}>
+            <Text style={styles.transcriptActionButton}>✖️ 取消</Text>
+          </TouchableOpacity>
+        </>
+      ) : (
+        <>
+          <TouchableOpacity onPress={() => onChangeEdit(value)}>
+            <Text style={styles.transcriptActionButton}>✏️ 修改</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onShare}>
+            <Text style={styles.transcriptActionButton}>📤 轉發</Text>
+          </TouchableOpacity>
+          {APP_VARIANT === 'notedebug' && (
+            <TouchableOpacity onPress={onDelete}>
+              <Text style={styles.transcriptActionButton}>🗑️ 刪除</Text>
+            </TouchableOpacity>
+          )}
+        </>
+      )}
+    </View>
+  </View>
+);
 
-                    <View
-                        style={{
-                            flexDirection: 'row',
-                            justifyContent: 'flex-end',
-                            gap: 16,
-                            marginTop: 8,
-                        }}
-                    >
-                        <TouchableOpacity onPress={onSave}>
-                            <Text style={styles.transcriptActionButton}>💾 儲存</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={onCancel}>
-                            <Text style={styles.transcriptActionButton}>✖️ 取消</Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            ) : (
-                <>
-                    <Text
-                        style={styles.transcriptText}
-                        selectable={true}
-                        selectionColor={colors.primary} // 可選：選取底色
-                    >
-                        {value}
-                    </Text>
-                    <View
-                        style={{
-                            flexDirection: 'row',
-                            justifyContent: 'flex-end',
-                            gap: 12,
-                            marginTop: 8,
-                        }}
-                    >
-                        <TouchableOpacity onPress={() => onChangeEdit(value)}>
-                            <Text style={styles.transcriptActionButton}>✏️ 修改</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={onShare}>
-                            <Text style={styles.transcriptActionButton}>📤 轉發</Text>
-                        </TouchableOpacity>
-
-                        {/*         */}
-                        {APP_VARIANT === 'notedebug' && (
-                            <TouchableOpacity onPress={onDelete}>
-                                <Text style={styles.transcriptActionButton}>🗑️ 刪除</Text>
-                            </TouchableOpacity>
-                        )}
-
-                    </View>
-                </>
-            )}
-        </View>
-    );
 };

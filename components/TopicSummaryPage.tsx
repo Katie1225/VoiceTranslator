@@ -1,0 +1,63 @@
+// TopicSummaryPage.tsx
+import React, { useEffect, useState } from 'react';
+import { View, Text, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { useRoute, useNavigation } from '@react-navigation/native';
+import { useTheme } from '../constants/ThemeContext';
+import { summarizeWithMode, RecordingItem } from '../utils/audioHelpers';
+import { debugLog, debugWarn,debugError } from '../utils/debugLog';
+
+export default function TopicSummaryPage() {
+  const route = useRoute();
+  const navigation = useNavigation();
+  const { styles, colors } = useTheme();
+
+  const { items, keyword } = route.params as {
+    items: RecordingItem[];
+    keyword: string;
+  };
+
+  const [summary, setSummary] = useState<string>('');
+  const [loading, setLoading] = useState(true);
+/*
+  useEffect(() => {
+    const runSummary = async () => {
+      try {
+        const text = items
+          .map(item => [item.displayName, item.transcript, item.notes].filter(Boolean).join('\n'))
+          .join('\n\n');
+        const prompt = `以下是關於「${keyword}」的所有錄音內容：\n\n${text}\n\n請根據這些內容產出統整摘要，包含：\n1. 主題摘要\n2. 事件時間軸\n3. 關鍵標籤\n4. 建議行動`;
+
+        const result = await summarizeWithMode({ transcript: prompt } as any, 'summary');
+        setSummary(result);
+      } catch (err) {
+        Alert.alert('AI 分析失敗', (err as Error).message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    runSummary();
+  }, []); */
+  // 下面 debug
+useEffect(() => {
+  setLoading(false); // 🔧 加這行看看畫面能否顯示 text
+}, []);
+
+const text = items
+          .map(item => [item.displayName, item.transcript, item.notes].filter(Boolean).join('\n'))
+          .join('\n\n');
+// debug 結束
+  return (
+    <View style={[styles.container, { padding: 16 }]}>      
+      <Text style={[styles.recordingName, { marginBottom: 12 }]}>🧠 「{keyword}」的 AI 分析結果</Text>
+      {loading ? (
+        <ActivityIndicator color={colors.primary} size="large" style={{ marginTop: 40 }} />
+      ) : (
+        <ScrollView>
+            {/*          <Text style={styles.transcriptText}>{summary}</Text> */}
+          <Text style={styles.transcriptText}>{text}</Text>
+        </ScrollView>
+      )}
+    </View>
+  );
+}

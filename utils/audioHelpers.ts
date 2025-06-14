@@ -66,20 +66,16 @@ export const trimSilence = async (uri: string, name: string): Promise<RecordingI
   const outputName = `trim_${baseName}.m4a`;
   const outputPath = `${FileSystem.documentDirectory}${outputName}`;
 
-  // 如果剪過就直接回傳
-  const fileInfo = await FileSystem.getInfoAsync(outputPath);
-  if (fileInfo.exists && fileInfo.size > 0) {
-    debugLog(`⚠️ 剪輯檔已存在：${outputName}`);
-    return {
-      uri: outputPath,
-      name: outputName,
-      originalUri: uri,
-      isTrimmed: true,
-      size: (await RNFS.stat(outputPath)).size 
-    };
+
+  // ✅ 強制先刪掉舊檔（不管是否存在）
+  try {
+    await FileSystem.deleteAsync(outputPath, { idempotent: true });
+  } catch (err) {
+    debugError('⚠️ 無法刪除舊剪輯檔：', err);
   }
 
-  debugLog(`✂️ 開始剪輯：${outputName}`);
+  debugLog(`✂️ 開始剪輯音檔 ${name}`);
+
   const command = `-i "${uri}" -af silenceremove=start_periods=1:start_silence=0.3:start_threshold=-40dB:stop_periods=-1:stop_silence=0.3:stop_threshold=-40dB -y "${outputPath}"`;
   const session = await FFmpegKit.execute(command);
   const returnCode = await session.getReturnCode();
@@ -303,43 +299,61 @@ export const transcribeAudio = async (
     const silentCounter = { count: 0 };
 
   // 2. Process each segment sequentially
+
+  
   
   for (let index = 0; index < segmentUris.length; index++) {
     try {
-      const segmentUri = segmentUris[index];
-      
-      // 2.1 Trim silence
-      debugLog(`✂️ 開始剪輯第 ${index + 1} 段`);
-      const trimmed = await trimSilence(segmentUri, `${baseName}_seg${index}`);
-          // 2.1.1 檢查 trimmed 檔案大小
-     const validTrimmedUri = await processTrimmedAudio(trimmed.uri, silentCounter);
-      if (!validTrimmedUri) {
-        debugLog(`🛑 第 ${index + 1} 段被視為靜音，已跳過`);
-        continue;
-      }
-      
-      // 2.2 Speed up
-      debugLog(`⏩ 加速處理第 ${index + 1} 段`);
-      const spedUp = await speedUpAudio(trimmed.uri, 1.5, `${baseName}_seg${index}`);
-      
-      // 2.3 Send to Whisper
-      debugLog(`📤 上傳第 ${index + 1} 段至 Whisper`);
-      const text = await sendToWhisper(spedUp, targetLang);
-      
-      // 2.4 Accumulate results
-      if (text.trim()) {
-        accumulatedText += text + '\n';
-      }
-      
-      // 2.5 Callback with progress
-      onPartial?.(accumulatedText.trim(), index + 1, segmentUris.length);
-      
-      // 2.6 Clean up
-      await FileSystem.deleteAsync(trimmed.uri, { idempotent: true });
-      await FileSystem.deleteAsync(spedUp, { idempotent: true });
-      await FileSystem.deleteAsync(segmentUri, { idempotent: true });
-      
-      debugLog(`✅ 第 ${index + 1} 段處理完成`);
+const segmentUri = segmentUris[index];
+let audioToSend = segmentUri;  // 預設使用原始段
+let trimmed: RecordingItem | null = null;
+let spedUp: string | null = null;
+
+try {
+  // ✂️ 嘗試剪輯
+  trimmed = await trimSilence(segmentUri, `${baseName}_seg${index}`);
+  audioToSend = trimmed.uri;
+
+  // ⏩ 嘗試加速
+  try {
+    spedUp = await speedUpAudio(trimmed.uri, 1.5, `${baseName}_seg${index}`);
+    audioToSend = spedUp;
+  } catch (e) {
+    debugError(`⚠️ 加速失敗，使用剪輯檔`, e);
+  }
+
+} catch (e) {
+  debugError(`⚠️ 剪輯失敗，使用原始段`, e);
+  audioToSend = segmentUri;
+}
+
+// ✅ 檢查音檔有效性（大小、靜音）
+const validAudio = await processTrimmedAudio(audioToSend, silentCounter);
+if (!validAudio) {
+  debugLog(`🛑 第 ${index + 1} 段被視為無效或靜音，跳過`);
+  continue;
+}
+
+// 📤 上傳到 Whisper
+debugLog(`📤 上傳第 ${index + 1} 段至 Whisper`);
+const text = await sendToWhisper(audioToSend, targetLang);
+
+// 累積結果
+if (text.trim()) {
+  accumulatedText += text + '\n';
+}
+
+// 回傳進度
+onPartial?.(accumulatedText.trim(), index + 1, segmentUris.length);
+
+// 🧹 清理檔案
+if (trimmed?.uri) await FileSystem.deleteAsync(trimmed.uri, { idempotent: true });
+if (spedUp) await FileSystem.deleteAsync(spedUp, { idempotent: true });
+await FileSystem.deleteAsync(segmentUri, { idempotent: true });
+
+debugLog(`✅ 第 ${index + 1} 段處理完成`);
+
+
     } catch (err) {
       debugError(`❌ 第 ${index + 1} 段處理失敗：`, err);
       // Continue with next segment even if one fails
@@ -358,7 +372,7 @@ export const transcribeAudio = async (
 };
 
 const basePrompt =
-  '錄音文字是一段可能由多人或單人錄製, 由 OPENAI 處理聲音轉文字的逐字稿, 請參考使用者補充筆記校正逐字稿音譯選字或被插入廣告或歡迎台詞的問題, 尤其是姓名及專有名詞以使用者補充筆記為準.';
+  '錄音文字是一段可能由多人或單人錄製, 由whisper所處理聲音轉文字的逐字稿, 參考使用者補充筆記校正逐字稿音譯選字, 尤其是姓名及專有名詞以使用者補充筆記為準. 你是一位資深技術助理，使用者是專業人員, 你的回答將用於會議紀錄、內部報告與技術決策。回答需具備：1. 條列清楚 2. 有工程深度 3. 避免空泛或無效內容。 不要給廢話或像新手的解釋，要講重點，貼近實作與決策需要。';
 
 export const summarizeModes = [
   {

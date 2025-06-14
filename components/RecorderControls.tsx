@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, Alert } from 'react-native';
 import HamburgerMenu from './HamburgerMenu';
 import { handleLogin } from '../utils/loginHelpers';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../constants/ThemeContext';
 import AudioRecorderPlayer from 'react-native-audio-recorder-player';
 import { Platform } from 'react-native';
@@ -167,9 +167,9 @@ const RecorderControls: React.FC<RecorderControlsProps> = ({
                         onPress={recording ? stopRecording : startRecording}
                     >
                         {recording ? (
-                            <Icon name="stop" size={30} color="white" />
+                            <MaterialCommunityIcons name="stop" size={30} color="white" />
                         ) : (
-                            <Icon name="microphone" size={30} color="white" />
+                            <MaterialCommunityIcons name="microphone" size={30} color="white" />
                         )}
                     </TouchableOpacity>
                 </View>
@@ -177,7 +177,7 @@ const RecorderControls: React.FC<RecorderControlsProps> = ({
 <View style={{ flex: 1.5, marginRight: 20 }}>
   {recording && (
     <TouchableOpacity onPress={onToggleNotesModal}>
-  <Icon name="pencil-plus" size={30} color={colors.subtext}   style={{ marginLeft: 10}}/>
+  <MaterialCommunityIcons name="pencil-plus" size={30} color={colors.subtext}   style={{ marginLeft: 10}}/>
     </TouchableOpacity>
   )}
 </View>

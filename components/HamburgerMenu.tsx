@@ -7,8 +7,7 @@ import { logCoinUsage, fetchUserInfo } from '../utils/googleSheetAPI';
 import { handleLogin } from '../utils/loginHelpers';
 import { version } from '../constants/variant';
 import { useTheme } from '../constants/ThemeContext';
-
-
+import { useLoginContext } from '../constants/LoginContext';
 
 type Props = {
   visible: boolean;
@@ -28,7 +27,7 @@ type GoogleUser = {
 };
 
 const HamburgerMenu = ({ visible, onClose, onLoginPress, onLoginSuccess }: Props) => {
-  const { colors, styles, isDarkMode, toggleTheme, setCustomPrimaryColor, customPrimaryColor,additionalColors } = useTheme();
+  const { colors, styles, isDarkMode, toggleTheme, setCustomPrimaryColor, customPrimaryColor, additionalColors } = useTheme();
   const [currentUser, setCurrentUser] = useState<GoogleUser | null>(null);
   useEffect(() => {
     const loadUser = async () => {
@@ -39,34 +38,45 @@ const HamburgerMenu = ({ visible, onClose, onLoginPress, onLoginSuccess }: Props
     };
     loadUser();
   }, [visible]);
+  const { isLoggingIn, setIsLoggingIn } = useLoginContext();
 
   const handleLogout = async () => {
     await GoogleSignin.signOut();
     await AsyncStorage.removeItem('user');
     setCurrentUser(null);
-    Alert.alert('已登出');
+    //  Alert.alert('已登出');
   };
   const handleLoginWithAutoClose = async () => {
-    const result = await onLoginPress(); // loginPress 必須 return true/false
-    if (result && onLoginSuccess) {
-      onLoginSuccess(); // 登入成功後執行關閉選單
+    setIsLoggingIn(true);
+    const result = await handleLogin(setIsLoggingIn);
+    setIsLoggingIn(false);
+
+    if (result) {
+      Alert.alert('✅ 登入成功', result.message, [
+        {
+          text: '繼續',
+          onPress: () => {
+            if (onLoginSuccess) onLoginSuccess();
+          }
+        }
+      ]);
     }
   };
 
   if (!visible) return null;
 
   return (
-<View style={{
-  position: 'absolute',
-  top: 70,
-  left: 10, // 👈 調整這裡可以讓選單「往左移」
-  right: 20,
-  backgroundColor: colors.container,
-  borderRadius: 12,
-  padding: 12,
-  zIndex: 9999,
-  elevation: 10,
-}}>
+    <View style={{
+      position: 'absolute',
+      top: 70,
+      left: 10, // 👈 調整這裡可以讓選單「往左移」
+      right: 20,
+      backgroundColor: colors.container,
+      borderRadius: 12,
+      padding: 12,
+      zIndex: 9999,
+      elevation: 10,
+    }}>
 
       {currentUser ? (
         <View style={[styles.menuItemButton, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
@@ -92,7 +102,7 @@ const HamburgerMenu = ({ visible, onClose, onLoginPress, onLoginSuccess }: Props
 
       )}
 
-      <Text style={styles.menuItem}>版本: {version} </Text> 
+      <Text style={styles.menuItem}>版本: {version} </Text>
 
       <TouchableOpacity
         onPress={() => {
@@ -125,7 +135,9 @@ const HamburgerMenu = ({ visible, onClose, onLoginPress, onLoginSuccess }: Props
           />
         ))}
       </View>
+
     </View>
+
   );
 };
 
