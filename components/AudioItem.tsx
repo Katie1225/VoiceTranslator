@@ -1,4 +1,4 @@
-// components/AudioUIHelpers.tsx
+// components/AudioItem.tsx
 import React from 'react';
 import { View, Text, TouchableOpacity, TextInput, ScrollView } from 'react-native';
 import { APP_VARIANT } from '../constants/variant';
@@ -22,6 +22,7 @@ export const renderFilename = (
     isEditingName?: boolean,  // 新增參數，表示是否正在編輯檔名
     onNamePress?: () => void  // 新增參數，點擊檔名時的處理函數
 ) => {
+  
     const isPlayingThis = playingUri === uri;
     const label = iconPrefix ? `${iconPrefix} ${name}` : name;
 
@@ -74,42 +75,6 @@ export const renderFilename = (
     );
 };
 
-
-// 三點選單顯示
-export const renderMoreButton = (
-    index: number,
-    type: 'main' | 'enhanced' | 'trimmed',
-    style: any,
-    setSelectedContext: Function,
-    closeAllMenus: () => void,
-    styles: any,
-    selectedContext: { type: 'main' | 'enhanced' | 'trimmed'; index: number } | null
-) => (
-    <TouchableOpacity
-        style={style}
-        onPress={(e) => {
-            e.stopPropagation();
-
-            if (selectedContext?.index === index && selectedContext?.type === type) {
-                // ✅ 如果點到同一個，就關掉
-                setSelectedContext(null);
-            } else {
-                // ✅ 點到新的，就開啟
-                closeAllMenus();
-                e.target.measureInWindow((x, y, width, height) => {
-                    setSelectedContext({
-                        type,
-                        index,
-                        position: { x, y: y + height },
-                    });
-                });
-            }
-        }}
-    >
-        <Text style={styles.moreIcon}>⋯</Text>
-    </TouchableOpacity>
-);
-
 export const renderNoteBlock = (props: {
     type: 'transcript' | 'summary' | 'notes';
     index: number;
@@ -123,6 +88,7 @@ export const renderNoteBlock = (props: {
     onShare: () => void;
     styles: any;
     colors: any;
+      wrapperStyle?: any;
 }) => {
     const {
         type,
@@ -137,23 +103,25 @@ export const renderNoteBlock = (props: {
         onShare,
         styles,
         colors,
+            wrapperStyle,
     } = props;
 
     const isEditing = editingIndex === index;
 
 return (
-  <View style={{
-    maxHeight: 300,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    borderRadius: 12,
-    overflow: 'hidden',
-    marginTop: 10,
-    backgroundColor: colors.container
-  }}>
+ <View style={[{
+      maxHeight: 300,
+      borderWidth: 1,
+      borderColor: colors.primary,
+      borderRadius: 12,
+      overflow: 'hidden',
+      marginTop: 10,
+            marginBottom: 10,
+      backgroundColor: colors.container
+    }, wrapperStyle]}>
     <ScrollView
-      style={{ padding: 12 }}
-      contentContainerStyle={{ paddingBottom: 12 }}
+  style={{ paddingHorizontal: 16, paddingVertical: 12 }}
+      contentContainerStyle={{ paddingBottom: 30 }}
       keyboardShouldPersistTaps="handled"
     >
       {isEditing ? (

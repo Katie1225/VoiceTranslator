@@ -28,6 +28,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../App';
 import { useLoginContext } from '../constants/LoginContext';
+import PlaybackBar from '../components/PlaybackBar';
 
 import {
   RecordingItem,
@@ -44,7 +45,6 @@ import RecorderHeader from '../components/RecorderHeader';
 import MoreMenu from '../components/MoreMenu';
 import {
   renderFilename,
-  renderMoreButton,
   renderNoteBlock
 } from '../components/AudioItem';
 import { uFPermissions } from '../src/hooks/uFPermissions';
@@ -61,7 +61,7 @@ import { useTheme } from '../constants/ThemeContext';
 import { partBackgrounds, additionalColors } from '../constants/Colors';
 import { useRecordingContext } from '../constants/RecordingContext';
 import LoginOverlay from '../components/LoginOverlay';
-
+import { APP_TITLE } from '../constants/variant';
 
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 GoogleSignin.configure({
@@ -76,7 +76,7 @@ const GlobalRecorderState = {
 };
 
 const RecorderPageVoiceNote = () => {
-  const title = "  Voice Note";
+  const title = APP_TITLE;
 
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
@@ -102,6 +102,8 @@ const RecorderPageVoiceNote = () => {
   const [notesEditing, setNotesEditing] = useState<string>('');
   const [showNotesIndex, setShowNotesIndex] = useState<number | null>(null);
   const [currentPartialText, setCurrentPartialText] = useState('');
+  const [playbackRates, setPlaybackRates] = useState<Record<string, number>>({});
+
 
   const flatListRef = useRef<FlatList>(null);
   const [itemOffsets, setItemOffsets] = useState<Record<number, number>>({});
@@ -130,72 +132,79 @@ const RecorderPageVoiceNote = () => {
   const [currentDecibels, setCurrentDecibels] = useState(-160);
   const recordingTimeRef = useRef(0);
 
+  // 撥放速度
+  const pendingPlaybackRateRef = useRef<number>(1.0);
+
+
+
   const resumeAfterTopUp = useRef<
     null | { type: 'transcribe'; index: number } | { type: 'summary'; index: number; mode: string }
   >(null);
 
   const onTopUpProcessingChangeRef = useRef<(isProcessing: boolean) => void>();
+
+
   /*
-    //儲值中
-    const [isTopUpProcessing, setIsTopUpProcessing] = useState(false);
-  
-    useEffect(() => {
-      const callback = (isProcessing: boolean) => {
-        setIsTopUpProcessing(isProcessing);
+      //儲值中
+      const [isTopUpProcessing, setIsTopUpProcessing] = useState(false);
+    
+      useEffect(() => {
+        const callback = (isProcessing: boolean) => {
+          setIsTopUpProcessing(isProcessing);
+        };
+    
+        setTopUpProcessingCallback(callback);
+    
+        return () => {
+          setTopUpProcessingCallback(null); // 清理時取消回調
+        };
+      }, []);
+    
+    
+      // 替換原有的 handlePurchase 函數
+      const handleTopUp = async (productId: string) => {
+        debugLog('🟢 handleTopUp called with productId:', productId);
+        try {
+          // 1. 請求儲值
+          await purchaseManager.requestPurchase(productId);
+          setShowTopUpModal(false);
+    
+          // 2. 等待金幣更新（不再需要手動同步，因為 handlePurchaseUpdate 已經處理）
+          // 3. 清除中斷操作的標記
+    
+        } catch (err) {
+          Alert.alert('購買失敗', err instanceof Error ? err.message : '請稍後再試');
+        }
       };
-  
-      setTopUpProcessingCallback(callback);
-  
-      return () => {
-        setTopUpProcessingCallback(null); // 清理時取消回調
-      };
-    }, []);
-  
-  
-    // 替換原有的 handlePurchase 函數
-    const handleTopUp = async (productId: string) => {
-      debugLog('🟢 handleTopUp called with productId:', productId);
-      try {
-        // 1. 請求儲值
-        await purchaseManager.requestPurchase(productId);
-        setShowTopUpModal(false);
-  
-        // 2. 等待金幣更新（不再需要手動同步，因為 handlePurchaseUpdate 已經處理）
-        // 3. 清除中斷操作的標記
-  
-      } catch (err) {
-        Alert.alert('購買失敗', err instanceof Error ? err.message : '請稍後再試');
-      }
-    };
-  
-    // 在組件中添加 useEffect 來監聽 pendingActions
-    useEffect(() => {
-      const checkPendingActions = async () => {
-        // 使用公共方法替代直接訪問私有屬性
-        if (purchaseManager.hasPendingActions()) {
-          const actions = purchaseManager.getPendingActions();
-          const action = actions[0];
-  
-          if (action.type === 'transcribe' && action.index !== undefined) {
-            const freshUser = await AsyncStorage.getItem('user');
-            if (freshUser) {
-              const user = JSON.parse(freshUser);
-              if (user.coins > 0) { // 確保金幣已更新
-                const indexToResume = action.index;
-                purchaseManager.clearPendingActions();
-                setSelectedPlayingIndex(indexToResume);
-                setTimeout(() => {
-                  handleTranscribe(indexToResume);
-                }, 500);
+    
+      // 在組件中添加 useEffect 來監聽 pendingActions
+      useEffect(() => {
+        const checkPendingActions = async () => {
+          // 使用公共方法替代直接訪問私有屬性
+          if (purchaseManager.hasPendingActions()) {
+            const actions = purchaseManager.getPendingActions();
+            const action = actions[0];
+    
+            if (action.type === 'transcribe' && action.index !== undefined) {
+              const freshUser = await AsyncStorage.getItem('user');
+              if (freshUser) {
+                const user = JSON.parse(freshUser);
+                if (user.coins > 0) { // 確保金幣已更新
+                  const indexToResume = action.index;
+                  purchaseManager.clearPendingActions();
+                  setSelectedPlayingIndex(indexToResume);
+                  setTimeout(() => {
+                    handleTranscribe(indexToResume);
+                  }, 500);
+                }
               }
             }
           }
-        }
-      };
-  
-      checkPendingActions();
-    }, [purchaseManager]); // 依賴 purchaseManager 實例
-  */
+        };
+    
+        checkPendingActions();
+      }, [purchaseManager]); // 依賴 purchaseManager 實例
+    */
 
   // 在組件掛載時初始化 IAP
   useEffect(() => {
@@ -255,7 +264,8 @@ const RecorderPageVoiceNote = () => {
     playbackDuration,
     playRecording,
     togglePlayback,
-    setPlaybackPosition
+    setPlaybackPosition,
+    stopPlayback,
   } = useAudioPlayer();
 
   // WAV錄音配置
@@ -445,6 +455,7 @@ const RecorderPageVoiceNote = () => {
   const autoSplitTimer = useRef<NodeJS.Timeout | null>(null);
   const startRecording = async () => {
     closeAllMenus();
+    stopPlayback();
 
     // 如果權限已被拒絕，直接顯示提示
     if (permissionStatus === 'denied') {
@@ -779,6 +790,7 @@ const RecorderPageVoiceNote = () => {
 
 
   // 修改文字內容
+  /*
   const renderNoteSection = (index: number, type: 'transcript' | 'summary' | 'notes') => {
     const isTranscript = type === 'transcript';
     const isNotes = type === 'notes';
@@ -841,292 +853,7 @@ const RecorderPageVoiceNote = () => {
       colors,
     });
   };
-
-  /* // 確認金幣
- const ensureCoins = async (requiredCoins: number): Promise<boolean> => {
-   // 先檢查登入狀態
-   let stored = await AsyncStorage.getItem('user');
-
-   // 如果未登入，要求登入
-   if (!stored) {
-     const loginResult = await new Promise<boolean>((resolve) => {
-       Alert.alert("請先登入", "使用此功能需要登入", [
-         { text: "取消", onPress: () => resolve(false) },
-         {
-           text: "登入",
-           onPress: async () => {
-             const result = await handleLogin(setIsLoggingIn);
-             if (result) {
-               Alert.alert('✅ 登入成功', result.message, [
-                 { text: '繼續', onPress: () => resolve(true) }
-               ]);
-             } else {
-               resolve(false);
-             }
-           }
-         }
-       ]);
-     });
-
-     // 如果登入失敗或取消，直接返回 false
-     if (!loginResult) return false;
-
-     // 登入成功後重新獲取用戶資料
-     stored = await AsyncStorage.getItem('user');
-     if (!stored) return false;
-   }
-
-   // 解析用戶資料
-   const user = JSON.parse(stored);
-   debugLog('確認點 2: 使用者有', user.coins, '需要', requiredCoins);
-
-   // 檢查金幣數量
-   if (user.coins >= requiredCoins) return true;
-
-   // 金幣不足處理
-   debugLog('確認點 3:進入處理');
-   return new Promise((resolve) => {
-     Alert.alert("金幣不足", `此操作需要 ${requiredCoins} 金幣，你目前剩餘 ${user.coins} 金幣`, [
-       { text: "取消", style: "cancel", onPress: () => resolve(false) },
-       {
-         text: "立即儲值",
-         onPress: async () => {
-           setShowTopUpModal(true);
-           const coinsAdded = await waitForTopUp(); // 等待儲值完成
-           const refreshed = await AsyncStorage.getItem('user');
-           const updatedUser = refreshed ? JSON.parse(refreshed) : user;
-           resolve(updatedUser.coins >= requiredCoins);
-         }
-       }
-     ]);
-   });
- };
-
-轉文字邏輯
-const handleTranscribe = async (index: number): Promise<RecordingItem | null> => {
-
-   setSelectedPlayingIndex(index);
-   const item = recordings[index];
-   if (item.transcript) {
-     setShowTranscriptIndex(index);
-     setShowSummaryIndex(null);
-     return item;
-   }
-   setIsTranscribingIndex(index);
-
-   try {
-     //先確認音檔長度跟需要金額
-     const durationSec = await new Promise<number>((resolve, reject) => {
-       const sound = new Sound(item.uri, '', (error) => {
-         if (error) {
-           reject(new Error("無法載入音訊：" + error.message));
-           return;
-         }
-         const duration = sound.getDuration();
-         sound.release(); // ✅ 記得釋放資源
-         if (duration === 0) {
-           reject(new Error("無法取得音檔長度"));
-         } else {
-           resolve(Math.ceil(duration));
-         }
-       });
-     });
-
-     const coinsToDeduct = Math.ceil(durationSec / (COIN_UNIT_MINUTES * 60)) * COIN_COST_PER_UNIT;
-
-     const ok = await ensureCoins(coinsToDeduct);
-
-     if (!ok) {
-       setIsTranscribingIndex(null);
-       return null;
-     }
-     const stored = await AsyncStorage.getItem('user');
-     const user = JSON.parse(stored!);
-
-     const result = await transcribeAudio(item, async (updatedTranscript) => {
-       setRecordings(prev => {
-         const updated = prev.map((rec, i) =>
-           i === index ? { ...rec, transcript: updatedTranscript } : rec
-         );
-         saveRecordings(updated).catch(e => debugError('保存失敗:', e));
-         return updated;
-       });
-       debugLog('✅render 1');
-       setShowTranscriptIndex(index);
-       setShowSummaryIndex(null);
-     }, userLang.includes('CN') ? 'cn' : 'tw');
-
-     const skippedMinutes = Math.floor(result.skippedSilentSegments / 2);
-     if (skippedMinutes > 0) {
-       Alert.alert(`已跳過 ${skippedMinutes} 分鐘靜音`,'\n靜音部分不扣金幣');
-     } 
-
-        if (!result?.transcript?.text?.trim()) {
-          throw new Error("無法取得有效的轉譯結果");
-        }
-     debugLog('✅render 2', skippedMinutes);
-     setShowTranscriptIndex(index);
-     setShowSummaryIndex(null);
-
-     let finalUpdated = recordings.map((rec, i) =>
-       i === index ? { ...rec, transcript: result.transcript.text } : rec
-     );
-
-     try {
-       const summary = await summarizeWithMode(result.transcript.text, 'summary', userLang.includes('CN') ? 'cn' : 'tw');
-       finalUpdated = finalUpdated.map((rec, i) =>
-         i === index
-           ? {
-             ...rec,
-             summaries: {
-               ...(rec.summaries || {}),
-               summary,
-             },
-           }
-           : rec
-       );
-     } catch (err) {
-       debugWarn('❌ 自動摘要失敗:', err);
-     }
-     debugLog('✅render 3: skippedMinutes');
-     setRecordings(finalUpdated);
-     await saveRecordings(finalUpdated);
-     setShowTranscriptIndex(null);
-     setShowSummaryIndex(index);
-     setSummaryMode('summary');
-
-     const coinResult = await logCoinUsage({
-       id: user.id,
-       email: user.email,
-       name: user.name,
-       action: 'transcript',
-       value: -coinsToDeduct,
-       // value: -coinsToDeduct+skippedMinutes,
-       note: `轉文字：${item.displayName || item.name || ''}，長度 ${durationSec}s，扣 ${coinsToDeduct} 金幣`
-     });
-
-     if (!coinResult.success) {
-       Alert.alert("轉換成功，但扣金幣失敗", coinResult.message || "請稍後再試");
-     }
-     debugLog('✅render 4');
-     setSummaryMode('summary');
-     setShowSummaryIndex(index);
-     setShowTranscriptIndex(null);
-     return finalUpdated[index];
-
-   } catch (err) {
-     Alert.alert("❌ 錯誤", (err as Error).message || "轉換失敗，這次不會扣金幣");
-     return null;
-   } finally {
-     setIsTranscribingIndex(null);
-   }
-   
- };
-
- // 重點摘要AI工具箱邏輯
-const handleSummarize = async (
- index: number,
- mode: string = 'summary',
- requirePayment?: boolean
-): Promise<RecordingItem | null> => {
-   const pay = requirePayment ?? (mode !== 'summary'); // ← 決定實際是否要扣金幣
-
-   const item = recordings[index];
-   let startTime = '';
-   let date = '';
-
-   if (item.date) {
-     const dateObj = new Date(item.date);
-     startTime = `${dateObj.getHours().toString().padStart(2, '0')}:${dateObj.getMinutes().toString().padStart(2, '0')}:${dateObj.getSeconds().toString().padStart(2, '0')}`;
-     date = `${dateObj.getFullYear()}/${dateObj.getMonth() + 1}/${dateObj.getDate()}`;
-   } else {
-     // fallback：從 displayName 擷取
-     const parsed = parseDateTimeFromDisplayName(item.displayName || item.name || '');
-     if (parsed.startTime) startTime = parsed.startTime;
-     if (parsed.date) date = parsed.date;
-   }
-
-   debugLog('1', mode);
-
-   // ✅ 已有摘要就直接顯示
-   if (item.summaries?.[mode]) {
-     setSummaryMode(mode);
-     setShowTranscriptIndex(null);
-     setShowSummaryIndex(index);
-     return item;
-   }
-
-   debugLog('2', mode);
-   let user: any = null;
-
-   if (pay) {
-     const ok = await ensureCoins(COIN_COST_AI);
-     if (!ok) return null;
-
-     const fresh = await AsyncStorage.getItem('user');
-     if (!fresh) {
-       Alert.alert("錯誤", "無法取得使用者資料");
-       return null;
-     }
-     user = JSON.parse(fresh);
-   }
-
-   // ✅ 開始處理摘要
-   setSummarizingState({ index, mode });
-   try {
-     const fullPrompt = item.notes?.trim()
-       ? `使用者補充筆記：${item.notes} 錄音文字如下：${item.transcript}`
-       : item.transcript || '';
-
-     const summary = await summarizeWithMode(
-       fullPrompt,
-       mode,
-       userLang.includes('CN') ? 'cn' : 'tw',
-       { startTime, date }
-     );
-
-     const updated = recordings.map((rec, i) =>
-       i === index
-         ? {
-           ...rec,
-           summaries: {
-             ...(rec.summaries || {}),
-             [mode]: summary,
-           },
-         }
-         : rec
-     );
-
-     debugLog('6', mode);
-     setRecordings(updated);
-     await saveRecordings(updated);
-
-     // ✅ 顯示摘要
-     setSummaryMode(mode);
-     setShowTranscriptIndex(null);
-     setShowSummaryIndex(index);
-     debugLog('7', mode);
-
-     if (pay && user) {
-
-       await logCoinUsage({
-         id: user.id,
-         email: user.email,
-         name: user.name,
-         action: mode,
-         value: -COIN_COST_AI,
-         note: `${mode}：${item.displayName || item.name} 扣 ${COIN_COST_AI} 金幣`,
-       });
-     }
-     debugLog('8', mode);
-   } catch (err) {
-     Alert.alert("❌ 摘要失敗", (err as Error).message || "處理失敗");
-   } finally {
-     setSummarizingState(null);
-   }
-    return null;
- }; */
-
+*/
   return (
     <>
       <StatusBar
@@ -1168,7 +895,6 @@ const handleSummarize = async (
                 </TouchableOpacity>
               )}
 
-
               {/* 錄音列表 */}
               {recordings.length === 0 ? (
                 <View style={styles.emptyListContainer}>
@@ -1201,7 +927,7 @@ const handleSummarize = async (
                   renderItem={({ item, index }) => {
                     const summaries = item.summaries || {};
                     const availableKeys = Object.keys(summaries).filter(k => summaries[k]);
-
+                    const isPlayingThis = isPlaying && playingUri === item.uri;
                     let modeToShow = summaryMode; // 預設是全局 summaryMode
 
                     if (showSummaryIndex !== index) {
@@ -1236,194 +962,132 @@ const handleSummarize = async (
                           zIndex: selectedContext?.index === index ? 999 : 0,
                         }}
                       >
-
                         <TouchableOpacity
-                          /*   onLongPress={() => {
-                               Alert.alert('刪除錄音', '確定要刪除嗎？', [
-                                 { text: '取消', style: 'cancel' },
-                                 { text: '刪除', onPress: () => deleteRecording(index) },
-                               ]);
-                             }}
-                               */
                           activeOpacity={0.8}
                         >
 
                           {/* 單個錄音項目的完整 UI */}
                           <View style={[styles.recordingItem]}>
 
-                            {/* 名稱行 */}
-                            <View style={[styles.nameRow, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
-                              {/* 左邊播放鍵＋檔名 */}
-                              <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1 }}>
-                                {/* ▶ 播放鍵 */}
-                                <TouchableOpacity
-                                  onPress={async () => {
-                                    closeAllMenus();
-                                    await togglePlayback(item.uri, index);
-                                    setSelectedPlayingIndex(index);
+                            {/* 替換原本的播放控制部分 */}
+                            <PlaybackBar
+                              item={item}
+                              isPlaying={isPlayingThis}
+                              isVisible={selectedPlayingIndex === index}
+                              playbackPosition={playingUri === item.uri ? playbackPosition : 0}
+                              playbackDuration={playbackDuration}
+                              playbackRate={playingUri === item.uri ? currentPlaybackRate : 1.0}  // ✅ 真正正在播放才顯示當前速度
+                              editableName={true}
+                              onPlayPause={async () => {
+                                closeAllMenus();
 
-
-                                    setShowTranscriptIndex(null);
-                                    setShowSummaryIndex(null);
-                                    setShowNotesIndex(null);
-                                  }}
-
-                                  style={{ marginRight: 8 }}
-                                >
-                                  <Text style={styles.playIcon}>
-                                    {playingUri === item.uri && isPlaying ? '❚❚' : '▶'}
-                                  </Text>
-                                </TouchableOpacity>
-
-                                {/* 檔名顯示或編輯 */}
-                                {
-                                  editingState.type === 'name' && editingState.index === index ? (
-                                    <TextInput
-                                      style={[styles.recordingName, isCurrentPlaying && styles.playingText, { borderBottomWidth: 1, borderColor: colors.primary }]}
-                                      value={editingState.text}
-                                      onChangeText={(text) => setEditingState({ type: 'name', index, text })}
-                                      autoFocus
-                                      textAlign="center"
-                                      onSubmitEditing={saveEditing}
-                                      onBlur={saveEditing}
-                                    />
-                                  ) : (
-                                    <TouchableOpacity
-                                      onPress={async () => {
-                                        closeAllMenus();
-                                        await togglePlayback(item.uri, index);
-                                        setSelectedPlayingIndex(index);
-                                        if (item.transcript) {
-                                          setShowTranscriptIndex(index);
-                                          setShowSummaryIndex(null);
-                                        } else {
-                                          setShowTranscriptIndex(null);
-                                          setShowSummaryIndex(null);
-                                        }
-                                      }}
-                                      onLongPress={() => startEditing(index, 'name')}
-                                    >
-                                      <Text
-                                        style={[styles.recordingName, isCurrentPlaying && styles.playingText]}
-                                        numberOfLines={1}
-                                        ellipsizeMode="tail"
-                                      >
-                                        {item.displayName || item.name}
-                                      </Text>
-                                    </TouchableOpacity>
-
-                                  )
+                                const rate = playbackRates[item.uri] ?? 1.0; // ✅ 從表裡抓
+                                if (currentSound) {
+                                  currentSound.setSpeed(rate); // ✅ 撥放前套用速度
                                 }
-                              </View>
 
-
-                              {/* 右邊：三點選單 or 💾 ✖️ 按鈕 */}
-                              {editingState.type === 'name' && editingState.index === index ? (
-                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                                  <TouchableOpacity onPress={saveEditing}>
-                                    <Text style={[styles.transcriptActionButton, { color: colors.primary }]}>💾</Text>
-                                  </TouchableOpacity>
-                                  <TouchableOpacity onPress={resetEditingState}>
-                                    <Text style={styles.transcriptActionButton}>✖️</Text>
-                                  </TouchableOpacity>
-                                </View>
-                              ) : (
-                                renderMoreButton(index, 'main', styles.moreButton, setSelectedContext, closeAllMenus, styles, selectedContext)
-                              )}
-
-                            </View>
-
-                            {/* 第二行：兩行小字摘要 */}
+                                await togglePlayback(item.uri, index);
+                                setSelectedPlayingIndex(index);
+                              }}
+                              onSeek={(positionMs) => {
+                                if (currentSound) {
+                                  currentSound.setCurrentTime(positionMs / 1000);
+                                  setPlaybackPosition(positionMs);
+                                }
+                              }}
+                              onRename={(newName) => {
+                                const updated = [...recordings];
+                                updated[index].displayName = newName;
+                                setRecordings(updated);
+                                saveRecordings(updated);
+                              }}
+                              onMorePress={(e) => {
+                                e.stopPropagation();
+                                if (selectedContext?.index === index && selectedContext?.type === 'main') {
+                                  setSelectedContext(null);
+                                  return;
+                                }
+                                e.target.measureInWindow((x: number, y: number, width: number, height: number) => {
+                                  setSelectedContext({
+                                    type: 'main',
+                                    index,
+                                    position: { x, y: y + height }
+                                  });
+                                });
+                              }}
+                              onSpeedPress={(e) => {
+                                e.stopPropagation();
+                                e.target.measureInWindow((x: number, y: number, width: number, height: number) => {
+                                  setSpeedMenuIndex(index);
+                                  setSpeedMenuPosition({ x, y: y + height });
+                                });
+                              }}
+                              styles={styles}
+                              colors={colors}
+                              showSpeedControl={true}
+                              editingState={editingState}
+                              itemIndex={index}
+                              renderRightButtons={
+                                editingState.type === 'name' && editingState.index === index ? (
+                                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                    <TouchableOpacity onPress={saveEditing}>
+                                      <Text style={[styles.transcriptActionButton, { color: colors.primary }]}>💾</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity onPress={resetEditingState}>
+                                      <Text style={styles.transcriptActionButton}>✖️</Text>
+                                    </TouchableOpacity>
+                                  </View>
+                                ) : undefined
+                              }
+                            />
+                            {/* 兩行小字摘要 */}
                             <View pointerEvents="box-none">
-                              {showTranscriptIndex !== index &&
-                                showSummaryIndex !== index &&
-                                showNotesIndex !== index &&
+
                                 (item.notes || item.transcript) && (
                                   <TouchableOpacity
                                     onPress={async () => {
                                       closeAllMenus();
                                       setSelectedPlayingIndex(index);
 
-                                      if (item.transcript) {
-                                        setShowTranscriptIndex(index);
-                                        setShowSummaryIndex(null);
-                                      } else if (item.notes) {
+                                      if (item.notes?.trim()) {
                                         setShowNotesIndex(index);
                                         setShowTranscriptIndex(null);
+                                        setShowSummaryIndex(null);
+                                      } else if (item.transcript?.trim()) {
+                                        setShowTranscriptIndex(index);
+                                        setShowNotesIndex(null);
                                         setShowSummaryIndex(null);
                                       } else {
                                         setShowTranscriptIndex(null);
                                         setShowSummaryIndex(null);
                                       }
-                                      {/*
-                                      setTimeout(() => {
-                                        flatListRef.current?.scrollToOffset({
-                                          offset: index * (ITEM_HEIGHT + 43) - 10,
-                                          animated: true,
-                                        });
-                                      }, 100 + index * 20); */}
                                     }}
                                   >
                                     {/* 小字摘要區塊 */}
-                                    <View style={styles.transcriptBlock}>
-                                      {item.notes ? (
-                                        <Text
-                                          style={styles.transcriptBlockText}
-                                          numberOfLines={1}
-                                          ellipsizeMode="tail"
-                                        >
-                                          {item.notes}
-                                        </Text>
-                                      ) : (
-                                        <Text
-                                          style={styles.transcriptBlockText}
-                                          numberOfLines={1}
-                                          ellipsizeMode="tail"
-                                        >
-                                          {item.transcript}
-                                        </Text>
-                                      )}
-                                    </View>
+<View style={styles.transcriptBlock}>
+  {item.notes?.trim() ? (
+    <Text
+      style={styles.transcriptBlockText}
+      numberOfLines={1}
+      ellipsizeMode="tail"
+    >
+      {item.notes}
+    </Text>
+  ) : item.transcript?.trim() ? (
+    <Text
+      style={styles.transcriptBlockText}
+      numberOfLines={1}
+      ellipsizeMode="tail"
+    >
+      {item.transcript}
+    </Text>
+  ) : null}
+</View>
+
                                   </TouchableOpacity>
-                                )}
+                                )
 
                             </View>
-
-                            {/* 播放進度條 */}
-                            {isCurrentPlaying && ((playingUri === item.uri ||
-                              playingUri === item.derivedFiles?.enhanced?.uri ||
-                              playingUri === item.derivedFiles?.trimmed?.uri) && (
-                                <View style={styles.progressContainer}>
-                                  {/* 進度條和時間顯示 */}
-                                  <Slider
-                                    minimumValue={0}
-                                    maximumValue={playingUri === item.uri ? playbackDuration : 1}
-                                    value={playingUri === item.uri ? playbackPosition : 0}
-                                    onSlidingComplete={(value) => {
-                                      if (playingUri === item.uri && currentSound) {
-                                        currentSound.setCurrentTime(value / 1000);
-                                        setPlaybackPosition(value);
-                                      }
-                                    }}
-                                  />
-                                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
-                                    <Text style={styles.timeText}>
-                                      {formatTime(playbackPosition)} / {formatTime(playbackDuration)}
-                                    </Text>
-                                    <TouchableOpacity
-                                      onPress={(e) => {
-                                        closeAllMenus();
-                                        e.target.measureInWindow((x, y, width, height) => {
-                                          setSpeedMenuIndex(index);
-                                          setSpeedMenuPosition({ x, y: y + height });
-                                        });
-                                      }}
-                                    >
-                                      <Text style={[styles.timeText]}>{currentPlaybackRate}x</Text>
-                                    </TouchableOpacity>
-                                  </View>
-                                </View>
-                              ))}
 
                             {/* 轉文字 & 重點摘要按鈕*/}
                             {(isCurrentPlaying
@@ -1442,24 +1106,16 @@ const handleSummarize = async (
                                         opacity: isAnyProcessing ? 0.4 : 1,
                                       }}
                                       disabled={isAnyProcessing || (editingState.type === 'notes' && editingState.index !== null)}
-                                      /* 同頁顯示
-                                                                            onPress={() => {
-                                                                              closeAllMenus();
-                                                                              setShowTranscriptIndex(null);
-                                                                              setShowSummaryIndex(null);
-                                                                              setShowNotesIndex(showNotesIndex === index ? null : index);
-                                                                              setSelectedPlayingIndex(index);
-                                                                            }}  */
+
                                       onPress={() => {
                                         closeAllMenus();
+                                        stopPlayback();
                                         navigation.navigate('NoteDetail', {
                                           item,
                                           index,
                                           type: 'notes'
                                         });
                                       }}
-
-
                                     >
                                       <Text
                                         style={{
@@ -1483,16 +1139,10 @@ const handleSummarize = async (
                                         opacity: isAnyProcessing ? 0.4 : 1,
                                       }}
                                       disabled={isAnyProcessing}
-                                      /* 同頁顯示
-                                      onPress={() => {
-                                        closeAllMenus();
-                                        setShowTranscriptIndex(null);
-                                        setShowSummaryIndex(null);
-                                        setShowNotesIndex(null);
-                                        handleTranscribe(index);
-                                      }} */
+
                                       onPress={async () => {
                                         closeAllMenus();
+                                        stopPlayback();
                                         navigation.navigate('NoteDetail', {
                                           item: recordings[index],
                                           index,
@@ -1500,8 +1150,6 @@ const handleSummarize = async (
                                           shouldTranscribe: !recordings[index].transcript // 如果沒有轉文字才觸發
                                         });
                                       }}
-
-
                                     >
                                       <Text
                                         style={{
@@ -1526,20 +1174,9 @@ const handleSummarize = async (
                                       }}
                                       disabled={!item.transcript || isAnyProcessing}
 
-                                      /* 同頁顯示
-                                      onPress={(e) => {
-                                        closeAllMenus();
-                                        setShowTranscriptIndex(null);
-                                        setShowSummaryIndex(index);        // ✅ 預設展開 summary
-                                        setSummaryMode('summary');         // ✅ 預設模式為 summary
-                                        setShowNotesIndex(null);
-                                        // 取得按鈕位置，彈出選單
-                                        e.target.measureInWindow((x, y, width, height) => {
-                                          setSummaryMenuContext({ index, position: { x, y: y + height } });
-                                        });
-                                      }} */
                                       onPress={() => {
                                         closeAllMenus();
+                                        stopPlayback();
                                         navigation.navigate('NoteDetail', {
                                           item,
                                           index,
@@ -1547,8 +1184,6 @@ const handleSummarize = async (
                                           summaryMode
                                         });
                                       }}
-
-
                                     >
                                       <Text
                                         style={{
@@ -1594,7 +1229,7 @@ const handleSummarize = async (
                             )}
 
 
-                            {/* 內容顯示區 */}
+                            {/* 內容顯示區 
                             {(isCurrentPlaying) && (
                               <>
                                 {(showTranscriptIndex === index || showSummaryIndex === index || showNotesIndex === index) && (
@@ -1607,12 +1242,12 @@ const handleSummarize = async (
                                   </>
                                 )}
                               </>
-                            )}
+                            )} */}
 
-                            {/* 衍生檔案列表 */}
+                            {/* 衍生檔案列表 
                             {shouldShowDerivedFiles(title) && !shouldHideDefaultUI && hasDerivedFiles && (
                               <View style={styles.derivedFilesContainer}>
-                                {/* 增強音質版本 */}
+                                // 增強音質版本 
                                 {item.derivedFiles?.enhanced && (
                                   <View style={styles.derivedFileRow}>
                                     {renderFilename(item.derivedFiles.enhanced.uri, item.derivedFiles.enhanced.name, index, true, '🔊 增強音質', isPlaying, playingUri ?? '', playRecording, closeAllMenus, styles)}
@@ -1620,7 +1255,7 @@ const handleSummarize = async (
                                   </View>
                                 )}
 
-                                {/* 靜音剪輯版本 */}
+                                // 靜音剪輯版本
                                 {item.derivedFiles?.trimmed && (
                                   <View style={styles.derivedFileRow}>
                                     {renderFilename(item.derivedFiles.trimmed.uri, item.derivedFiles.trimmed.name, index, true, '✂️ 靜音剪輯', isPlaying, playingUri ?? '', playRecording, closeAllMenus, styles)}
@@ -1628,7 +1263,7 @@ const handleSummarize = async (
                                   </View>
                                 )}
                               </View>
-                            )}
+                            )}  */}
                           </View>
 
                         </TouchableOpacity>
@@ -1670,6 +1305,7 @@ const handleSummarize = async (
                     resetEditingState();
                     setSelectedContext(null);
                   }}
+                  showDelete={true}
                 />
               )}
 
@@ -1695,7 +1331,14 @@ const handleSummarize = async (
                       ]}
                       onPress={async () => {
                         closeAllMenus();
-                        await setPlaybackRate(rate);
+
+                        const uri = recordings[speedMenuIndex].uri;
+                        setPlaybackRates(prev => ({ ...prev, [uri]: rate })); // ✅ 記住這筆的速度
+
+                        if (isPlaying && playingUri === uri) {
+                          await setPlaybackRate(rate); // ✅ 當下正在播放才立即套用
+                        }
+
                         setSpeedMenuIndex(null);
                       }}
                     >

@@ -67,11 +67,12 @@ export const useAudioPlayer = () => {
 
         setPlaybackDuration(sound.getDuration() * 1000);
         setPlayingUri(uri);
+        // ✅ 每次新音檔都重設速率為 1.0
+        setCurrentPlaybackRate(1.0);              
+        sound.setSpeed(1.0);                       
         setCurrentSound(sound);
-        
-        // 設置播放速率
-        sound.setSpeed(currentPlaybackRate);
-        
+
+
         sound.play((success) => {
           if (!success) {
             debugError('播放失敗');
@@ -91,6 +92,17 @@ export const useAudioPlayer = () => {
       debugError('播放失敗:', err);
     }
   };
+
+const stopPlayback = () => {
+  if (currentSound) {
+    currentSound.stop();
+    currentSound.release();
+    setCurrentSound(null);
+    setIsPlaying(false);
+    setPlayingUri(null);
+    setPlaybackPosition(0);
+  }
+};
 
   const togglePlayback = async (uri: string, index?: number) => {
     await playRecording(uri, index);
@@ -123,6 +135,7 @@ export const useAudioPlayer = () => {
     playbackDuration,
     playRecording,
     togglePlayback,
-    setPlaybackPosition
+    setPlaybackPosition,
+    stopPlayback
   };
 };

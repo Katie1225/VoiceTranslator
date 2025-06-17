@@ -15,6 +15,7 @@ interface MoreMenuProps {
   onTrimSilence?: (index: number) => void;
   title?: string;
   isDerived?: boolean;
+  showDelete?: boolean;
 }
 
 const MoreMenu: React.FC<MoreMenuProps> = ({
@@ -29,6 +30,7 @@ const MoreMenu: React.FC<MoreMenuProps> = ({
   onTrimSilence,
   title,
   isDerived,
+  showDelete,
 }) => {
   return (
     <View
@@ -36,7 +38,7 @@ const MoreMenu: React.FC<MoreMenuProps> = ({
         styles.optionsMenu,
         {
           position: 'absolute',
-          left: position.x - 120,
+          left: position.x - 150,
           top: position.y,
           zIndex: 9999,
           elevation: 10,
@@ -77,15 +79,17 @@ const MoreMenu: React.FC<MoreMenuProps> = ({
         <Text style={styles.optionText}>📤 分享</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.optionButton}
-        onPress={() => {
-          closeAllMenus();
-          onDelete(index);
-        }}
-      >
-        <Text style={styles.optionText}>🗑️ 刪除</Text>
-      </TouchableOpacity>
+{showDelete && (
+  <TouchableOpacity
+    style={styles.optionButton}
+    onPress={() => {
+      closeAllMenus();
+      onDelete(index);
+    }}
+  >
+    <Text style={styles.optionText}>🗑️ 刪除</Text>
+  </TouchableOpacity>
+)}
     </View>
   );
 };

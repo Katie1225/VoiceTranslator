@@ -6,6 +6,7 @@ import HamburgerMenu from './HamburgerMenu';
 import { useTheme } from '../constants/ThemeContext';
 import { handleLogin } from '../utils/loginHelpers';
 import { Platform } from 'react-native';
+import { APP_TITLE } from '../constants/variant';
 
 interface RecorderHeaderProps {
   mode?: 'main' | 'detail';
@@ -30,7 +31,7 @@ const labelMap: Record<string, string> = {
 };
 
 const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
-  const noop = () => {};
+  const noop = () => { };
   const defaultStr = '';
 
   const {
@@ -62,37 +63,6 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
 
   return (
     <>
-       {mode === 'detail' ? (
-      // ✅ 詳細頁模式
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          paddingHorizontal: 10,
-          paddingVertical: 8,
-          backgroundColor: colors.container,
-          borderBottomWidth: 2,
-          borderBottomColor: colors.primary,
-        }}
-      >
-        <TouchableOpacity onPress={onBack}>
-          <Icon name="arrow-left" size={30} color={colors.primary} />
-        </TouchableOpacity>
-
-        <Text
-          numberOfLines={1}
-          style={{
-            flex: 1,
-            marginLeft: 12,
-            fontSize: 20,
-            fontWeight: '600',
-            color: colors.text,
-          }}
-        >
-          {title || '詳細內容'}
-        </Text>
-      </View>
-    ) : (
       <View
         style={{
           flexDirection: 'row',
@@ -105,59 +75,71 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
           borderBottomColor: colors.primary,
         }}
       >
-        <TouchableOpacity onPress={() => setMenuVisible(!menuVisible)}>
-          <Icon name="menu" size={34} color={colors.primary} />
-        </TouchableOpacity>
+        {/* 左側按鈕區塊 */}
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {mode === 'detail' ? (
+            <TouchableOpacity onPress={onBack}>
+              <Icon name="arrow-left" size={30} color={colors.primary} />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity onPress={() => setMenuVisible(!menuVisible)}>
+              <Icon name="menu" size={34} color={colors.primary} />
+            </TouchableOpacity>
+          )}
 
-        <Text
-          numberOfLines={1}
-          style={{
-            fontFamily: Platform.OS === 'ios' ? 'Avenir' : 'sans-serif-medium' ,
-            flex: 1,
-            marginLeft: 10,
-            fontSize: 20,
-            fontWeight: '600',
-            color: colors.text,
-          }}
-        >
-          Voice Note
-        </Text>
+          <Text
+            numberOfLines={1}
+            style={{
+              fontFamily: Platform.OS === 'ios' ? 'Avenir' : 'sans-serif-medium',
+              marginLeft: 10,
+              fontSize: 20,
+              fontWeight: '600',
+              color: colors.text,
+            }}
+          >
+            {title || APP_TITLE}
+          </Text>
+        </View>
 
+        {/* 右側操作按鈕 */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
-
-                    <TouchableOpacity onPress={toggleSearch}>
+          <TouchableOpacity onPress={toggleSearch}>
             <Icon name="magnify" size={30} color={colors.primary} />
           </TouchableOpacity>
 
+          {mode !== 'detail' && (
+            <>
+              <TouchableOpacity onPress={toggleSort}>
+                <Icon name="sort" size={30} color={colors.primary} />
+              </TouchableOpacity>
 
-          <TouchableOpacity onPress={toggleSort}>
-            <Icon name="sort" size={30} color={colors.primary} />
-          </TouchableOpacity>
-
-                    <TouchableOpacity onPress={onPickAudio}>
-            <Icon name="folder" size={30} color={colors.primary} />
-          </TouchableOpacity>
-
-
+              <TouchableOpacity onPress={onPickAudio}>
+                <Icon name="folder" size={30} color={colors.primary} />
+              </TouchableOpacity>
+            </>
+          )}
         </View>
 
-        <HamburgerMenu
-          visible={menuVisible}
-          onClose={() => setMenuVisible(false)}
-          onLoginPress={async () => {
-            const result = await handleLogin(setIsLoggingIn);
-            if (result) {
-              return new Promise((resolve) => {
-                resolve(true);
-                setMenuVisible(false);
-              });
-            }
-            return false;
-          }}
-          onLoginSuccess={() => setMenuVisible(false)}
-        />
+        {mode !== 'detail' && (
+          <HamburgerMenu
+            visible={menuVisible}
+            onClose={() => setMenuVisible(false)}
+            onLoginPress={async () => {
+              const result = await handleLogin(setIsLoggingIn);
+              if (result) {
+                return new Promise((resolve) => {
+                  resolve(true);
+                  setMenuVisible(false);
+                });
+              }
+              return false;
+            }}
+            onLoginSuccess={() => setMenuVisible(false)}
+          />
+        )}
+
       </View>
-)}
+
       {isSortModalVisible && (
         <View
           style={{
@@ -246,7 +228,7 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
               marginBottom: 8,
             }}
           >
-            搜尋錄音名稱
+            {mode === 'detail' ? '搜尋內容關鍵字' : '搜尋錄音名稱'}
           </Text>
 
           <TextInput
@@ -272,9 +254,9 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
           </TouchableOpacity>
         </View>
       )}
-    
+
     </>
-    
+
   );
 };
 

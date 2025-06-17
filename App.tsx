@@ -7,7 +7,7 @@ import { APP_VARIANT } from './constants/variant';
 import { ThemeProvider } from './constants/ThemeContext';
 
 import RecorderPageVoiceNote from './pages/VoiceNote';
-import NoteDetailPage from './components/NoteDetailPage';
+import NoteDetailPage from './pages/NoteDetail';
 import TopicSummaryPage from './components/TopicSummaryPage';
 import { RecordingItem } from './utils/audioHelpers'; 
 import { RecordingProvider } from './constants/RecordingContext';

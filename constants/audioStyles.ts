@@ -4,6 +4,37 @@ import { StyleSheet } from 'react-native';
 
 // 動態樣式
 export const createStyles = (colors: any) => StyleSheet.create({
+   playbackContainer: {
+    padding: 6,
+    backgroundColor: colors.container,
+    borderRadius: 8,
+    marginBottom:6,
+  },
+  playbackHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  audioTitle: {
+    fontSize: 14,
+    flex: 1,
+  },
+  audioTitleInput: {
+    flex: 1,
+    fontSize: 16,
+    borderBottomWidth: 1,
+    paddingVertical: 4,
+  },
+  playbackSlider: {
+    width: '100%',
+    height: 30,
+  },
+  playbackFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
   playingText: {
     fontWeight: 'bold',
   }, // 粗體字
@@ -15,13 +46,12 @@ export const createStyles = (colors: any) => StyleSheet.create({
   recordingItem: {
     backgroundColor: colors.container,
     borderRadius: 10,
-    padding: 15,
+    padding: 10,
     marginBottom: 12,
     borderWidth:0.5,
 borderColor: colors.primary,
 
     minHeight: 50,
-
     flexDirection: 'column',
     justifyContent: 'flex-start',
   },
