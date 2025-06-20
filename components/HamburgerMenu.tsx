@@ -68,7 +68,7 @@ const HamburgerMenu = ({ visible, onClose, onLoginPress, onLoginSuccess }: Props
   return (
     <View style={{
       position: 'absolute',
-      top: 70,
+      top: 55,
       left: 10, // 👈 調整這裡可以讓選單「往左移」
       right: 20,
       backgroundColor: colors.container,

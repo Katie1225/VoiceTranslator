@@ -298,10 +298,10 @@ export const transcribeAudio = async (
   const baseName = item.name.replace(/\.[^/.]+$/, '');
     const silentCounter = { count: 0 };
 
-  // 2. Process each segment sequentially
+     onPartial?.('⏳ 開始處理音檔...', 0, 0);
 
-  
-  
+
+  // 2. Process each segment sequentially
   for (let index = 0; index < segmentUris.length; index++) {
     try {
 const segmentUri = segmentUris[index];
@@ -344,7 +344,9 @@ if (text.trim()) {
 }
 
 // 回傳進度
-onPartial?.(accumulatedText.trim(), index + 1, segmentUris.length);
+if (index < segmentUris.length - 1) {
+  onPartial?.(`⏳ 處理音檔中...\n${accumulatedText.trim()}`, index + 1, segmentUris.length);
+} else onPartial?.(accumulatedText.trim(), index + 1, segmentUris.length);
 
 // 🧹 清理檔案
 if (trimmed?.uri) await FileSystem.deleteAsync(trimmed.uri, { idempotent: true });
@@ -358,7 +360,7 @@ debugLog(`✅ 第 ${index + 1} 段處理完成`);
       debugError(`❌ 第 ${index + 1} 段處理失敗：`, err);
       // Continue with next segment even if one fails
       accumulatedText += `[第 ${index + 1} 段處理失敗]\n`;
-      onPartial?.(accumulatedText.trim(), index + 1, segmentUris.length);
+      // onPartial?.(accumulatedText.trim(), index + 1, segmentUris.length);
     }
   }
   const estimatedSeconds = silentCounter.count * 30;
@@ -402,13 +404,13 @@ export const summarizeModes = [
   },
 ];
 
-
 // 核心摘要函式
 export async function summarizeWithMode(
   transcript: string,
   modeKey: string,
   targetLang: 'tw' | 'cn' = 'tw',
-    metadata?: { startTime?: string; date?: string }
+metadata?: { startTime?: string; date?: string },
+  onPartial?: (text: string, index: number, total: number) => void // ✅ 加這行支援漏斗訊息
 ) {
   const mode = summarizeModes.find(m => m.key === modeKey);
   if (!mode) throw new Error('未知的摘要模式');

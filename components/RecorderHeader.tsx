@@ -68,7 +68,7 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
-          paddingHorizontal: 10,
+          paddingHorizontal: 16,
           paddingVertical: 8,
           backgroundColor: colors.container,
           borderBottomWidth: 2,
@@ -144,7 +144,7 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
         <View
           style={{
             position: 'absolute',
-            top: 70,
+            top: 55,
             left: 100,
             right: 10,
             backgroundColor: colors.container,
@@ -208,7 +208,7 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
         <View
           style={{
             position: 'absolute',
-            top: 70,
+            top: 55,
             left: 100,
             right: 10,
             backgroundColor: colors.container,

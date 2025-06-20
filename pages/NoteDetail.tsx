@@ -10,6 +10,8 @@ import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
 import { logCoinUsage } from '../utils/googleSheetAPI';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { debounce } from 'lodash';
+
 import {
   RecordingItem,
   enhanceAudio, trimSilence,
@@ -34,6 +36,10 @@ import {
 } from '../components/AudioItem';
 import PlaybackBar from '../components/PlaybackBar';
 import MoreMenu from '../components/MoreMenu';
+import { shareRecordingNote, shareRecordingFile, saveEditedRecording, deleteTextRecording, prepareEditing } from '../utils/editingHelpers';
+import { TouchableWithoutFeedback, Keyboard } from 'react-native';
+import { ActivityIndicator } from 'react-native';
+
 
 export default function NoteDetailPage() {
   const navigation = useNavigation();
@@ -67,13 +73,32 @@ export default function NoteDetailPage() {
   const [speedMenuVisible, setSpeedMenuVisible] = useState(false);
   const [speedAnchor, setSpeedAnchor] = useState<{ x: number; y: number } | null>(null);
   const [playbackRate, setPlaybackRate] = useState(1.0);
-
+  const [isSummarizing, setIsSummarizing] = useState(false);
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [menuVisible, setMenuVisible] = useState(false);
 
-  const [isRenaming, setIsRenaming] = useState(false);
-  const [editName, setEditName] = useState(item.displayName || item.name || '');
   const [selectedMenuIndex, setSelectedMenuIndex] = useState<number | null>(null);
+  const isProcessing = isTranscribing || summarizingState !== null;
+
+  // 特殊著色
+  const highlightKeyword = (text: string, keyword: string | undefined, highlightColor: string) => {
+    const safeText = typeof text === 'string' ? text : String(text || '');
+    if (!keyword || !safeText.includes(keyword)) return <Text>{safeText}</Text>;
+
+    const parts = safeText.split(new RegExp(`(${keyword})`, 'gi'));
+
+    return (
+      <Text style={styles.transcriptText}>
+        {parts.map((part, i) =>
+          part.toLowerCase() === keyword.toLowerCase() ? (
+            <Text key={i} style={{ backgroundColor: highlightColor, color: colors.text }}>{part}</Text>
+          ) : (
+            <Text key={i}>{part}</Text>
+          )
+        )}
+      </Text>
+    );
+  };
 
   // 初始化音檔
   useEffect(() => {
@@ -88,6 +113,8 @@ export default function NoteDetailPage() {
       s.release();
     };
   }, []);
+
+
 
   useEffect(() => {
     if (isPlaying && sound) {
@@ -140,13 +167,13 @@ export default function NoteDetailPage() {
     const callback = (isProcessing: boolean) => {
       setIsTopUpProcessing(isProcessing);
     };
-
     setTopUpProcessingCallback(callback);
-
     return () => {
       setTopUpProcessingCallback(null); // 清理時取消回調
     };
   }, []);
+
+
 
   // 替換原有的 handlePurchase 函數
   const handleTopUp = async (productId: string) => {
@@ -282,10 +309,18 @@ export default function NoteDetailPage() {
     });
   };
 
+  const saveEditing = () => {
+    const updated = saveEditedRecording(recordings, editingState, summaryMode);
+    setRecordings(updated);
+    saveRecordings(updated);
+    setEditingState({ type: null, index: null, text: '' });
+  };
+
   //轉文字邏輯
   const handleTranscribe = async (): Promise<void> => {
     // ✅ 如果已有逐字稿，就不重複處理
-    if (item.transcript) return item;
+    const currentItem = recordings[index];
+    if (currentItem?.transcript) return;
 
     try {
       setIsTranscribing(true);
@@ -352,7 +387,7 @@ export default function NoteDetailPage() {
         setRecordings(updated);
         setFinalTranscript(placeholder);
         setPartialTranscript('');
-        setIsTranscribing(false);
+        //    setIsTranscribing(false);
         return;
       }
 
@@ -360,7 +395,7 @@ export default function NoteDetailPage() {
         // ✅ 顯示短內容但不做摘要
         setFinalTranscript(rawText);
         setPartialTranscript('');
-        setIsTranscribing(false);
+        //     setIsTranscribing(false);
         return;
       }
 
@@ -405,6 +440,7 @@ export default function NoteDetailPage() {
     mode: 'summary' | 'tag' | 'action' = 'summary',
     requirePayment?: boolean
   ): Promise<RecordingItem | null> => {
+
     const pay = requirePayment ?? (mode !== 'summary'); // ← 決定實際是否要扣金幣
 
     const item = recordings[index];
@@ -448,7 +484,6 @@ export default function NoteDetailPage() {
     }
 
     // ✅ 開始處理摘要
-    setSummarizingState({ index, mode });
     try {
       const fullPrompt = item.notes?.trim()
         ? `使用者補充筆記：${item.notes} 錄音文字如下：${item.transcript}`
@@ -458,7 +493,8 @@ export default function NoteDetailPage() {
         fullPrompt,
         mode,
         userLang.includes('CN') ? 'cn' : 'tw',
-        { startTime, date }
+        { startTime, date },
+        (text) => setEditValue(text)
       );
 
       const updatedItem = {
@@ -504,87 +540,88 @@ export default function NoteDetailPage() {
 
 
   const handleShare = async () => {
-    const filename = `${item.displayName || 'note'}.txt`;
-    const fileUri = FileSystem.cacheDirectory + filename;
-
-    try {
-      await FileSystem.writeAsStringAsync(fileUri, content, { encoding: FileSystem.EncodingType.UTF8 });
-      await Sharing.shareAsync(fileUri, {
-        mimeType: 'text/plain',
-        dialogTitle: '分享內容',
-        UTI: 'public.text',
-      });
-    } catch (err) {
-      Alert.alert('分享失敗', (err as Error).message);
-    }
-  };
-
-  const formatTime = (ms: number) => {
-    const sec = Math.floor(ms / 1000);
-    const min = Math.floor(sec / 60);
-    const rem = sec % 60;
-    return `${min}:${rem.toString().padStart(2, '0')}`;
+    await shareRecordingNote(recordings[index], viewType as 'transcript' | 'summary' | 'notes', summaryMode);
   };
 
   const content =
     viewType === 'transcript'
-      ? (isTranscribing ? partialTranscript || '⏳ 正在轉文字...' : finalTranscript)
+      ? (isTranscribing ? partialTranscript : recordings[index]?.transcript || '')
       : viewType === 'summary'
-        ? summaries?.[summaryMode] || ''
-        : item.notes || '';
+        ? recordings[index]?.summaries?.[summaryMode] || ''
+        : recordings[index]?.notes || '';
 
+  useEffect(() => {
+    // 當 viewType 變更後，自動更新內容
+    const updated =
+      viewType === 'transcript'
+        ? (isTranscribing ? partialTranscript : recordings[index]?.transcript || '')
+        : viewType === 'summary'
+          ? recordings[index]?.summaries?.[summaryMode] || ''
+          : recordings[index]?.notes || '';
 
-  const handleSave = async () => {
-    debugLog(`儲存 ${viewType}:`, editValue);
-    setIsEditing(false);
-
-    const updated = [...recordings];
-    const updatedItem = { ...updated[index] };
-
-    if (viewType === 'transcript') {
-      updatedItem.transcript = editValue;
-    } else if (viewType === 'notes') {
-      updatedItem.notes = editValue;
-    } else if (viewType === 'summary') {
-      updatedItem.summaries = {
-        ...(updatedItem.summaries || {}),
-        [summaryMode]: editValue,
-      };
+    if (!isEditing) {
+      setEditValue(updated);
     }
+  }, [viewType, recordings, index, summaryMode, isTranscribing]);
 
-    updated[index] = updatedItem;
-    setRecordings(updated);
-    await saveRecordings(updated);
 
-    // 畫面同步更新內容
-    if (viewType === 'transcript') {
-      setFinalTranscript(editValue);
-    } else if (viewType === 'summary') {
-      setSummaries(updatedItem.summaries || {});
+  useEffect(() => {
+    const currentItem = recordings[index];
+    if (currentItem) {
+      setFinalTranscript(currentItem.transcript || '');
+      setSummaries(currentItem.summaries || {});
     }
-  };
+  }, [recordings, index]);
+
+  const [editingState, setEditingState] = useState<{
+    type: 'transcript' | 'summary' | 'name' | 'notes' | null;
+    index: number | null;
+    text: string;
+    mode?: string;
+  }>({ type: null, index: null, text: '' });
 
   const handleDelete = async () => {
-    const updated = [...recordings];
-    const updatedItem = { ...updated[index] };
+    try {
+      const updated = [...recordings];
+      const updatedItem = { ...updated[index] };
 
-    if (viewType === 'transcript') {
-      updatedItem.transcript = '';
-    } else if (viewType === 'notes') {
-      updatedItem.notes = '';
-    } else if (viewType === 'summary') {
-      if (updatedItem.summaries?.[summaryMode]) {
-        delete updatedItem.summaries[summaryMode];
+      if (viewType === 'transcript') {
+        updatedItem.transcript = '';
+        setFinalTranscript('');
+        setPartialTranscript('');
+        setIsTranscribing(false); // 重置轉文字狀態
+      } else if (viewType === 'summary') {
+        const updatedSummaries = { ...(updatedItem.summaries || {}) };
+        delete updatedSummaries[summaryMode];
+        updatedItem.summaries = updatedSummaries;
+        setSummaries(updatedSummaries);
+        if (viewType === 'summary') {
+          const allowedModes: ('summary' | 'tag' | 'action')[] = ['summary', 'tag', 'action'];
+          const summaryKeys = Object.keys(updatedSummaries).filter((k): k is 'summary' | 'tag' | 'action' => allowedModes.includes(k as any));
+          const preferredOrder: ('summary' | 'tag' | 'action')[] = ['summary', 'tag', 'action'];
+          const nextMode = preferredOrder.find(m => summaryKeys.includes(m)) || summaryKeys[0];
+
+          if (nextMode) {
+            setSummaryMode(nextMode);
+          } else {
+            setSummaryMode('summary');
+          }
+        }
+
+
+      } else if (viewType === 'notes') {
+        updatedItem.notes = '';
       }
-      setSummaries({ ...updatedItem.summaries });
-    }
 
-    updated[index] = updatedItem;
-    setRecordings(updated);
-    await saveRecordings(updated);
-    setEditValue('');
-    setIsEditing(false);
-    debugLog(`已刪除 ${viewType} 內容`);
+      updated[index] = updatedItem;
+      await saveRecordings(updated);
+      setRecordings(updated); // 更新全局狀態
+      setEditValue('');
+
+      Alert.alert('刪除成功', `已刪除 ${viewType === 'summary' ? summaryMode : viewType} 內容`);
+    } catch (error) {
+      Alert.alert('刪除失敗', '刪除內容時發生錯誤');
+    }
   };
 
   return (
@@ -604,12 +641,15 @@ export default function NoteDetailPage() {
       <View style={[styles.container, { marginTop: 54 }]}>
         <View style={{ marginBottom: 0, marginTop: -10, marginRight: 4, marginLeft: 4 }}>
           <PlaybackBar
+            editableName={true}
+            editingState={editingState}
+            itemIndex={index}
             item={item}
             isPlaying={isPlaying}
             isVisible={true}
             playbackPosition={position}
             playbackDuration={duration}
-            playbackRate={playbackRate}// 如果之後有變速功能，可以接入 state
+            playbackRate={playbackRate}
             onPlayPause={togglePlay}
             onSeek={(ms) => {
               if (sound) {
@@ -617,22 +657,30 @@ export default function NoteDetailPage() {
                 setPosition(ms);
               }
             }}
+            onRename={(newName) => {
+              const updated = [...recordings];
+              updated[index].displayName = newName;
+              setRecordings(updated);
+              saveRecordings(updated);
+            }}
             onMorePress={(e) => {
               e?.target?.measureInWindow?.((x: number, y: number, width: number, height: number) => {
                 if (selectedMenuIndex === index) {
-                  // 👉 已經是同一個 → 關閉
                   setSelectedMenuIndex(null);
                   setMenuVisible(false);
                 } else {
-                  // 👉 新的 → 顯示
                   setSelectedMenuIndex(index);
                   setMenuVisible(true);
                   setMenuPosition({ x, y: y + height });
                 }
               });
             }}
-
             onSpeedPress={(e) => {
+
+              if (speedMenuVisible) {
+                setSpeedMenuVisible(false);
+                return;
+              }
               e?.target?.measureInWindow?.((x: number, y: number, width: number, height: number) => {
                 setSpeedMenuVisible(true);
                 setSpeedAnchor({ x, y: y + height });
@@ -641,43 +689,70 @@ export default function NoteDetailPage() {
             styles={styles}
             colors={colors}
             renderRightButtons={
-              isRenaming ? (
+              editingState.type === 'name' && editingState.index === index ? (
                 <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <TouchableOpacity onPress={async () => {
-                    const updated = [...recordings];
-                    updated[index].displayName = editName;
-                    setRecordings(updated);
-                    await saveRecordings(updated);
-                    setIsRenaming(false);
-                  }}>
+                  <TouchableOpacity onPress={saveEditing}>
                     <Text style={[styles.transcriptActionButton, { color: colors.primary }]}>💾</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => setIsRenaming(false)}>
+                  <TouchableOpacity onPress={() => setEditingState({ type: null, index: null, text: '' })}>
                     <Text style={styles.transcriptActionButton}>✖️</Text>
                   </TouchableOpacity>
                 </View>
               ) : undefined
             }
+
           />
         </View>
 
         {/* 三顆切換按鈕 */}
+
         <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 12, marginBottom: 0 }}>
           {['note', 'transcript', 'summary'].map((key) => (
             <TouchableOpacity
               key={key}
               ref={key === 'summary' ? toolboxButtonRef : undefined}
               onPress={() => {
+                if (isProcessing) return;
                 setViewType(key as any);
                 setIsEditing(false);
 
-                // ✅ 只有按 summary 才彈出選單
+                if (key === 'transcript') {
+                  // ✅ 自動轉文字
+                  if (!item.transcript && !isTranscribing) {
+                    handleTranscribe();
+                  }
+                  setSummaryMenuContext(null); // 確保工具箱收起
+                }
+
                 if (key === 'summary') {
-                  toolboxButtonRef.current?.measureInWindow((x, y, width, height) => {
-                    setSummaryMenuContext({ position: { x, y: y + height } });
-                  });
-                } else {
-                  setSummaryMenuContext(null); // ❌ 點到其他按鈕要關掉浮層
+                  const updatedItem = recordings[index];
+                  const hasSummary = !!updatedItem?.summaries?.[summaryMode];
+
+                  setSummaryMode(summaryMode);
+                  setViewType('summary'); // 立即切畫面
+
+                  if (!hasSummary && !isSummarizing) {
+                    setSummarizingState({ index, mode: summaryMode }); // 顯示漏斗
+                    setTimeout(() => {
+                      handleSummarize(index, summaryMode);
+                    }, 50);
+                  } else {
+                    setSummarizingState(null); // 如果已做過，不要卡住漏斗
+                  }
+
+                  if (summaryMenuContext) {
+                    setSummaryMenuContext(null);
+                  } else {
+                    toolboxButtonRef.current?.measureInWindow((x, y, width, height) => {
+                      setSummaryMenuContext({ position: { x, y: y + height } });
+                    });
+                  }
+
+                  return; // ❗️避免後面又重複 setViewType（你可能在外層的 onPress 也有呼叫 setViewType）
+                }
+
+                if (key === 'note') {
+                  setSummaryMenuContext(null); // 工具箱切換時關閉
                 }
               }}
               style={{
@@ -695,30 +770,48 @@ export default function NoteDetailPage() {
         </View>
 
         {/* 內容區塊 */}
-{renderNoteBlock({
-  type: viewType as 'transcript' | 'summary' | 'notes',
-  index,
-  value: content,
-  editingIndex: isEditing ? index : null,
-  editValue,
-  onChangeEdit: (text) => setEditValue(text),
-  onSave: handleSave,
-  onCancel: () => {
-    setEditValue('');
-    setIsEditing(false);
-  },
-  onDelete: handleDelete,
-  onShare: handleShare,
-  styles,
-  colors,
-    wrapperStyle: {
-    maxHeight: 550,
-    width: '96%',
-    alignSelf: 'center',
-    marginVertical: 10,
-  }
-})}
+        {renderNoteBlock({
+          type: viewType as 'transcript' | 'summary' | 'notes',
+          index,
+          value: content,
+          editingIndex: editingState.type === viewType && editingState.index === index ? index : null,
+          editValue: editingState.text,
+          onChangeEdit: (text) => {
+            setEditingState({ type: viewType as any, index, text });
+          },
+          onSave: saveEditing,
+          onCancel: () => setEditingState({ type: null, index: null, text: '' }),
+          onShare: handleShare,
+          onDelete: handleDelete,
+          styles,
+          colors,
+          wrapperStyle: {
+            maxHeight: 550,
+            width: '96%',
+            alignSelf: 'center',
+            marginVertical: 10,
+          },
+          renderContent: () => {
+            if (
+              viewType === 'summary' &&
+              summarizingState?.index === index
+              //  && summarizingState?.mode === summaryMode
+            ) {
+              const label = summarizeModes.find(m => m.key === summaryMode)?.label || 'AI內容';
+              return <Text style={{ color: colors.primary }}>⏳ 處理{label}中...</Text>;
+            }
 
+            // 若還沒內容，但也沒有正在處理中，也直接回傳空畫面
+            if (viewType === 'summary' && !recordings[index]?.summaries?.[summaryMode]) {
+              return <Text style={{ color: colors.text, opacity: 0.5 }}>(尚無內容)</Text>;
+            }
+            return (
+              <Text style={styles.transcriptText}>
+                {highlightKeyword(content || '', searchKeyword, colors.primary + '66')}
+              </Text>
+            );
+          }
+        })}
 
         <TopUpModal
           visible={showTopUpModal}
@@ -797,9 +890,11 @@ export default function NoteDetailPage() {
             <TouchableOpacity
               key={rate}
               onPress={() => {
-                setPlaybackRate(rate);
-                if (sound) sound.setSpeed(rate);
-                setSpeedMenuVisible(false);
+                setPlaybackRate(rate);            // 記住用戶選擇的速率
+                if (isPlaying && sound) {         // ✅ 只有正在播放才套用速率
+                  sound.setSpeed(rate);
+                }
+                setSpeedMenuVisible(false);       // 關閉選單
               }}
               style={{
                 paddingVertical: 6,
@@ -818,79 +913,69 @@ export default function NoteDetailPage() {
         <MoreMenu
           index={index}
           item={item}
+          title={APP_TITLE}
           position={menuPosition}
           styles={styles}
-          title={APP_TITLE}
           closeAllMenus={() => setMenuVisible(false)}
           onRename={() => {
-            setIsRenaming(true);
+            setEditingState(prepareEditing(recordings, index, 'name', summaryMode));
             setMenuVisible(false);
           }}
-          onDelete={() => { }} // ✅ 傳空函式，不使用
-          onShare={() => {
+          onDelete={handleDelete}
+          onShare={async (uri) => {
+            await shareRecordingFile(uri);
             setMenuVisible(false);
-            const uri = item.uri.startsWith('file://') ? item.uri : `file://${item.uri}`;
-            Sharing.shareAsync(uri, {
-              mimeType: 'audio/m4a',
-              dialogTitle: '分享音檔',
-            }).catch(err => {
-              Alert.alert('分享失敗', err.message || '發生錯誤');
-            });
           }}
           showDelete={false}
         />
       )}
-{summaryMenuContext && (
-  <View style={{
-    position: 'absolute',
-    top: summaryMenuContext.position.y +4,
-    left: summaryMenuContext.position.x-10,
-    backgroundColor: colors.container,
-    borderRadius: 8,
-    padding: 8,
-    zIndex: 9999,
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
-  }}>
-    {summarizeModes.map((mode) => (
-      <TouchableOpacity
-        key={mode.key}
-        onPress={() => {
-          const isFree = mode.key === 'summary';
-          handleSummarize(index, mode.key as 'summary' | 'tag' | 'action', !isFree);
-          setSummaryMenuContext(null); // 關閉選單
-        }}
-        style={{
-          paddingVertical: 8,
-          paddingHorizontal: 12,
-          backgroundColor:
-            summaryMode === mode.key
-              ? colors.primary + '50'
-              : item.summaries?.[mode.key]
-              ? colors.primary + '10'
-              : 'transparent',
-          borderRadius: 4,
-        }}
-      >
-        <Text style={{
-          color: colors.text,
-          fontWeight: summaries?.[mode.key] ? 'bold' : 'normal',
+      {summaryMenuContext && (
+        <View style={{
+          position: 'absolute',
+          top: summaryMenuContext.position.y + 4,
+          left: summaryMenuContext.position.x - 10,
+          backgroundColor: colors.container,
+          borderRadius: 8,
+          padding: 8,
+          zIndex: 9999,
+          elevation: 10,
+          shadowColor: '#000',
+          shadowOpacity: 0.2,
+          shadowOffset: { width: 0, height: 2 },
+          shadowRadius: 4,
         }}>
-          {mode.label}
-          {summaries?.[mode.key] ? ' ✓' : ''}
-          {summarizingState?.mode === mode.key ? ' ⏳' : ''}
-        </Text>
-      </TouchableOpacity>
-    ))}
-  </View>
-)}
-
-
+          {summarizeModes.map((mode) => (
+            <TouchableOpacity
+              key={mode.key}
+              onPress={() => {
+                const isFree = mode.key === 'summary';
+                handleSummarize(index, mode.key as 'summary' | 'tag' | 'action', !isFree);
+                setSummaryMenuContext(null); // 關閉選單
+              }}
+              style={{
+                paddingVertical: 8,
+                paddingHorizontal: 12,
+                backgroundColor:
+                  summaryMode === mode.key
+                    ? colors.primary + '50'
+                    : item.summaries?.[mode.key]
+                      ? colors.primary + '10'
+                      : 'transparent',
+                borderRadius: 4,
+              }}
+            >
+              <Text style={{
+                color: colors.text,
+                fontWeight: summaries?.[mode.key] ? 'bold' : 'normal',
+              }}>
+                {mode.label}
+                {summaries?.[mode.key] ? ' ✓' : ''}
+                {summarizingState?.mode === mode.key ? ' ⏳' : ''}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
     </SafeAreaView>
-
-
   );
 }

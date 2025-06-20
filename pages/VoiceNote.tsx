@@ -1042,51 +1042,49 @@ const RecorderPageVoiceNote = () => {
                             />
                             {/* 兩行小字摘要 */}
                             <View pointerEvents="box-none">
+                              {(item.notes || item.transcript) && (
+                                <TouchableOpacity
+                                  onPress={async () => {
+                                    closeAllMenus();
+                                    setSelectedPlayingIndex(index);
 
-                                (item.notes || item.transcript) && (
-                                  <TouchableOpacity
-                                    onPress={async () => {
-                                      closeAllMenus();
-                                      setSelectedPlayingIndex(index);
+                                    if (item.notes?.trim()) {
+                                      setShowNotesIndex(index);
+                                      setShowTranscriptIndex(null);
+                                      setShowSummaryIndex(null);
+                                    } else if (item.transcript?.trim()) {
+                                      setShowTranscriptIndex(index);
+                                      setShowNotesIndex(null);
+                                      setShowSummaryIndex(null);
+                                    } else {
+                                      setShowTranscriptIndex(null);
+                                      setShowSummaryIndex(null);
+                                    }
+                                  }}
+                                >
+                                  {/* 小字摘要區塊 */}
+                                  <View style={styles.transcriptBlock}>
+                                    {item.notes?.trim() ? (
+                                      <Text
+                                        style={styles.transcriptBlockText}
+                                        numberOfLines={1}
+                                        ellipsizeMode="tail"
+                                      >
+                                        {String(item.notes).trim()}
+                                      </Text>
+                                    ) : item.transcript?.trim() ? (
+                                      <Text
+                                        style={styles.transcriptBlockText}
+                                        numberOfLines={1}
+                                        ellipsizeMode="tail"
+                                      >
+                                        {String(item.transcript).trim()}
+                                      </Text>
+                                    ) : null}
+                                  </View>
 
-                                      if (item.notes?.trim()) {
-                                        setShowNotesIndex(index);
-                                        setShowTranscriptIndex(null);
-                                        setShowSummaryIndex(null);
-                                      } else if (item.transcript?.trim()) {
-                                        setShowTranscriptIndex(index);
-                                        setShowNotesIndex(null);
-                                        setShowSummaryIndex(null);
-                                      } else {
-                                        setShowTranscriptIndex(null);
-                                        setShowSummaryIndex(null);
-                                      }
-                                    }}
-                                  >
-                                    {/* 小字摘要區塊 */}
-<View style={styles.transcriptBlock}>
-  {item.notes?.trim() ? (
-    <Text
-      style={styles.transcriptBlockText}
-      numberOfLines={1}
-      ellipsizeMode="tail"
-    >
-      {item.notes}
-    </Text>
-  ) : item.transcript?.trim() ? (
-    <Text
-      style={styles.transcriptBlockText}
-      numberOfLines={1}
-      ellipsizeMode="tail"
-    >
-      {item.transcript}
-    </Text>
-  ) : null}
-</View>
-
-                                  </TouchableOpacity>
-                                )
-
+                                </TouchableOpacity>
+                              )}
                             </View>
 
                             {/* 轉文字 & 重點摘要按鈕*/}

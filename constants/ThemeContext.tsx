@@ -18,7 +18,17 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
     const [isDarkMode, setIsDarkMode] = useState(true);
-    const [customPrimaryColor, setCustomPrimaryColor] = useState<string | null>(null);
+    const [customPrimaryColor, _setCustomPrimaryColor] = useState<string | null>(null);
+
+    // 包裝 setCustomPrimaryColor 並寫入 AsyncStorage
+    const setCustomPrimaryColor = (color: string | null) => {
+        _setCustomPrimaryColor(color);
+        if (color) {
+            AsyncStorage.setItem('primaryColor', color);
+        } else {
+            AsyncStorage.removeItem('primaryColor');
+        }
+    };
 
     const themeBase = partBackgrounds[isDarkMode ? 'dark' : 'light'] || {};
     const colors = {
