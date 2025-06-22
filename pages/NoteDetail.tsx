@@ -10,8 +10,6 @@ import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
 import { logCoinUsage } from '../utils/googleSheetAPI';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { debounce } from 'lodash';
-
 import {
   RecordingItem,
   enhanceAudio, trimSilence,
@@ -38,7 +36,6 @@ import PlaybackBar from '../components/PlaybackBar';
 import MoreMenu from '../components/MoreMenu';
 import { shareRecordingNote, shareRecordingFile, saveEditedRecording, deleteTextRecording, prepareEditing } from '../utils/editingHelpers';
 import { TouchableWithoutFeedback, Keyboard } from 'react-native';
-import { ActivityIndicator } from 'react-native';
 
 
 export default function NoteDetailPage() {
@@ -78,20 +75,26 @@ export default function NoteDetailPage() {
   const [menuVisible, setMenuVisible] = useState(false);
 
   const [selectedMenuIndex, setSelectedMenuIndex] = useState<number | null>(null);
-  const isProcessing = isTranscribing || summarizingState !== null;
 
   // 特殊著色
   const highlightKeyword = (text: string, keyword: string | undefined, highlightColor: string) => {
-    const safeText = typeof text === 'string' ? text : String(text || '');
-    if (!keyword || !safeText.includes(keyword)) return <Text>{safeText}</Text>;
+    if (!keyword || !text.includes(keyword)) return <Text>{text}</Text>;
 
-    const parts = safeText.split(new RegExp(`(${keyword})`, 'gi'));
+    const parts = text.split(new RegExp(`(${keyword})`, 'gi'));
 
     return (
       <Text style={styles.transcriptText}>
         {parts.map((part, i) =>
           part.toLowerCase() === keyword.toLowerCase() ? (
-            <Text key={i} style={{ backgroundColor: highlightColor, color: colors.text }}>{part}</Text>
+            <Text
+              key={i}
+              style={{
+                backgroundColor: highlightColor,
+                color: colors.text,
+              }}
+            >
+              {part}
+            </Text>
           ) : (
             <Text key={i}>{part}</Text>
           )
@@ -99,6 +102,7 @@ export default function NoteDetailPage() {
       </Text>
     );
   };
+
 
   // 初始化音檔
   useEffect(() => {
@@ -167,13 +171,13 @@ export default function NoteDetailPage() {
     const callback = (isProcessing: boolean) => {
       setIsTopUpProcessing(isProcessing);
     };
+
     setTopUpProcessingCallback(callback);
+
     return () => {
       setTopUpProcessingCallback(null); // 清理時取消回調
     };
   }, []);
-
-
 
   // 替換原有的 handlePurchase 函數
   const handleTopUp = async (productId: string) => {
@@ -440,7 +444,6 @@ export default function NoteDetailPage() {
     mode: 'summary' | 'tag' | 'action' = 'summary',
     requirePayment?: boolean
   ): Promise<RecordingItem | null> => {
-
     const pay = requirePayment ?? (mode !== 'summary'); // ← 決定實際是否要扣金幣
 
     const item = recordings[index];
@@ -484,6 +487,7 @@ export default function NoteDetailPage() {
     }
 
     // ✅ 開始處理摘要
+    setSummarizingState({ index, mode });
     try {
       const fullPrompt = item.notes?.trim()
         ? `使用者補充筆記：${item.notes} 錄音文字如下：${item.transcript}`
@@ -493,8 +497,7 @@ export default function NoteDetailPage() {
         fullPrompt,
         mode,
         userLang.includes('CN') ? 'cn' : 'tw',
-        { startTime, date },
-        (text) => setEditValue(text)
+        { startTime, date }
       );
 
       const updatedItem = {
@@ -545,33 +548,16 @@ export default function NoteDetailPage() {
 
   const content =
     viewType === 'transcript'
-      ? (isTranscribing ? partialTranscript : recordings[index]?.transcript || '')
+      ? (isTranscribing ? partialTranscript : finalTranscript)
       : viewType === 'summary'
-        ? recordings[index]?.summaries?.[summaryMode] || ''
-        : recordings[index]?.notes || '';
+        ? summaries?.[summaryMode] || ''
+        : item.notes || '';
 
   useEffect(() => {
-    // 當 viewType 變更後，自動更新內容
-    const updated =
-      viewType === 'transcript'
-        ? (isTranscribing ? partialTranscript : recordings[index]?.transcript || '')
-        : viewType === 'summary'
-          ? recordings[index]?.summaries?.[summaryMode] || ''
-          : recordings[index]?.notes || '';
-
     if (!isEditing) {
-      setEditValue(updated);
+      setEditValue(content);
     }
-  }, [viewType, recordings, index, summaryMode, isTranscribing]);
-
-
-  useEffect(() => {
-    const currentItem = recordings[index];
-    if (currentItem) {
-      setFinalTranscript(currentItem.transcript || '');
-      setSummaries(currentItem.summaries || {});
-    }
-  }, [recordings, index]);
+  }, [content]);
 
   const [editingState, setEditingState] = useState<{
     type: 'transcript' | 'summary' | 'name' | 'notes' | null;
@@ -582,8 +568,8 @@ export default function NoteDetailPage() {
 
   const handleDelete = async () => {
     try {
-      const updated = [...recordings];
-      const updatedItem = { ...updated[index] };
+      const updatedItem = { ...item };
+      let updatedSummaries = { ...(item.summaries || {}) };
 
       if (viewType === 'transcript') {
         updatedItem.transcript = '';
@@ -591,37 +577,26 @@ export default function NoteDetailPage() {
         setPartialTranscript('');
         setIsTranscribing(false); // 重置轉文字狀態
       } else if (viewType === 'summary') {
-        const updatedSummaries = { ...(updatedItem.summaries || {}) };
-        delete updatedSummaries[summaryMode];
+        delete updatedSummaries[summaryMode]; // ⬅️ 刪掉特定 summary mode
         updatedItem.summaries = updatedSummaries;
         setSummaries(updatedSummaries);
-        if (viewType === 'summary') {
-          const allowedModes: ('summary' | 'tag' | 'action')[] = ['summary', 'tag', 'action'];
-          const summaryKeys = Object.keys(updatedSummaries).filter((k): k is 'summary' | 'tag' | 'action' => allowedModes.includes(k as any));
-          const preferredOrder: ('summary' | 'tag' | 'action')[] = ['summary', 'tag', 'action'];
-          const nextMode = preferredOrder.find(m => summaryKeys.includes(m)) || summaryKeys[0];
-
-          if (nextMode) {
-            setSummaryMode(nextMode);
-          } else {
-            setSummaryMode('summary');
-          }
-        }
-
-
       } else if (viewType === 'notes') {
         updatedItem.notes = '';
       }
 
+      const updated = [...recordings];
       updated[index] = updatedItem;
       await saveRecordings(updated);
-      setRecordings(updated); // 更新全局狀態
+      setRecordings(updated);
       setEditValue('');
-
+      setRecordings([...updated]); // 強制刷新
       Alert.alert('刪除成功', `已刪除 ${viewType === 'summary' ? summaryMode : viewType} 內容`);
+
     } catch (error) {
+      console.error('刪除失敗:', error);
       Alert.alert('刪除失敗', '刪除內容時發生錯誤');
     }
+
   };
 
   return (
@@ -630,7 +605,7 @@ export default function NoteDetailPage() {
       {/* Header */}
       <View style={{ position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: colors.container, }}>
         <RecorderHeader
-          mode="detail"
+        mode="detail" 
           onBack={() => navigation.goBack()}
           searchQuery={searchKeyword}
           setSearchQuery={setSearchKeyword}
@@ -656,13 +631,13 @@ export default function NoteDetailPage() {
                 sound.setCurrentTime(ms / 1000);
                 setPosition(ms);
               }
-            }}
+            } }
             onRename={(newName) => {
               const updated = [...recordings];
               updated[index].displayName = newName;
               setRecordings(updated);
               saveRecordings(updated);
-            }}
+            } }
             onMorePress={(e) => {
               e?.target?.measureInWindow?.((x: number, y: number, width: number, height: number) => {
                 if (selectedMenuIndex === index) {
@@ -674,7 +649,7 @@ export default function NoteDetailPage() {
                   setMenuPosition({ x, y: y + height });
                 }
               });
-            }}
+            } }
             onSpeedPress={(e) => {
 
               if (speedMenuVisible) {
@@ -685,35 +660,35 @@ export default function NoteDetailPage() {
                 setSpeedMenuVisible(true);
                 setSpeedAnchor({ x, y: y + height });
               });
-            }}
+            } }
             styles={styles}
             colors={colors}
-            renderRightButtons={
-              editingState.type === 'name' && editingState.index === index ? (
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <TouchableOpacity onPress={saveEditing}>
-                    <Text style={[styles.transcriptActionButton, { color: colors.primary }]}>💾</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => setEditingState({ type: null, index: null, text: '' })}>
-                    <Text style={styles.transcriptActionButton}>✖️</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : undefined
-            }
-
+            renderRightButtons={editingState.type === 'name' && editingState.index === index ? (
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TouchableOpacity onPress={saveEditing}>
+                  <Text style={[styles.transcriptActionButton, { color: colors.primary }]}>💾</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setEditingState({ type: null, index: null, text: '' })}>
+                  <Text style={styles.transcriptActionButton}>✖️</Text>
+                </TouchableOpacity>
+              </View>
+            ) : undefined} setRecordings={function (value: React.SetStateAction<RecordingItem[]>): void {
+              throw new Error('Function not implemented.');
+            } } saveRecordings={function (items: RecordingItem[]): void {
+              throw new Error('Function not implemented.');
+            } }
           />
         </View>
 
         {/* 三顆切換按鈕 */}
-
         <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 12, marginBottom: 0 }}>
           {['note', 'transcript', 'summary'].map((key) => (
             <TouchableOpacity
               key={key}
               ref={key === 'summary' ? toolboxButtonRef : undefined}
               onPress={() => {
-                if (isProcessing) return;
                 setViewType(key as any);
+                setEditValue(content);
                 setIsEditing(false);
 
                 if (key === 'transcript') {
@@ -725,30 +700,18 @@ export default function NoteDetailPage() {
                 }
 
                 if (key === 'summary') {
-                  const updatedItem = recordings[index];
-                  const hasSummary = !!updatedItem?.summaries?.[summaryMode];
-
-                  setSummaryMode(summaryMode);
-                  setViewType('summary'); // 立即切畫面
-
-                  if (!hasSummary && !isSummarizing) {
-                    setSummarizingState({ index, mode: summaryMode }); // 顯示漏斗
-                    setTimeout(() => {
-                      handleSummarize(index, summaryMode);
-                    }, 50);
-                  } else {
-                    setSummarizingState(null); // 如果已做過，不要卡住漏斗
+                  if (!item.summaries?.[summaryMode] && !isSummarizing) {
+                    handleSummarize(index, summaryMode);
                   }
 
+                  // ✅ 開關 AI 工具箱選單
                   if (summaryMenuContext) {
-                    setSummaryMenuContext(null);
+                    setSummaryMenuContext(null); // 再次點擊自動收起
                   } else {
                     toolboxButtonRef.current?.measureInWindow((x, y, width, height) => {
-                      setSummaryMenuContext({ position: { x, y: y + height } });
+                      setSummaryMenuContext({ position: { x, y: y + height } }); // 工具箱顯示位置
                     });
                   }
-
-                  return; // ❗️避免後面又重複 setViewType（你可能在外層的 onPress 也有呼叫 setViewType）
                 }
 
                 if (key === 'note') {
@@ -762,12 +725,13 @@ export default function NoteDetailPage() {
                 backgroundColor: viewType === key ? colors.primary : colors.primary + '55',
               }}
             >
-              <Text style={{ color: 'white' }}>
+              <Text style={{ color: 'white', fontSize: 13 }}>
                 {key === 'transcript' ? '錄音文檔' : key === 'summary' ? 'AI工具箱' : '談話筆記'}
               </Text>
             </TouchableOpacity>
           ))}
         </View>
+
 
         {/* 內容區塊 */}
         {renderNoteBlock({
@@ -791,26 +755,8 @@ export default function NoteDetailPage() {
             alignSelf: 'center',
             marginVertical: 10,
           },
-          renderContent: () => {
-            if (
-              viewType === 'summary' &&
-              summarizingState?.index === index
-              //  && summarizingState?.mode === summaryMode
-            ) {
-              const label = summarizeModes.find(m => m.key === summaryMode)?.label || 'AI內容';
-              return <Text style={{ color: colors.primary }}>⏳ 處理{label}中...</Text>;
-            }
-
-            // 若還沒內容，但也沒有正在處理中，也直接回傳空畫面
-            if (viewType === 'summary' && !recordings[index]?.summaries?.[summaryMode]) {
-              return <Text style={{ color: colors.text, opacity: 0.5 }}>(尚無內容)</Text>;
-            }
-            return (
-              <Text style={styles.transcriptText}>
-                {highlightKeyword(content || '', searchKeyword, colors.primary + '66')}
-              </Text>
-            );
-          }
+          renderContent: () =>
+            highlightKeyword(content, searchKeyword, colors.primary + '66')
         })}
 
         <TopUpModal
@@ -945,13 +891,27 @@ export default function NoteDetailPage() {
           shadowRadius: 4,
         }}>
           {summarizeModes.map((mode) => (
-            <TouchableOpacity
-              key={mode.key}
-              onPress={() => {
-                const isFree = mode.key === 'summary';
-                handleSummarize(index, mode.key as 'summary' | 'tag' | 'action', !isFree);
-                setSummaryMenuContext(null); // 關閉選單
-              }}
+<TouchableOpacity
+  key={mode.key}
+  disabled={
+    !summaries?.[mode.key] &&
+    !!summarizingState &&
+    summarizingState.index === index &&
+    summarizingState.mode !== mode.key
+  }
+  onPress={() => {
+    const isBlocked =
+      !summaries?.[mode.key] &&
+      !!summarizingState &&
+      summarizingState.index === index &&
+      summarizingState.mode !== mode.key;
+
+    if (isBlocked) return;
+
+    const isFree = mode.key === 'summary';
+    handleSummarize(index, mode.key as 'summary' | 'tag' | 'action', !isFree);
+    setSummaryMenuContext(null);
+  }}
               style={{
                 paddingVertical: 8,
                 paddingHorizontal: 12,
@@ -963,16 +923,31 @@ export default function NoteDetailPage() {
                       : 'transparent',
                 borderRadius: 4,
               }}
-            >
-              <Text style={{
-                color: colors.text,
-                fontWeight: summaries?.[mode.key] ? 'bold' : 'normal',
-              }}>
-                {mode.label}
-                {summaries?.[mode.key] ? ' ✓' : ''}
-                {summarizingState?.mode === mode.key ? ' ⏳' : ''}
-              </Text>
-            </TouchableOpacity>
+>
+  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+    <Text style={{
+      color:
+        !summaries?.[mode.key] &&
+        !!summarizingState &&
+        summarizingState.index === index &&
+        summarizingState.mode !== mode.key
+          ? colors.text + '66'
+          : colors.text,
+      fontWeight: summaries?.[mode.key] ? 'bold' : 'normal',
+    }}>
+      {mode.label}
+    </Text>
+
+    {summaries?.[mode.key] && (
+      <Text style={{ color: colors.text, fontSize: 14 }}>✓</Text>
+    )}
+
+    {summarizingState?.mode === mode.key && summarizingState.index === index && (
+      <Text style={{ color: colors.primary, fontSize: 14 }}>⏳</Text>
+    )}
+  </View>
+</TouchableOpacity>
+
           ))}
         </View>
       )}

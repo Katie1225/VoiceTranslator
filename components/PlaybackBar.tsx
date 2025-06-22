@@ -27,6 +27,8 @@ interface PlaybackBarProps {
         text: string;
     };
     itemIndex?: number;
+    setRecordings: React.Dispatch<React.SetStateAction<RecordingItem[]>>;
+    saveRecordings: (items: RecordingItem[]) => void;
 }
 
 const PlaybackBar: React.FC<PlaybackBarProps> = ({
@@ -48,6 +50,8 @@ const PlaybackBar: React.FC<PlaybackBarProps> = ({
     renderRightButtons,
     editingState,
     itemIndex,
+    setRecordings,
+    saveRecordings,
 }) => {
     const isEditingName = editableName && editingState?.type === 'name' && editingState?.index === itemIndex;
     const [editName, setEditName] = React.useState(item.displayName || item.name);
@@ -65,12 +69,12 @@ const PlaybackBar: React.FC<PlaybackBarProps> = ({
     };
 
     return (
-<View
-  style={[
-    styles.playbackContainer,
-    !isVisible && { paddingBottom: 0, marginBottom: 0 }, // ✅ 播放條隱藏時，移除底部空白
-  ]}
->
+        <View
+            style={[
+                styles.playbackContainer,
+                !isVisible && { paddingBottom: 0, marginBottom: 0 }, // ✅ 播放條隱藏時，移除底部空白
+            ]}
+        >
             {/* 第一行：播放鍵 + 檔名 + 三點選單 */}
             <View style={styles.playbackHeader}>
                 <TouchableOpacity onPress={onPlayPause}>
@@ -97,21 +101,42 @@ const PlaybackBar: React.FC<PlaybackBarProps> = ({
                 ) : (
                     <TouchableOpacity
                         style={{ flex: 1 }}
-  onPress={() => {
-    if (!isEditingName) onPlayPause(); // ✅ 不是編輯模式就撥放
-  }}
+                        onPress={() => {
+                            if (!isEditingName) onPlayPause(); // ✅ 不是編輯模式就撥放
+                        }}
                         activeOpacity={editableName ? 0.7 : 1}
                     >
-                        <Text style={[styles.audioTitle, { color: colors.text,  fontWeight: isVisible ? 'bold' : 'normal' }]} numberOfLines={1}>
+                        <Text style={[styles.audioTitle, { color: colors.text, fontWeight: isVisible ? 'bold' : 'normal' }]} numberOfLines={1}>
                             {editName}
                         </Text>
                     </TouchableOpacity>
                 )}
 
+                <TouchableOpacity
+                    onPress={() => {
+                        setRecordings(prev => {
+                            const updated = prev.map(r =>
+                                r.uri === item.uri ? { ...r, isStarred: !r.isStarred } : r
+                            );
+                            saveRecordings(updated);
+                            return updated;
+                        });
+                    }}
+
+                    style={{ marginRight: 10 ,  top: -15}}
+                >
+                    <Icon
+                        name={item.isStarred ? 'star' : 'star-outline'}
+                        size={28}
+                        color={item.isStarred ? colors.primary : '#999999'}
+                    />
+                </TouchableOpacity>
+
+
                 {renderRightButtons ? (
                     renderRightButtons
                 ) : (
-                    <TouchableOpacity onPress={onMorePress}>
+                    <TouchableOpacity onPress={onMorePress} >
                         <Icon name="dots-vertical" size={20} color={colors.text} />
                     </TouchableOpacity>
                 )}
@@ -120,24 +145,24 @@ const PlaybackBar: React.FC<PlaybackBarProps> = ({
 
             {/* 第二行：進度條 */}
             {isVisible && (
-            <Slider
-                minimumValue={0}
-                maximumValue={playbackDuration}
-                value={playbackPosition}
-                onSlidingComplete={onSeek}
-                style={styles.playbackSlider}
-                minimumTrackTintColor={colors.primary}
-                maximumTrackTintColor={colors.subtext}
-                thumbTintColor={colors.primary}
-            />  )}
+                <Slider
+                    minimumValue={0}
+                    maximumValue={playbackDuration}
+                    value={playbackPosition}
+                    onSlidingComplete={onSeek}
+                    style={styles.playbackSlider}
+                    minimumTrackTintColor={colors.primary}
+                    maximumTrackTintColor={colors.subtext}
+                    thumbTintColor={colors.primary}
+                />)}
 
             {/* 第三行：時間與播放速度 */}
-{isVisible && (
+            {isVisible && (
                 <View style={styles.playbackFooter}>
                     <Text style={{ color: colors.text, fontSize: 12 }}>{formatTime(playbackPosition)}</Text>
                     {showSpeedControl && (
                         <TouchableOpacity onPress={onSpeedPress}>
-                            <Text style={{ color: colors.text, fontSize: 12}}>⏩ {playbackRate}x</Text>
+                            <Text style={{ color: colors.text, fontSize: 12 }}>⏩ {playbackRate}x</Text>
                         </TouchableOpacity>
                     )}
                 </View>

@@ -12,13 +12,13 @@ interface RecorderHeaderProps {
   mode?: 'main' | 'detail';
   title?: string;
   onBack?: () => void;
-
   onPickAudio?: () => void;
   onCloseAllMenus?: () => void;
-  sortOption?: 'latest' | 'oldest' | 'size' | 'name-asc' | 'name-desc';
+  sortOption?: 'latest' | 'oldest' | 'size' | 'name-asc' | 'name-desc'| 'starred';
   setSortOption?: (opt: any) => void;
   searchQuery?: string;
   setSearchQuery?: (s: string) => void;
+  rightSlot?: React.ReactNode;
   setIsLoggingIn?: (v: boolean) => void;
 }
 
@@ -28,6 +28,7 @@ const labelMap: Record<string, string> = {
   size: '依大小排序',
   'name-asc': '名稱 A → Z',
   'name-desc': '名稱 Z → A',
+  starred: '收藏⭐在上',
 };
 
 const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
@@ -44,6 +45,7 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
     setSortOption = noop,
     searchQuery = defaultStr,
     setSearchQuery = noop,
+    rightSlot = noop,
     setIsLoggingIn = noop,
   } = props;
   const { colors } = useTheme();
@@ -102,23 +104,28 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
         </View>
 
         {/* 右側操作按鈕 */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
-          <TouchableOpacity onPress={toggleSearch}>
-            <Icon name="magnify" size={30} color={colors.primary} />
-          </TouchableOpacity>
+{props.rightSlot ? (
+  <View>{props.rightSlot}</View>
+) : (
+  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
+    <TouchableOpacity onPress={toggleSearch}>
+      <Icon name="magnify" size={30} color={colors.primary} />
+    </TouchableOpacity>
 
-          {mode !== 'detail' && (
-            <>
-              <TouchableOpacity onPress={toggleSort}>
-                <Icon name="sort" size={30} color={colors.primary} />
-              </TouchableOpacity>
+    {mode !== 'detail' && (
+      <>
+        <TouchableOpacity onPress={toggleSort}>
+          <Icon name="sort" size={30} color={colors.primary} />
+        </TouchableOpacity>
 
-              <TouchableOpacity onPress={onPickAudio}>
-                <Icon name="folder" size={30} color={colors.primary} />
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
+        <TouchableOpacity onPress={onPickAudio}>
+          <Icon name="folder" size={30} color={colors.primary} />
+        </TouchableOpacity>
+      </>
+    )}
+  </View>
+)}
+
 
         {mode !== 'detail' && (
           <HamburgerMenu
@@ -181,7 +188,7 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
               }}
               onPress={() => {
                 setSortOption(key as any);
-                setIsSortModalVisible(false);
+                // setIsSortModalVisible(false);
               }}
             >
               <Text
@@ -194,13 +201,26 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
               </Text>
             </TouchableOpacity>
           ))}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
 
-          <TouchableOpacity
-            onPress={() => setIsSortModalVisible(false)}
-            style={{ paddingVertical: 10, alignItems: 'center' }}
-          >
-            <Text style={{ color: colors.subtext }}>取消</Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => {
+                setSortOption?.('latest'); // ✅ 清回預設排序（可改成你預設想要的）
+                setIsSortModalVisible(false);
+              }}
+              style={{ paddingVertical: 10, flex: 1, alignItems: 'center' }}
+            >
+              <Text style={{ color: colors.subtext }}>取消</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setIsSortModalVisible(false)}
+              style={{ paddingVertical: 10, flex: 1, alignItems: 'center' }}
+            >
+              <Text style={{ color: colors.primary }}>完成</Text>
+            </TouchableOpacity>
+
+
+          </View>
         </View>
       )}
 
@@ -246,12 +266,29 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
               marginBottom: 16,
             }}
           />
-          <TouchableOpacity
-            onPress={() => setIsSearchModalVisible(false)}
-            style={{ paddingVertical: 10, alignItems: 'center' }}
-          >
-            <Text style={{ color: colors.subtext }}>完成</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
+
+            <TouchableOpacity
+              onPress={() => {
+                setIsSearchModalVisible(false);
+                setSearchQuery?.(''); // ✅ 清空搜尋欄內容
+              }}
+              style={{ paddingVertical: 10, flex: 1, alignItems: 'center' }}
+            >
+              <Text style={{ color: colors.subtext }}>取消</Text>
+
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setIsSearchModalVisible(false)}
+              style={{ paddingVertical: 10, flex: 1, alignItems: 'center' }}
+            >
+              <Text style={{ color: colors.primary }}>完成</Text>
+            </TouchableOpacity>
+
+
+          </View>
+
         </View>
       )}
 

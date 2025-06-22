@@ -15,7 +15,7 @@ export type RecordingItem = {
   originalUri?: string;
   isEnhanced?: boolean;
   isTrimmed?: boolean;
-
+  isStarred?: boolean; // ⭐️ 
   transcript?: string;
   summaries?: { [mode: string]: string };
   transcriptEdited?: string;

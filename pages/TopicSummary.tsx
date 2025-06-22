@@ -4,7 +4,7 @@ import { View, Text, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { useTheme } from '../constants/ThemeContext';
 import { summarizeWithMode, RecordingItem } from '../utils/audioHelpers';
-import { debugLog, debugWarn,debugError } from '../utils/debugLog';
+import RecorderHeader from '@/components/RecorderHeader';
 
 export default function TopicSummaryPage() {
   const route = useRoute();
@@ -44,19 +44,48 @@ useEffect(() => {
 }, []);
 
 const text = items
-          .map(item => [item.displayName, item.transcript, item.notes].filter(Boolean).join('\n'))
-          .join('\n\n');
+  .map(item => {
+    const lines = [];
+
+    if (!item.displayName) return null;
+
+    lines.push(`🎙️ ${item.displayName}`);
+
+    if (item.summaries?.summary) {
+      lines.push(`🧠 AI工具箱重點整理:\n${item.summaries.summary}`);
+    } else if (item.transcript) {
+      lines.push(`📝 錄音文檔:\n${item.transcript}`);
+    } else if (item.notes) {
+      lines.push(`✍️ 談話筆記:\n${item.notes}`);
+    } else {
+      return null; // 什麼都沒有就不顯示這筆
+    }
+
+    return lines.join('\n\n');
+  })
+  .filter(Boolean) // 移除 null
+  .join('\n\n──────────────\n\n');
 // debug 結束
   return (
-    <View style={[styles.container, { padding: 16 }]}>      
-      <Text style={[styles.recordingName, { marginBottom: 12 }]}>🧠 「{keyword}」的 AI 分析結果</Text>
+<View style={{ flex: 1, backgroundColor: colors.background}}>
+  <RecorderHeader
+  mode="detail" 
+    title={`「${keyword}」重點整理`}
+    onBack={() => navigation.goBack()}
+  />
+
       {loading ? (
         <ActivityIndicator color={colors.primary} size="large" style={{ marginTop: 40 }} />
       ) : (
-        <ScrollView>
-            {/*          <Text style={styles.transcriptText}>{summary}</Text> */}
-          <Text style={styles.transcriptText}>{text}</Text>
-        </ScrollView>
+<ScrollView
+  contentContainerStyle={{
+    padding: 16,
+    backgroundColor: colors.container,
+
+  }}
+>
+  <Text style={styles.transcriptText}>{text}</Text>
+</ScrollView>
       )}
     </View>
   );

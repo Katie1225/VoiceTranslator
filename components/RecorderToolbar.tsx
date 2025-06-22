@@ -155,7 +155,7 @@ const RecorderControls: React.FC<RecorderControlsProps> = ({
                             width: 60,
                             height: 60,
                             borderRadius: 30,
-                            backgroundColor: recording ? '#CF4237' : colors.primary,
+                            backgroundColor: recording ? '#CF4237' : colors.complementary,
                             justifyContent: 'center',
                             alignItems: 'center',
                             shadowColor: '#000',

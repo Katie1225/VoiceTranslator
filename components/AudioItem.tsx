@@ -126,8 +126,6 @@ export const renderNoteBlock = (props: {
         style={{ paddingHorizontal: 16, paddingVertical: 12 }}
         contentContainerStyle={{ paddingBottom: 30 }}
         keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={true} // ✅ 加這個可視化滾動
-        nestedScrollEnabled={true}         // ✅ 安卓特別需要這個讓內層能滾
       >
         {isEditing ? (
           <TextInput

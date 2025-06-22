@@ -71,7 +71,7 @@ const GlobalRecorderState = {
   startTime: 0,
 };
 
-const RecorderPageVoiceNote = () => {
+const SearchResultPage = () => {
   const title = APP_TITLE;
 
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -87,8 +87,6 @@ const RecorderPageVoiceNote = () => {
   const [sortOption, setSortOption] = useState<'latest' | 'oldest' | 'size' | 'name-asc' | 'name-desc' | 'starred'>('latest');
 
   const audioRecorderPlayer = useRef(new AudioRecorderPlayer()).current;
-  const [pendingTranscribe, setPendingTranscribe] = useState<{ index: number; durationSec: number } | null>(null);
-  const [showSplitPrompt, setShowSplitPrompt] = useState(false);
   const [isTranscribingIndex, setIsTranscribingIndex] = useState<number | null>(null);
   const [summarizingState, setSummarizingState] = useState<{ index: number; mode: string; } | null>(null);
   const [isEditingNotesIndex, setIsEditingNotesIndex] = useState<number | null>(null);
@@ -98,13 +96,12 @@ const RecorderPageVoiceNote = () => {
   const [noteTitleEditing, setNoteTitleEditing] = useState('');
   const [notesEditing, setNotesEditing] = useState<string>('');
   const [showNotesIndex, setShowNotesIndex] = useState<number | null>(null);
-  const [currentPartialText, setCurrentPartialText] = useState('');
   const [playbackRates, setPlaybackRates] = useState<Record<string, number>>({});
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+    const [searchKeyword, setSearchKeyword] = useState('');
 
   const flatListRef = useRef<FlatList>(null);
-  const [itemOffsets, setItemOffsets] = useState<Record<number, number>>({});
   const [selectedPlayingIndex, setSelectedPlayingIndex] = useState<number | null>(null);
   const resetEditingState = () => {
     setEditingState({ type: null, index: null, text: '' });
@@ -117,92 +114,12 @@ const RecorderPageVoiceNote = () => {
   } | null>(null);
 
 
-  const userLang = Localization.getLocales()[0]?.languageTag || 'zh-TW';
-
-  const ITEM_HEIGHT = 80; // 音檔名稱高度
-
-  const shouldShowDerivedFiles = (title: string) => {
-    return title === "Voice Clamp";
-  };
-
-
   // 音量狀態
   const [currentDecibels, setCurrentDecibels] = useState(-160);
   const recordingTimeRef = useRef(0);
 
   // 撥放速度
   const pendingPlaybackRateRef = useRef<number>(1.0);
-
-
-
-  const resumeAfterTopUp = useRef<
-    null | { type: 'transcribe'; index: number } | { type: 'summary'; index: number; mode: string }
-  >(null);
-
-  const onTopUpProcessingChangeRef = useRef<(isProcessing: boolean) => void>();
-
-
-  /*
-      //儲值中
-      const [isTopUpProcessing, setIsTopUpProcessing] = useState(false);
-    
-      useEffect(() => {
-        const callback = (isProcessing: boolean) => {
-          setIsTopUpProcessing(isProcessing);
-        };
-    
-        setTopUpProcessingCallback(callback);
-    
-        return () => {
-          setTopUpProcessingCallback(null); // 清理時取消回調
-        };
-      }, []);
-    
-    
-      // 替換原有的 handlePurchase 函數
-      const handleTopUp = async (productId: string) => {
-        debugLog('🟢 handleTopUp called with productId:', productId);
-        try {
-          // 1. 請求儲值
-          await purchaseManager.requestPurchase(productId);
-          setShowTopUpModal(false);
-    
-          // 2. 等待金幣更新（不再需要手動同步，因為 handlePurchaseUpdate 已經處理）
-          // 3. 清除中斷操作的標記
-    
-        } catch (err) {
-          Alert.alert('購買失敗', err instanceof Error ? err.message : '請稍後再試');
-        }
-      };
-    
-      // 在組件中添加 useEffect 來監聽 pendingActions
-      useEffect(() => {
-        const checkPendingActions = async () => {
-          // 使用公共方法替代直接訪問私有屬性
-          if (purchaseManager.hasPendingActions()) {
-            const actions = purchaseManager.getPendingActions();
-            const action = actions[0];
-    
-            if (action.type === 'transcribe' && action.index !== undefined) {
-              const freshUser = await AsyncStorage.getItem('user');
-              if (freshUser) {
-                const user = JSON.parse(freshUser);
-                if (user.coins > 0) { // 確保金幣已更新
-                  const indexToResume = action.index;
-                  purchaseManager.clearPendingActions();
-                  setSelectedPlayingIndex(indexToResume);
-                  setTimeout(() => {
-                    handleTranscribe(indexToResume);
-                  }, 500);
-                }
-              }
-            }
-          }
-        };
-    
-        checkPendingActions();
-      }, [purchaseManager]); // 依賴 purchaseManager 實例
-    */
 
   // 在組件掛載時初始化 IAP
   useEffect(() => {
@@ -217,9 +134,6 @@ const RecorderPageVoiceNote = () => {
       purchaseManager.cleanup();
     };
   }, []);
-
-  // 購買畫面
-  const [showTopUpModal, setShowTopUpModal] = useState(false);
 
   const [selectedContext, setSelectedContext] = useState<{
     type: 'main' | 'enhanced' | 'trimmed';
@@ -265,40 +179,6 @@ const RecorderPageVoiceNote = () => {
     setPlaybackPosition,
     stopPlayback,
   } = useAudioPlayer();
-
-  // WAV錄音配置
-  const recordingOptions = {
-    android: {
-      extension: '.m4a',
-      outputFormat: ANDROID_OUTPUT_FORMATS.MPEG_4,
-      audioEncoder: ANDROID_AUDIO_ENCODERS.AAC,
-      sampleRate: 48000,
-      numberOfChannels: 1,
-      bitRate: 320000,
-      audioSource: 1,
-      enableAcousticEchoCanceler: true,
-      enableNoiseSuppressor: true,
-      keepAudioSessionAlive: true  // 新增這行
-    },
-    ios: {
-      extension: '.m4a',
-      outputFormat: 2, // MPEG4AAC
-      audioQuality: 2, // MAX
-      sampleRate: 48000,
-      numberOfChannels: 1,
-      bitRate: 320000,
-      linearPCMBitDepth: 24,
-      keepAudioSessionAlive: true,  // 新增這行
-    },
-    isMeteringEnabled: true
-  };
-
-  // 帳號登入
-  const { isLoggingIn, setIsLoggingIn } = useLoginContext();
-  useEffect(() => {
-    loadUserAndSync();
-  }, []);
-
 
   useEffect(() => {
     if (GlobalRecorderState.isRecording) {
@@ -367,40 +247,6 @@ const RecorderPageVoiceNote = () => {
     }
   }, [recordings]);
 
-
-  // 錄音工作
-  const task = async (args: any) => {
-    const path = args?.path;
-    if (!path) {
-      debugError("❌ 無錄音路徑");
-      return;
-    }
-
-    debugLog("🎤 開始錄音任務:", path);
-
-    await audioRecorderPlayer.startRecorder(path, {
-      AudioSourceAndroid: 1,
-      OutputFormatAndroid: 2,
-      AudioEncoderAndroid: 3,
-      AudioSamplingRateAndroid: 48000,
-      AudioChannelsAndroid: 1,
-      AudioEncodingBitRateAndroid: 320000,
-    });
-
-    audioRecorderPlayer.addRecordBackListener((e) => {
-      const sec = Math.floor(e.currentPosition / 1000);
-      recordingTimeRef.current = sec;
-    });
-
-    debugLog("✅ 錄音任務啟動完成");
-    await new Promise(async (resolve) => {
-      while (BackgroundService.isRunning()) {
-        await new Promise(res => setTimeout(res, 1000)); // 睡 1 秒 
-      }
-      resolve(true);
-    });
-    debugLog("🛑 背景任務結束");
-  };
 
   // 篩選排序
   const getFilteredSortedRecordings = () => {
@@ -475,169 +321,6 @@ const RecorderPageVoiceNote = () => {
   };
 
 
-  // 開始錄音（帶音量檢測）
-  const autoSplitTimer = useRef<NodeJS.Timeout | null>(null);
-  const startRecording = async () => {
-    closeAllMenus();
-    stopPlayback();
-
-    // 如果權限已被拒絕，直接顯示提示
-    if (permissionStatus === 'denied') {
-      Alert.alert(
-        '權限不足',
-        '需要麥克風和儲存權限才能錄音',
-        [
-          { text: '取消', style: 'cancel' },
-          {
-            text: '前往設定',
-            onPress: () => Linking.openSettings()
-          }
-        ]
-      );
-      return;
-    }
-
-    try {
-      const now = new Date();
-      const filename = `rec_${now.getTime()}.m4a`;
-      const filePath = `${RNFS.ExternalDirectoryPath}/${filename}`;
-
-      debugLog("📁 錄音儲存路徑:", filePath);
-
-      // ✅ 先啟動 BackgroundService，讓它來啟動錄音
-      await BackgroundService.start(task, {
-        taskName: '錄音中',
-        taskTitle: '背景錄音中',
-        taskDesc: '請勿關閉 App，錄音持續中...',
-        taskIcon: {
-          name: 'ic_launcher',
-          type: 'mipmap',
-        },
-        parameters: { path: filePath },
-        allowWhileIdle: true,
-        foregroundServiceType: 'microphone',
-      } as any);
-
-      GlobalRecorderState.isRecording = true;
-      GlobalRecorderState.filePath = filePath;
-      GlobalRecorderState.startTime = Date.now();
-      setRecording(true);
-      recordingTimeRef.current = 0;
-
-      //測試版用開始
-      setTimeout(() => {
-        if (GlobalRecorderState.isRecording) {
-          stopRecording();
-          Alert.alert("⏱ 錄音已達上限", "每段最多錄音 180 分鐘");
-        }
-      }, 180 * 60 * 1000);
-      // 測試版用結束
-    } catch (err) {
-      debugError("❌ 錄音啟動錯誤：", err);
-      Alert.alert("錄音失敗", (err as Error).message || "請檢查權限或儲存空間");
-      setRecording(false);
-    }
-  };
-
-  // 停止錄音
-  let stopInProgress = false; // 👈 加在模組頂部最外層
-
-  const stopRecording = async () => {
-    if (stopInProgress) {
-      debugWarn('⛔️ stopRecording 已在執行中，跳過');
-      return;
-    }
-    stopInProgress = true;
-    try {
-      const uri = await audioRecorderPlayer.stopRecorder();
-      await audioRecorderPlayer.removeRecordBackListener();
-      setRecording(false);
-      recordingStartTimestamp.current = null;
-      GlobalRecorderState.isRecording = false;
-      GlobalRecorderState.filePath = '';
-      GlobalRecorderState.startTime = 0;
-
-      // ✅ 停止前景通知
-      await BackgroundService.stop();
-
-      // 確保路徑格式正確
-      const normalizedUri = uri.startsWith('file://') ? uri : `file://${uri}`;
-
-      // 使用 RNFS 檢查檔案
-      const fileExists = await RNFS.exists(uri);
-      if (!fileExists) {
-        Alert.alert(
-          "錄音失敗",
-          "錄音檔案未建立成功，請確認權限已開啟，並將「背景限制」設為不限制。"
-        );
-        return;
-      }
-
-      const fileInfo = await RNFS.stat(uri);
-
-      // ✅ 加強判斷：如果檔案太小，就刪除！
-      if (fileInfo.size < 3000) { // 小於 3KB 視為失敗錄音
-        await RNFS.unlink(uri);
-        Alert.alert("錄音失敗", "錄音檔案太小，已自動刪除");
-        return;
-      }
-
-      debugLog("📄 錄音檔案資訊:", fileInfo);
-      const name = uri.split('/').pop() || `rec_${Date.now()}.m4a`;
-
-      if (fileInfo.size > 0) {
-        const { displayName, date, durationSec, size } = await generateRecordingMetadata(normalizedUri);
-
-        // 替換 [錄音] 為使用者筆記第一行（如果有）
-        let finalDisplayName = displayName;
-        const firstLine = noteTitleEditing.trim();
-        if (firstLine && displayName.includes('[錄音]')) {
-          finalDisplayName = displayName.replace('[錄音]', `[${firstLine}]`);
-        }
-
-        const newItem: RecordingItem = {
-          size: fileInfo.size,
-          uri: normalizedUri,
-          name, // 確保這個有值
-          displayName: displayName.replace('[錄音]', `[${firstLine || '錄音'}]`), // 確保這個有值
-          derivedFiles: {},
-          date,
-          notes: notesEditing,
-        };
-
-        setShowTranscriptIndex(null);   // 🔧 錄音完後，確保不會自動顯示 transcript
-        setShowSummaryIndex(null);      // 🔧 順便清掉 summary 展開
-        resetEditingState(); // 清除所有編輯狀態
-
-
-        // 換下面那些log   setRecordings(prev => [newItem, ...prev]);
-        debugLog('📌 準備建立新錄音項目', { name, displayName, date });
-
-        setRecordings(prev => {
-          const now = Date.now();
-          const recentItem = prev[0];
-          if (recentItem && Math.abs(now - parseInt(recentItem.name.replace('rec_', '').replace('.m4a', ''))) < 2000) {
-            debugWarn('⛔️ 距離上一筆錄音太近，疑似重複寫入，已跳過');
-            return prev;
-          }
-          return [newItem, ...prev];
-        });
-        setShowNotesModal(false);
-        setNotesEditing('');
-        setNoteTitleEditing('');
-        setSelectedPlayingIndex(0);
-
-      } else {
-        Alert.alert("錄音失敗", "錄音檔案為空");
-        await RNFS.unlink(uri); // 刪除空檔案
-      }
-    } catch (err) {
-      debugError("❌ 停止錄音失敗：", err);
-      Alert.alert("停止錄音失敗", (err as Error).message);
-    }
-  };
-
-
   // 刪除錄音
   const deleteRecording = async (index: number) => {
     Alert.alert(
@@ -704,45 +387,6 @@ const RecorderPageVoiceNote = () => {
       .padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  // 取得音檔
-  const pickAudio = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: 'audio/*',
-        copyToCacheDirectory: true,
-        multiple: false,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-        const { uri, name } = asset;
-
-        const metadata = await generateRecordingMetadata(uri);
-
-        const newItem: RecordingItem = {
-          uri,
-          name,
-          displayName: metadata.displayName,
-          derivedFiles: {},
-          date: metadata.date,
-          notes: notesEditing,
-          size: metadata.size ?? 0, // ✅ 明確設定 size
-        };
-
-        debugLog('📥 匯入錄音 metadata:', {
-          name,
-          displayName: metadata.displayName,
-          date: metadata.date,
-          durationSec: metadata.durationSec,
-        });
-
-        setRecordings(prev => [newItem, ...prev]);
-      }
-    } catch (err) {
-      debugError('❌ 選取音檔失敗', err);
-    }
-  };
-
   // 關閉所有彈出菜單
   const closeAllMenus = (options: {
     preserveEditing?: boolean;
@@ -777,27 +421,6 @@ const RecorderPageVoiceNote = () => {
     );
   }
 
-  // 刪除 summary 其中一項的對應邏輯
-  const handleDeleteSummary = async (index: number) => {
-    const updated = deleteTextRecording(recordings, index, 'summary', summaryMode);
-    setRecordings(updated);
-    await saveRecordings(updated);
-
-    const remainingModes = Object.keys(updated[index]?.summaries || {})
-      .filter(k => updated[index]?.summaries?.[k]);
-
-    if (remainingModes.length > 0) {
-      const preferredOrder = ['summary', 'analysis', 'email', 'news', 'ai_answer'];
-      const nextMode = preferredOrder.find(k => remainingModes.includes(k)) || remainingModes[0];
-      setSummaryMode(nextMode);
-    } else {
-      setSummaryMode('summary'); // reset
-      setShowSummaryIndex(null);
-    }
-
-    setSummarizingState(null);
-  };
-
   // 所有的文字編輯邏輯
   const startEditing = (index: number, type: 'name' | 'transcript' | 'summary' | 'notes') => {
     const editing = prepareEditing(recordings, index, type, summaryMode);
@@ -813,72 +436,6 @@ const RecorderPageVoiceNote = () => {
     resetEditingState();
   };
 
-
-  // 修改文字內容
-  /*
-  const renderNoteSection = (index: number, type: 'transcript' | 'summary' | 'notes') => {
-    const isTranscript = type === 'transcript';
-    const isNotes = type === 'notes';
-    const editingIndex = editingState.type === type ? editingState.index : null;
-    const editValue = editingState.type === type && editingState.index === index ? editingState.text : '';
-    const itemValue =
-      isTranscript
-        ? recordings[index]?.transcript
-        : type === 'summary'
-          ? recordings[index]?.summaries?.[summaryMode] || ''
-          : recordings[index]?.notes || '';
-    debugLog('[renderNoteSection] index=', index, 'type=', type, 'editing=', editingIndex === index);
-
-
-    return renderNoteBlock({
-      type,
-      index,
-      value: itemValue || '',
-      editingIndex,
-      editValue,
-      onChangeEdit: (text: string) => {
-        setEditingState({ type, index, text });
-        if (type === 'notes') {
-          setIsEditingNotesIndex(index);
-        }
-      },
-      onSave: () => {
-        saveEditing();
-        setIsEditingNotesIndex(null);
-      },
-      onCancel: () => {
-        resetEditingState();
-        setIsEditingNotesIndex(null);
-      },
-      onDelete: async () => {
-        if (type === 'summary') {
-          await handleDeleteSummary(index);
-        } else {
-          const updated = deleteTextRecording(recordings, index, type, summaryMode);
-          setRecordings(updated);
-          await saveRecordings(updated);
-          resetEditingState();
-
-          if (type === 'transcript') {
-            setShowTranscriptIndex(null);  // 控制「哪一筆錄音顯示 transcript 區塊」
-            setIsTranscribingIndex(null);  // 控制「哪一筆正在轉文字（轉錄）中」
-          } else if (type === 'notes') {
-            setIsEditingNotesIndex(null);
-          }
-        }
-      },
-
-      onShare: async () => {
-        await shareRecordingNote(recordings[index], type, summaryMode);
-        if (type === 'summary') {
-          setSummarizingState(null);
-        }
-      },
-      styles,
-      colors,
-    });
-  };
-*/
   return (
     <>
       <StatusBar
@@ -896,6 +453,46 @@ const RecorderPageVoiceNote = () => {
             </View>
           ) : (
             <>
+              {/* 搜尋列表 */}
+              {searchQuery.trim().length > 0 && getFilteredSortedRecordings().length > 0 && (
+                <View style={{
+                  position: 'absolute',
+                  top: 53,
+                  left: 0,
+                  right: 0,
+                  paddingHorizontal: 60,
+                  paddingVertical: 10,
+                  backgroundColor: colors.background, // ✅ 背景鋪底（加透明度讓比較柔和）
+                  zIndex: 10,
+                }}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      const itemsToAnalyze = getFilteredSortedRecordings();
+                      navigation.navigate('TopicSummaryPage', {
+                        items: itemsToAnalyze,
+                        keyword: searchQuery.trim()
+                      });
+                    }}
+                    style={{
+                      //       marginTop: 70,
+                      //       marginHorizontal: 16,
+                      paddingVertical: 10,
+                      paddingHorizontal: 20,
+                      backgroundColor: colors.primary,
+                      borderRadius: 50,
+                      alignItems: 'center',
+                      minWidth: 200, // ✅ 最小寬度
+                      alignSelf: 'center', // ✅ 讓按鈕寬度隨內容變化且置中（非必要）
+                    }}
+                  >
+                    <Text style={{ color: 'white', fontSize: 16, fontWeight: 'bold' }}>
+                      「{searchQuery.trim()}」重點整理
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+
               {/* 錄音列表 */}
               <RecorderLists
                 items={getFilteredSortedRecordings()}
@@ -990,138 +587,19 @@ const RecorderPageVoiceNote = () => {
 
               {/* 整個上半段背景 */}
               <View style={{ position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: colors.container, }}>
-                <RecorderHeader
-                mode="main" 
-                  onPickAudio={pickAudio}
-                  onCloseAllMenus={closeAllMenus}
-                  sortOption={sortOption}
-                  setSortOption={setSortOption}
-                  searchQuery={searchQuery}
-                  setSearchQuery={setSearchQuery}
-                  setIsLoggingIn={setIsLoggingIn}
-  rightSlot={
-    searchQuery.trim() ? (
-      <TouchableOpacity
-        onPress={() => {
-          const itemsToAnalyze = getFilteredSortedRecordings();
-          navigation.navigate('TopicSummaryPage', {
-            items: itemsToAnalyze,
-            keyword: searchQuery.trim(),
-          });
-        }}
-      >
-        <Text style={{ color: colors.primary, fontWeight: 'bold' }}>
-          [{searchQuery.trim()}] 重點
-        </Text>
-      </TouchableOpacity>
-    ) : undefined
-  }
-/>
-
+        <RecorderHeader
+        mode="detail" 
+          onBack={() => navigation.goBack()}
+          searchQuery={searchKeyword}
+          setSearchQuery={setSearchKeyword}
+                />
               </View>
-
               {/* 底部工具列 */}
-              {searchQuery.trim() !== '' ? (
                 <SearchToolbar
                   resultCount={getFilteredSortedRecordings().length}
                   onCancelSearch={() => setSearchQuery('')}
                 />
-              ) : (
-                <View style={{
-                  position: 'absolute',
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  backgroundColor: colors.container,
-                  paddingVertical: 10,
-                  borderTopWidth: 3,
-                  borderTopColor: colors.primary,
-                }}>
-                  <RecorderControls
-                    recording={recording}
-                    recordingTimeRef={recordingTimeRef}
-                    startRecording={startRecording}
-                    stopRecording={stopRecording}
-                    pickAudio={pickAudio}
-                    setIsLoggingIn={setIsLoggingIn}
-                    title={title}
-                    currentDecibels={currentDecibels}
-                    onToggleNotesModal={() => {
-                      closeAllMenus();
-                      if (showNotesModal && notesEditing && showNotesIndex !== null) {
-                        const updated = [...recordings];
-                        updated[showNotesIndex].notes = notesEditing;
-                        setRecordings(updated);
-                        saveRecordings(updated);
-                      }
-                      setShowNotesModal(prev => !prev);
-                    }}
-                  />
-                </View>
-              )}
             </>
-          )}
-          {/* 登入遮罩 */}
-          <LoginOverlay />
-          {/* 關鍵筆記 */}
-          {showNotesModal && (
-            <View style={{
-              position: 'absolute',
-              bottom: 95,
-              left: 10,
-              right: 10,
-              backgroundColor: colors.container,
-              borderRadius: 12,
-              borderColor: colors.primary,
-              padding: 12,
-              elevation: 10,
-              zIndex: 999,
-            }}>
-              <Text style={{
-                color: colors.text,
-                fontSize: 16,
-                fontWeight: 'bold',
-                marginBottom: 8,
-              }}>談話筆記</Text>
-
-              {/* 單行主標題輸入 */}
-              <TextInput
-                placeholder="輸入主標題（如：報價進度）"
-                placeholderTextColor="#888"
-                value={noteTitleEditing}
-                onChangeText={setNoteTitleEditing}
-                style={{
-                  height: 36,
-                  paddingHorizontal: 10,
-                  backgroundColor: colors.background,
-                  borderRadius: 8,
-                  borderWidth: 1,
-                  borderColor: colors.primary,
-                  color: colors.text,
-                  marginBottom: 12
-                }}
-              />
-
-              {/* 多行補充內容 */}
-              <TextInput
-                placeholder="補充說明內容（可留空）"
-                placeholderTextColor="#888"
-                value={notesEditing}
-                onChangeText={setNotesEditing}
-                multiline
-                style={{
-                  minHeight: 60,
-                  padding: 10,
-                  backgroundColor: colors.background,
-                  borderRadius: 8,
-                  borderWidth: 1,
-                  borderColor: colors.primary,
-                  color: colors.text,
-                  textAlignVertical: 'top'
-                }}
-              />
-
-            </View>
           )}
           {/* 批量處理音檔 */}
           {isSelectionMode && (
@@ -1140,4 +618,4 @@ const RecorderPageVoiceNote = () => {
   );
 };
 
-export default RecorderPageVoiceNote;
+export default SearchResultPage;

@@ -49,7 +49,7 @@ export const createStyles = (colors: any) => StyleSheet.create({
     padding: 10,
     marginBottom: 12,
     borderWidth:0.5,
-borderColor: colors.primary,
+borderColor: colors.primary + '90',
 
     minHeight: 50,
     flexDirection: 'column',
