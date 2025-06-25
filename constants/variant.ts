@@ -3,5 +3,5 @@ export const APP_VARIANT: string = 'notedebug'; // 可切換為 'note'、'clamp'
 export const nginxVersion: string = 'blue'; // 可切換為 'green(V1)'、'blue' 等
 export const APP_TITLE = 'Voice Note';
 
-export const version : string = '1.4.7;
+export const version : string = '1.4.7';
 export const debugValue: string  = '0';  // 可切換 1 debug, 0 release
