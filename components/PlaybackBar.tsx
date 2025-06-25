@@ -26,12 +26,12 @@ interface PlaybackBarProps {
         index: number | null;
         text: string;
     };
-      setEditingState?: React.Dispatch<React.SetStateAction<{
-    type: 'transcript' | 'summary' | 'name' | 'notes' | null;
-    index: number | null;
-    text: string;
-    mode?: string;
-  }>>;
+    setEditingState?: React.Dispatch<React.SetStateAction<{
+        type: 'transcript' | 'summary' | 'name' | 'notes' | null;
+        index: number | null;
+        text: string;
+        mode?: string;
+    }>>;
     itemIndex?: number;
     setRecordings: React.Dispatch<React.SetStateAction<RecordingItem[]>>;
     saveRecordings: (items: RecordingItem[]) => void;
@@ -99,15 +99,15 @@ const PlaybackBar: React.FC<PlaybackBarProps> = ({
                 {isEditingName ? (
                     <TextInput
                         value={editName}
-onChangeText={(text) => {
-  setEditName(text);
-  if (setEditingState) {
-    setEditingState((prev) => ({
-      ...prev,
-      text, // ✅ 關鍵：把最新輸入的文字存進 editingState.text
-    }));
-  }
-}}
+                        onChangeText={(text) => {
+                            setEditName(text);
+                            if (setEditingState) {
+                                setEditingState((prev) => ({
+                                    ...prev,
+                                    text, // ✅ 關鍵：把最新輸入的文字存進 editingState.text
+                                }));
+                            }
+                        }}
                         onBlur={() => {
                             onEditRename?.(editName);  // ✅ 使用者離開時也儲存一次
                         }}
@@ -126,9 +126,24 @@ onChangeText={(text) => {
                         }}
                         activeOpacity={editableName ? 0.7 : 1}
                     >
-                        <Text style={[styles.audioTitle, { color: colors.text, fontWeight: isVisible ? 'bold' : 'normal' }]} numberOfLines={1}>
-                            {editName}
-                        </Text>
+                        <View style={{ flex: 1, minHeight: 60 }}>
+                            <Text
+                                style={[styles.audioTitle, { color: colors.text, fontWeight: isVisible ? 'bold' : 'normal' }]}
+                                numberOfLines={1}
+                            >
+                                {(editName || '').split('\n')[0]}
+                            </Text>
+                            {item.displayDate && (
+                                <Text
+                                    style={[styles.audioSubtitle, { color: colors.subtext, fontSize: 13 }]}
+                                    numberOfLines={1}
+                                >
+                                    {item.displayDate}
+                                </Text>
+                            )}
+                        </View>
+
+
                     </TouchableOpacity>
                 )}
 

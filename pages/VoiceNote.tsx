@@ -32,7 +32,7 @@ import {
   RecordingItem,
   enhanceAudio, trimSilence,
   transcribeAudio, summarizeWithMode, summarizeModes,
-  parseDateTimeFromDisplayName, generateDisplayName, generateRecordingMetadata,
+  parseDateTimeFromDisplayName, generateDisplayNameParts, generateRecordingMetadata,
   splitAudioByInterval,
 } from '../utils/audioHelpers';
 import { useFileStorage } from '../utils/useFileStorage';
@@ -587,13 +587,15 @@ const RecorderPageVoiceNote = () => {
 
       if (fileInfo.size > 0) {
         const metadata = await generateRecordingMetadata(normalizedUri);
-        const displayName = generateDisplayName(noteTitleEditing, metadata.durationSec);
-
+        const { label, metadataLine }  = generateDisplayNameParts(noteTitleEditing, metadata.durationSec);
+const displayName = label;
+const displayDate = metadataLine;
         const newItem: RecordingItem = {
           size: fileInfo.size,
           uri: normalizedUri,
           name,
-          displayName, // ✅ 正確來源
+          displayName, 
+          displayDate, 
           derivedFiles: {},
           date: metadata.date,
           notes: notesEditing,
@@ -714,8 +716,9 @@ const RecorderPageVoiceNote = () => {
 
         const normalizedUri = uri.replace('file://', '');
         const metadata = await generateRecordingMetadata(normalizedUri);
-        const displayName = generateDisplayName('', metadata.durationSec); // 🔧 這裡沒主標題可填，就給空字串
-
+         const { label, metadataLine }  = generateDisplayNameParts(noteTitleEditing, metadata.durationSec);
+const displayName = label;
+const displayDate = metadataLine;
         debugLog('📥 匯入錄音 metadata:', {
           name,
           displayName,
@@ -727,6 +730,7 @@ const RecorderPageVoiceNote = () => {
           uri: normalizedUri,
           name,
           displayName,
+          displayDate,
           derivedFiles: {},
           date: metadata.date,
           notes: '',

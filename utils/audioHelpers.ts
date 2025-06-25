@@ -12,6 +12,7 @@ export type RecordingItem = {
   uri: string;
   name: string;
   displayName?: string;
+  displayDate?: string;
   originalUri?: string;
   isEnhanced?: boolean;
   isTrimmed?: boolean;
@@ -471,23 +472,28 @@ export function parseDateTimeFromDisplayName(displayName: string): { startTime?:
 }
 
 // displayname 命名準則
-export function generateDisplayName(userTitle: string = '', durationSec: number = 0): string {
+export function generateDisplayNameParts(userTitle: string = '', durationSec: number = 0): {
+  label: string;
+  metadataLine: string;
+} {
   const now = new Date();
-  const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const dateStr = `${now.getMonth() + 1}/${now.getDate()}`;
 
-  // 🕐 時長格式（保證永遠顯示）
-  let durationText = '';
   const h = Math.floor(durationSec / 3600);
   const m = Math.floor((durationSec % 3600) / 60);
   const s = durationSec % 60;
 
-  if (h > 0) durationText = `${h}小${m}分${s}秒`;
-  else if (m > 0) durationText = `${m}分${s}秒`;
-  else durationText = `${s}秒`; // ✅ 就算 0 也會是 '0秒'
+  const durationText =
+    h > 0 ? `${h}小${m}分${s}秒` :
+    m > 0 ? `${m}分${s}秒` :
+    `${s}秒`;
+
+  const time = now.toTimeString().split(' ')[0]; // "HH:MM:SS"
+  const dateStr = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
 
   const label = userTitle.trim() || '錄音';
-  return `${label} ${durationText} ${time} ${dateStr}`;
+  const metadataLine = `${durationText} ${time} ${dateStr}`;
+
+  return { label, metadataLine };
 }
 
 

@@ -624,18 +624,29 @@ export default function NoteDetailPage() {
     <SafeAreaView style={{ backgroundColor: colors.container, flex: 1 }}>
 
       {/* Header */}
-      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: colors.container, }}>
+      
         <RecorderHeader
           mode="detail"
           onBack={() => navigation.goBack()}
           searchQuery={searchKeyword}
           setSearchQuery={setSearchKeyword}
         />
-      </View>
+
 
       {/* 播放列 */}
-      <View style={[styles.container, { marginTop: 54 }]}>
-        <View style={{ marginBottom: 0, marginTop: -10, marginRight: 4, marginLeft: 4 }}>
+      <View style={[styles.container, { marginTop: 0, paddingBottom: 16  }]}>
+<View
+  style={{
+    marginTop: -10,
+    marginHorizontal: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: colors.container,
+    borderWidth: 1,
+    borderColor: colors.border || colors.primary + '22',
+  }}
+>
           <PlaybackBar
             editableName={true}
             editingState={editingState}
@@ -701,7 +712,7 @@ export default function NoteDetailPage() {
         </View>
 
         {/* 三顆切換按鈕 */}
-        <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 12, marginBottom: 0 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 12, marginBottom: 0 ,  marginTop: 10 }}>
           {['note', 'transcript', 'summary'].map((key) => (
             <TouchableOpacity
               key={key}

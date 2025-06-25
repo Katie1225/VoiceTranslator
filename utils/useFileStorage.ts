@@ -143,6 +143,7 @@ const mergeAndValidateRecords = async (
         uri: fileUri,
         name: file.name,
         displayName: old?.displayName || fallbackName,
+        displayDate: old?.displayDate || '',
         derivedFiles: old?.derivedFiles || {},
         date: old?.date || date,
         notes: old?.notes || '',
