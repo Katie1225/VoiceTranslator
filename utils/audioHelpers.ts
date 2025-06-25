@@ -288,14 +288,14 @@ export const transcribeAudio = async (
   transcript: { text: string },
   skippedSilentSegments: number,
   text: string }> => {
-  if (!item.uri || !item.name) {
+  if (!item.uri || !item.displayName) {
     throw new Error('音檔資訊不完整（uri 或 name 為 null）');
   }
 
   // 1. Split into segments
   const segmentUris = await splitAudioIntoSegments(item.uri, 30);
   let accumulatedText = '';
-  const baseName = item.name.replace(/\.[^/.]+$/, '');
+  const baseName = item.displayName.replace(/\.[^/.]+$/, '');
     const silentCounter = { count: 0 };
 
      onPartial?.('⏳ 開始處理音檔...', 0, 0);
@@ -470,21 +470,40 @@ export function parseDateTimeFromDisplayName(displayName: string): { startTime?:
   };
 }
 
+// displayname 命名準則
+export function generateDisplayName(userTitle: string = '', durationSec: number = 0): string {
+  const now = new Date();
+  const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const dateStr = `${now.getMonth() + 1}/${now.getDate()}`;
+
+  // 🕐 時長格式（保證永遠顯示）
+  let durationText = '';
+  const h = Math.floor(durationSec / 3600);
+  const m = Math.floor((durationSec % 3600) / 60);
+  const s = durationSec % 60;
+
+  if (h > 0) durationText = `${h}小${m}分${s}秒`;
+  else if (m > 0) durationText = `${m}分${s}秒`;
+  else durationText = `${s}秒`; // ✅ 就算 0 也會是 '0秒'
+
+  const label = userTitle.trim() || '錄音';
+  return `${label} ${durationText} ${time} ${dateStr}`;
+}
+
+
 // 存檔時封裝
 export async function generateRecordingMetadata(uri: string): Promise<{
-  displayName: string;
   date: string;
   durationSec: number;
-    size: number;
+  size: number;
 }> {
   let durationSec = 0;
-  let durationText = '?秒';
   let startDate = new Date();
 
   try {
     const { duration } = await getAudioDuration(uri);
     durationSec = Math.round(duration);
-    
+
     try {
       const stat = await RNFS.stat(uri);
       const fileEnd = new Date(stat.mtime);
@@ -493,31 +512,18 @@ export async function generateRecordingMetadata(uri: string): Promise<{
       const now = new Date();
       startDate = new Date(now.getTime() - durationSec * 1000);
     }
-
-    const h = Math.floor(durationSec / 3600);
-    const m = Math.floor((durationSec % 3600) / 60);
-    const s = durationSec % 60;
-
-    if (h > 0) durationText = `${h}小${m}分${s}秒`;
-    else if (m > 0) durationText = `${m}分${s}秒`;
-    else durationText = `${s}秒`;
   } catch (error) {
     debugError('獲取音檔時長失敗:', error);
   }
 
-  const hh = startDate.getHours().toString().padStart(2, '0');
-  const mm = startDate.getMinutes().toString().padStart(2, '0');
-  const ss = startDate.getSeconds().toString().padStart(2, '0');
-
-  const displayName = `[錄音] ${durationText} ${hh}:${mm}:${ss} ${startDate.getMonth() + 1}/${startDate.getDate()}`;
-const stat = await RNFS.stat(uri);
+  const stat = await RNFS.stat(uri);
   return {
-    displayName,
     date: startDate.toISOString(),
     durationSec,
-      size: stat.size ?? 0,
+    size: stat.size ?? 0,
   };
 }
+
 
 // 根據指定秒數進行音檔分割（用於使用者點擊後切段）
 export const splitAudioByInterval = async (

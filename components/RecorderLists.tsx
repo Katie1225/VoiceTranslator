@@ -52,6 +52,8 @@ interface Props {
   selectedItems: Set<string>;
   setIsSelectionMode: React.Dispatch<React.SetStateAction<boolean>>;
   setSelectedItems: React.Dispatch<React.SetStateAction<Set<string>>>;
+  selectedPlayingIndex: number | null;
+setSelectedPlayingIndex: React.Dispatch<React.SetStateAction<number | null>>;
 }
 
 const GlobalRecorderState = {
@@ -67,7 +69,9 @@ const RecorderLists: React.FC<Props> = ({
   isSelectionMode,
   selectedItems,
   setIsSelectionMode,
-  setSelectedItems
+  setSelectedItems,
+  selectedPlayingIndex,
+setSelectedPlayingIndex,
 }) => {
   const { colors, styles, isDarkMode } = useTheme();
   const { recordings } = useRecordingContext();
@@ -90,7 +94,6 @@ const RecorderLists: React.FC<Props> = ({
 
   const flatListRef = useRef<FlatList>(null);
   const [itemOffsets, setItemOffsets] = useState<Record<number, number>>({});
-  const [selectedPlayingIndex, setSelectedPlayingIndex] = useState<number | null>(null);
   const resetEditingState = () => {
     setEditingState({ type: null, index: null, text: '' });
     setIsEditingNotesIndex(null);
@@ -296,17 +299,30 @@ const RecorderLists: React.FC<Props> = ({
   };
 
   // 所有的文字編輯邏輯
+  // 確保 startEditing 函數正確處理
   const startEditing = (index: number, type: 'name' | 'transcript' | 'summary' | 'notes') => {
     const editing = prepareEditing(recordings, index, type, summaryMode);
-    setEditingState(editing);
-    setSelectedIndex(null);
+    if (editing) {
+      setEditingState(editing);
+      setSelectedIndex(null);
+    } else {
+      debugError('Failed to prepare editing state');
+    }
   };
 
+  // 確保 saveEditing 函數正確處理
   const saveEditing = () => {
-    const updated = saveEditedRecording(recordings, editingState, summaryMode);
-    setRecordings(updated);
-    saveRecordings(updated);
-    resetEditingState();
+    try {
+      const updated = saveEditedRecording(recordings, editingState, summaryMode);
+      if (updated) {
+        setRecordings(updated);
+        saveRecordings(updated);
+        resetEditingState();
+      }
+    } catch (err) {
+      debugError('Failed to save editing:', err);
+      Alert.alert('儲存失敗', '無法儲存變更，請稍後再試');
+    }
   };
 
   return (
@@ -379,6 +395,11 @@ const RecorderLists: React.FC<Props> = ({
                     const hasAnyContent = item.transcript || item.summaries?.[summaryMode] || '';
                     const isVisible = showTranscriptIndex === index || showSummaryIndex === index;
                     const canHide = hasAnyContent && isVisible;
+
+                    const visibleMiniType =
+                      showNotesIndex === index ? 'notes' :
+                        showTranscriptIndex === index ? 'transcript' :
+                          showSummaryIndex === index ? 'summary' : null;
 
                     return (
                       <View
@@ -470,7 +491,7 @@ const RecorderLists: React.FC<Props> = ({
                                   setPlaybackPosition(positionMs);
                                 }
                               }}
-                              onRename={(newName) => {
+                              onEditRename={(newName) => {
                                 const updated = [...recordings];
                                 updated[index].displayName = newName;
                                 setRecordings(updated);
@@ -502,10 +523,11 @@ const RecorderLists: React.FC<Props> = ({
                               colors={colors}
                               showSpeedControl={true}
                               editingState={editingState}
+                              setEditingState={setEditingState}
                               itemIndex={index}
-                              
-                                  setRecordings={setRecordings}
-  saveRecordings={saveRecordings}
+
+                              setRecordings={setRecordings}
+                              saveRecordings={saveRecordings}
                               renderRightButtons={
                                 editingState.type === 'name' && editingState.index === index ? (
                                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -567,115 +589,103 @@ const RecorderLists: React.FC<Props> = ({
                             </View>
 
                             {/* 轉文字 & 重點摘要按鈕*/}
-                            {(isCurrentPlaying
-                            ) && (
-                                <View style={styles.actionButtons}>
-                                  <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 }}>
-                                    {/* 談話筆記 */}
-                                    <TouchableOpacity
+                            {isCurrentPlaying && (
+                              <View style={styles.actionButtons}>
+                                <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 }}>
+                                  {/* 談話筆記 */}
+                                  <TouchableOpacity
+                                    style={{
+                                      paddingVertical: 5,
+                                      paddingHorizontal: 8,
+                                      backgroundColor: visibleMiniType === 'notes' ? colors.primary : colors.primary + '80',
+                                      borderRadius: 8,
+                                      opacity: isAnyProcessing ? 0.4 : 1,
+                                    }}
+                                    disabled={isAnyProcessing || (editingState.type === 'notes' && editingState.index !== null)}
+                                    onPress={() => {
+                                      closeAllMenus();
+                                      stopPlayback();
+                                      navigation.navigate('NoteDetail', {
+                                        index,
+                                        type: 'notes',
+                                      });
+                                    }}
+                                  >
+                                    <Text
                                       style={{
-                                        paddingVertical: 5,
-                                        paddingHorizontal: 8,
-                                        backgroundColor: showNotesIndex === index
-                                          ? colors.primary
-                                          : colors.primary + '80',
-                                        borderRadius: 8,
-                                        opacity: isAnyProcessing ? 0.4 : 1,
-                                      }}
-                                      disabled={isAnyProcessing || (editingState.type === 'notes' && editingState.index !== null)}
-
-                                      onPress={() => {
-                                        closeAllMenus();
-                                        stopPlayback();
-                                        navigation.navigate('NoteDetail', {
-                                          item,
-                                          index,
-                                          type: 'notes'
-                                        });
+                                        color: visibleMiniType === 'notes' ? colors.text : colors.subtext,
+                                        fontSize: 13,
+                                        textAlign: 'center',
                                       }}
                                     >
-                                      <Text
-                                        style={{
-                                          color: showNotesIndex === index ? colors.text : colors.subtext,
-                                          fontSize: 13,
-                                          textAlign: 'center',
-                                          //   fontWeight: showNotesIndex === index ? 'bold' : 'normal',
-                                        }}
-                                      >談話筆記</Text>
-                                    </TouchableOpacity>
+                                      談話筆記
+                                    </Text>
+                                  </TouchableOpacity>
 
-                                    {/* 轉文字按鈕 */}
-                                    <TouchableOpacity
+                                  {/* 錄音文檔 */}
+                                  <TouchableOpacity
+                                    style={{
+                                      paddingVertical: 5,
+                                      paddingHorizontal: 8,
+                                      backgroundColor: visibleMiniType === 'transcript' ? colors.primary : colors.primary + '80',
+                                      borderRadius: 8,
+                                      opacity: isAnyProcessing ? 0.4 : 1,
+                                    }}
+                                    disabled={isAnyProcessing}
+                                    onPress={() => {
+                                      closeAllMenus();
+                                      stopPlayback();
+                                      navigation.navigate('NoteDetail', {
+                                        index,
+                                        type: 'transcript',
+                                        shouldTranscribe: !recordings[index].transcript,
+                                      });
+                                    }}
+                                  >
+                                    <Text
                                       style={{
-                                        paddingVertical: 5,
-                                        paddingHorizontal: 8,
-                                        backgroundColor: showTranscriptIndex === index
-                                          ? colors.primary
-                                          : colors.primary + '80',
-                                        borderRadius: 8,
-                                        opacity: isAnyProcessing ? 0.4 : 1,
-                                      }}
-                                      disabled={isAnyProcessing}
-
-                                      onPress={async () => {
-                                        closeAllMenus();
-                                        stopPlayback();
-                                        navigation.navigate('NoteDetail', {
-                                          item: recordings[index],
-                                          index,
-                                          type: 'transcript',
-                                          shouldTranscribe: !recordings[index].transcript // 如果沒有轉文字才觸發
-                                        });
+                                        color: visibleMiniType === 'transcript' ? colors.text : colors.subtext,
+                                        fontSize: 13,
+                                        textAlign: 'center',
                                       }}
                                     >
-                                      <Text
-                                        style={{
-                                          color: showTranscriptIndex === index ? colors.text : colors.subtext,
-                                          fontSize: 13,
-                                          textAlign: 'center',
-                                          //fontWeight: showTranscriptIndex === index ? 'bold' : 'normal',
-                                        }}
-                                      >錄音文檔</Text>
-                                    </TouchableOpacity>
+                                      錄音文檔
+                                    </Text>
+                                  </TouchableOpacity>
 
-                                    {/* AI工具箱按鈕 */}
-                                    <TouchableOpacity
+                                  {/* AI工具箱 */}
+                                  <TouchableOpacity
+                                    style={{
+                                      paddingVertical: 5,
+                                      paddingHorizontal: 8,
+                                      backgroundColor: visibleMiniType === 'summary' ? colors.primary : colors.primary + '80',
+                                      borderRadius: 8,
+                                      opacity: item.transcript && !isAnyProcessing ? 1 : 0.4,
+                                    }}
+                                    disabled={!item.transcript || isAnyProcessing}
+                                    onPress={() => {
+                                      closeAllMenus();
+                                      stopPlayback();
+                                      navigation.navigate('NoteDetail', {
+                                        index,
+                                        type: 'summary',
+                                        summaryMode,
+                                      });
+                                    }}
+                                  >
+                                    <Text
                                       style={{
-                                        paddingVertical: 5,
-                                        paddingHorizontal: 8,
-                                        backgroundColor: showSummaryIndex === index
-                                          ? colors.primary
-                                          : colors.primary + '80',
-                                        borderRadius: 8,
-                                        opacity: item.transcript && !isAnyProcessing ? 1 : 0.4,
-                                      }}
-                                      disabled={!item.transcript || isAnyProcessing}
-
-                                      onPress={() => {
-                                        closeAllMenus();
-                                        stopPlayback();
-                                        navigation.navigate('NoteDetail', {
-                                          item,
-                                          index,
-                                          type: 'summary',
-                                          summaryMode
-                                        });
+                                        color: visibleMiniType === 'summary' ? colors.text : colors.subtext,
+                                        fontSize: 13,
+                                        textAlign: 'center',
                                       }}
                                     >
-                                      <Text
-                                        style={{
-                                          color: showSummaryIndex === index ? colors.text : colors.subtext,
-                                          fontSize: 13,
-                                          textAlign: 'center',
-                                          //fontWeight: showSummaryIndex === index ? 'bold' : 'normal',
-                                        }}
-                                      >AI工具箱</Text>
-                                    </TouchableOpacity>
-                                  </View>
+                                      AI工具箱
+                                    </Text>
+                                  </TouchableOpacity>
                                 </View>
-                              )}
-
-
+                              </View>
+                            )}
                           </View>
 
                         </TouchableOpacity>

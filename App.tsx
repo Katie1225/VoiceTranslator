@@ -29,7 +29,6 @@ const SelectedPage = variantMap[APP_VARIANT] || (() => {
 export type RootStackParamList = {
   RecorderPage: undefined;
   NoteDetail: {
-    item: RecordingItem;
     index: number;
     type: 'notes' | 'transcript' | 'summary';
     summaryMode?: string;

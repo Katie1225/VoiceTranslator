@@ -32,7 +32,7 @@ import {
   RecordingItem,
   enhanceAudio, trimSilence,
   transcribeAudio, summarizeWithMode, summarizeModes,
-  parseDateTimeFromDisplayName, generateRecordingMetadata,
+  parseDateTimeFromDisplayName, generateDisplayName, generateRecordingMetadata,
   splitAudioByInterval,
 } from '../utils/audioHelpers';
 import { useFileStorage } from '../utils/useFileStorage';
@@ -586,48 +586,43 @@ const RecorderPageVoiceNote = () => {
       const name = uri.split('/').pop() || `rec_${Date.now()}.m4a`;
 
       if (fileInfo.size > 0) {
-        const { displayName, date, durationSec, size } = await generateRecordingMetadata(normalizedUri);
-
-        // 替換 [錄音] 為使用者筆記第一行（如果有）
-        let finalDisplayName = displayName;
-        const firstLine = noteTitleEditing.trim();
-        if (firstLine && displayName.includes('[錄音]')) {
-          finalDisplayName = displayName.replace('[錄音]', `[${firstLine}]`);
-        }
+        const metadata = await generateRecordingMetadata(normalizedUri);
+        const displayName = generateDisplayName(noteTitleEditing, metadata.durationSec);
 
         const newItem: RecordingItem = {
           size: fileInfo.size,
           uri: normalizedUri,
-          name, // 確保這個有值
-          displayName: displayName.replace('[錄音]', `[${firstLine || '錄音'}]`), // 確保這個有值
+          name,
+          displayName, // ✅ 正確來源
           derivedFiles: {},
-          date,
+          date: metadata.date,
           notes: notesEditing,
         };
 
-        setShowTranscriptIndex(null);   // 🔧 錄音完後，確保不會自動顯示 transcript
-        setShowSummaryIndex(null);      // 🔧 順便清掉 summary 展開
-        resetEditingState(); // 清除所有編輯狀態
-
-
-        // 換下面那些log   setRecordings(prev => [newItem, ...prev]);
-        debugLog('📌 準備建立新錄音項目', { name, displayName, date });
-
+        debugLog('📌 建立新錄音項目', { name, displayName });
+        
         setRecordings(prev => {
           const now = Date.now();
           const recentItem = prev[0];
-          if (recentItem && Math.abs(now - parseInt(recentItem.name.replace('rec_', '').replace('.m4a', ''))) < 2000) {
+          if (
+            recentItem &&
+            Math.abs(now - parseInt(recentItem.name.replace('rec_', '').replace('.m4a', ''))) < 2000
+          ) {
             debugWarn('⛔️ 距離上一筆錄音太近，疑似重複寫入，已跳過');
             return prev;
           }
           return [newItem, ...prev];
         });
+
+        setShowTranscriptIndex(null);
+        setShowSummaryIndex(null);
+        resetEditingState();
         setShowNotesModal(false);
         setNotesEditing('');
         setNoteTitleEditing('');
-        setSelectedPlayingIndex(0);
-
-      } else {
+       setSelectedPlayingIndex(0);
+      }
+      else {
         Alert.alert("錄音失敗", "錄音檔案為空");
         await RNFS.unlink(uri); // 刪除空檔案
       }
@@ -717,24 +712,26 @@ const RecorderPageVoiceNote = () => {
         const asset = result.assets[0];
         const { uri, name } = asset;
 
-        const metadata = await generateRecordingMetadata(uri);
-
-        const newItem: RecordingItem = {
-          uri,
-          name,
-          displayName: metadata.displayName,
-          derivedFiles: {},
-          date: metadata.date,
-          notes: notesEditing,
-          size: metadata.size ?? 0, // ✅ 明確設定 size
-        };
+        const normalizedUri = uri.replace('file://', '');
+        const metadata = await generateRecordingMetadata(normalizedUri);
+        const displayName = generateDisplayName('', metadata.durationSec); // 🔧 這裡沒主標題可填，就給空字串
 
         debugLog('📥 匯入錄音 metadata:', {
           name,
-          displayName: metadata.displayName,
+          displayName,
           date: metadata.date,
           durationSec: metadata.durationSec,
         });
+
+        const newItem: RecordingItem = {
+          uri: normalizedUri,
+          name,
+          displayName,
+          derivedFiles: {},
+          date: metadata.date,
+          notes: '',
+          size: metadata.size ?? 0,
+        };
 
         setRecordings(prev => [newItem, ...prev]);
       }
@@ -742,6 +739,7 @@ const RecorderPageVoiceNote = () => {
       debugError('❌ 選取音檔失敗', err);
     }
   };
+
 
   // 關閉所有彈出菜單
   const closeAllMenus = (options: {
@@ -813,72 +811,6 @@ const RecorderPageVoiceNote = () => {
     resetEditingState();
   };
 
-
-  // 修改文字內容
-  /*
-  const renderNoteSection = (index: number, type: 'transcript' | 'summary' | 'notes') => {
-    const isTranscript = type === 'transcript';
-    const isNotes = type === 'notes';
-    const editingIndex = editingState.type === type ? editingState.index : null;
-    const editValue = editingState.type === type && editingState.index === index ? editingState.text : '';
-    const itemValue =
-      isTranscript
-        ? recordings[index]?.transcript
-        : type === 'summary'
-          ? recordings[index]?.summaries?.[summaryMode] || ''
-          : recordings[index]?.notes || '';
-    debugLog('[renderNoteSection] index=', index, 'type=', type, 'editing=', editingIndex === index);
-
-
-    return renderNoteBlock({
-      type,
-      index,
-      value: itemValue || '',
-      editingIndex,
-      editValue,
-      onChangeEdit: (text: string) => {
-        setEditingState({ type, index, text });
-        if (type === 'notes') {
-          setIsEditingNotesIndex(index);
-        }
-      },
-      onSave: () => {
-        saveEditing();
-        setIsEditingNotesIndex(null);
-      },
-      onCancel: () => {
-        resetEditingState();
-        setIsEditingNotesIndex(null);
-      },
-      onDelete: async () => {
-        if (type === 'summary') {
-          await handleDeleteSummary(index);
-        } else {
-          const updated = deleteTextRecording(recordings, index, type, summaryMode);
-          setRecordings(updated);
-          await saveRecordings(updated);
-          resetEditingState();
-
-          if (type === 'transcript') {
-            setShowTranscriptIndex(null);  // 控制「哪一筆錄音顯示 transcript 區塊」
-            setIsTranscribingIndex(null);  // 控制「哪一筆正在轉文字（轉錄）中」
-          } else if (type === 'notes') {
-            setIsEditingNotesIndex(null);
-          }
-        }
-      },
-
-      onShare: async () => {
-        await shareRecordingNote(recordings[index], type, summaryMode);
-        if (type === 'summary') {
-          setSummarizingState(null);
-        }
-      },
-      styles,
-      colors,
-    });
-  };
-*/
   return (
     <>
       <StatusBar
@@ -901,97 +833,20 @@ const RecorderPageVoiceNote = () => {
                 items={getFilteredSortedRecordings()}
                 searchQuery={searchQuery}
                 setRecordings={setRecordings}
-                isSelectionMode={isSelectionMode}
-                selectedItems={selectedItems}
-                setIsSelectionMode={setIsSelectionMode}
-                setSelectedItems={setSelectedItems}
+                isSelectionMode={isSelectionMode}  // 	畫面要不要顯示「勾選框 UI」的開關
+                selectedItems={selectedItems}      // 	哪些錄音（用 URI）目前已被選中
+                setIsSelectionMode={setIsSelectionMode}  // 切換多選模式（進入／退出）
+                setSelectedItems={setSelectedItems}  // 新增／移除已選項目，或清空全部
+                  selectedPlayingIndex={selectedPlayingIndex}  // 選擇想撥放的音檔
+  setSelectedPlayingIndex={setSelectedPlayingIndex}         // 哪個音檔是被選中的
               />
 
-              {/* 三點選單浮動層（全域定位） */}
-              {selectedContext && (
-                <MoreMenu
-                  index={selectedContext.index}
-                  item={
-                    selectedContext.type === 'main'
-                      ? recordings[selectedContext.index]
-                      : recordings[selectedContext.index].derivedFiles?.[selectedContext.type]!
-                  }
-                  isDerived={selectedContext.type !== 'main'}
-                  title={title}
-                  position={selectedContext.position}
-                  styles={styles}
-                  closeAllMenus={() => setSelectedContext(null)}
-                  onRename={(index) => {
-                    setSelectedContext(null);
-                    setTimeout(() => {
-                      startEditing(index, 'name')
-                    }, 0);
-                  }}
-                  onShare={(uri) => {
-                    shareRecordingFile(uri, () => setSelectedIndex(null));
-                  }}
-                  onDelete={(index) => {
-                    deleteRecording(index); // 一次刪整包
-                    setShowTranscriptIndex(null);
-                    setShowSummaryIndex(null);
-                    setShowNotesIndex(null);
-                    resetEditingState();
-                    setSelectedContext(null);
-                  }}
-                  showDelete={true}
-                />
-              )}
-
               {/* 放在這裡！不要放在 map 循環內部 */}
-              {/* 加速器 */}
-              {speedMenuIndex !== null && speedMenuPosition && (
-                <View style={{
-                  position: 'absolute',
-                  left: speedMenuPosition.x - 60,
-                  top: speedMenuPosition.y + 5,
-                  backgroundColor: colors.container,
-                  borderRadius: 8,
-                  padding: 8,
-                  zIndex: 9999,
-                  elevation: 10,
-                }}>
-                  {[0.75, 1.0, 1.25, 1.5, 2.0].map((rate) => (
-                    <TouchableOpacity
-                      key={rate}
-                      style={[
-                        styles.optionButton,
-                        currentPlaybackRate === rate && { backgroundColor: colors.primary + '20' },
-                      ]}
-                      onPress={async () => {
-                        closeAllMenus();
-
-                        const uri = recordings[speedMenuIndex].uri;
-                        setPlaybackRates(prev => ({ ...prev, [uri]: rate })); // ✅ 記住這筆的速度
-
-                        if (isPlaying && playingUri === uri) {
-                          await setPlaybackRate(rate); // ✅ 當下正在播放才立即套用
-                        }
-
-                        setSpeedMenuIndex(null);
-                      }}
-                    >
-                      <Text
-                        style={[
-                          styles.optionText,
-                          currentPlaybackRate === rate && { fontWeight: 'bold' },
-                        ]}
-                      >
-                        {rate}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
 
               {/* 整個上半段背景 */}
               <View style={{ position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: colors.container, }}>
                 <RecorderHeader
-                mode="main" 
+                  mode="main"
                   onPickAudio={pickAudio}
                   onCloseAllMenus={closeAllMenus}
                   sortOption={sortOption}
@@ -999,24 +854,24 @@ const RecorderPageVoiceNote = () => {
                   searchQuery={searchQuery}
                   setSearchQuery={setSearchQuery}
                   setIsLoggingIn={setIsLoggingIn}
-  rightSlot={
-    searchQuery.trim() ? (
-      <TouchableOpacity
-        onPress={() => {
-          const itemsToAnalyze = getFilteredSortedRecordings();
-          navigation.navigate('TopicSummaryPage', {
-            items: itemsToAnalyze,
-            keyword: searchQuery.trim(),
-          });
-        }}
-      >
-        <Text style={{ color: colors.primary, fontWeight: 'bold' }}>
-          [{searchQuery.trim()}] 重點
-        </Text>
-      </TouchableOpacity>
-    ) : undefined
-  }
-/>
+                  rightSlot={
+                    searchQuery.trim() ? (
+                      <TouchableOpacity
+                        onPress={() => {
+                          const itemsToAnalyze = getFilteredSortedRecordings();
+                          navigation.navigate('TopicSummaryPage', {
+                            items: itemsToAnalyze,
+                            keyword: searchQuery.trim(),
+                          });
+                        }}
+                      >
+                        <Text style={{ color: colors.primary, fontWeight: 'bold' }}>
+                          [{searchQuery.trim()}] 重點
+                        </Text>
+                      </TouchableOpacity>
+                    ) : undefined
+                  }
+                />
 
               </View>
 

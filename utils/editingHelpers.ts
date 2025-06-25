@@ -15,7 +15,7 @@ export function prepareEditing(
 
   const text =
     type === 'name'
-      ? item.displayName || item.name
+      ? item.displayName || ''
       : type === 'transcript'
         ? item.transcript || ''
         : type === 'summary'
@@ -134,7 +134,7 @@ export async function shareRecordingNote(
 
   if (!text.trim()) return;
 
-  const filename = item.displayName || item.name || '';
+  const filename = item.displayName || '';
   const prefix = `${filename} - ${label}\n\n`;
 
 

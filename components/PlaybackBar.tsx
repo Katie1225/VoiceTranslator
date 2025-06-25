@@ -14,7 +14,7 @@ interface PlaybackBarProps {
     editableName?: boolean;
     onPlayPause: () => void;
     onSeek: (positionMs: number) => void;
-    onRename?: (newName: string) => void;
+    onEditRename?: (newName: string) => void;
     onMorePress: (e: any) => void;
     onSpeedPress: (e: any) => void;
     styles: any;
@@ -26,6 +26,12 @@ interface PlaybackBarProps {
         index: number | null;
         text: string;
     };
+      setEditingState?: React.Dispatch<React.SetStateAction<{
+    type: 'transcript' | 'summary' | 'name' | 'notes' | null;
+    index: number | null;
+    text: string;
+    mode?: string;
+  }>>;
     itemIndex?: number;
     setRecordings: React.Dispatch<React.SetStateAction<RecordingItem[]>>;
     saveRecordings: (items: RecordingItem[]) => void;
@@ -41,7 +47,7 @@ const PlaybackBar: React.FC<PlaybackBarProps> = ({
     editableName = false,
     onPlayPause,
     onSeek,
-    onRename,
+    onEditRename,
     onMorePress,
     onSpeedPress,
     styles,
@@ -49,12 +55,13 @@ const PlaybackBar: React.FC<PlaybackBarProps> = ({
     showSpeedControl = true,
     renderRightButtons,
     editingState,
+    setEditingState,
     itemIndex,
     setRecordings,
     saveRecordings,
 }) => {
     const isEditingName = editableName && editingState?.type === 'name' && editingState?.index === itemIndex;
-    const [editName, setEditName] = React.useState(item.displayName || item.name);
+    const [editName, setEditName] = React.useState(item.displayName || '');
 
     const formatTime = (ms: number) => {
         const totalSeconds = Math.floor(ms / 1000);
@@ -67,6 +74,10 @@ const PlaybackBar: React.FC<PlaybackBarProps> = ({
         }
         return `${minutes}:${seconds.toString().padStart(2, '0')}`;
     };
+
+    React.useEffect(() => {
+        setEditName(item.displayName || '');
+    }, [item.displayName]);
 
     return (
         <View
@@ -88,10 +99,19 @@ const PlaybackBar: React.FC<PlaybackBarProps> = ({
                 {isEditingName ? (
                     <TextInput
                         value={editName}
-                        onChangeText={setEditName}
-                        onSubmitEditing={() => {
-                            onRename?.(editName);
+onChangeText={(text) => {
+  setEditName(text);
+  if (setEditingState) {
+    setEditingState((prev) => ({
+      ...prev,
+      text, // ✅ 關鍵：把最新輸入的文字存進 editingState.text
+    }));
+  }
+}}
+                        onBlur={() => {
+                            onEditRename?.(editName);  // ✅ 使用者離開時也儲存一次
                         }}
+
                         style={[
                             styles.audioTitleInput,
                             { color: colors.text, borderColor: colors.primary }
@@ -123,7 +143,7 @@ const PlaybackBar: React.FC<PlaybackBarProps> = ({
                         });
                     }}
 
-                    style={{ marginRight: 10 ,  top: -15}}
+                    style={{ marginRight: 10, top: -15 }}
                 >
                     <Icon
                         name={item.isStarred ? 'star' : 'star-outline'}

@@ -11,13 +11,15 @@ export const useFileStorage = (setRecordings: React.Dispatch<React.SetStateActio
   const saveRecordings = async (items: RecordingItem[]) => {
     try {
       // 先驗證檔案是否存在
-      const validItems = await Promise.all(
-        items.map(async item => {
-          const path = item.uri.replace(/^file:\/\//, '');
-          const exists = await RNFS.exists(path);
-          return exists ? item : null;
-        })
-      );
+const validItems = await Promise.all(
+  items.map(async item => {
+    const path = item.uri.replace(/^file:\/\//, '');
+    const exists = await RNFS.exists(path);
+
+    // ✅ 這裡才重新用 spread 保證你拿的是更新過的 item，不是舊的 reference
+    return exists ? { ...item } : null;
+  })
+);
 
       const filteredItems = validItems.filter(Boolean) as RecordingItem[];
 
@@ -110,69 +112,57 @@ export const useFileStorage = (setRecordings: React.Dispatch<React.SetStateActio
   };
 
   // 輔助函數 3：智能合併與驗證
-  const mergeAndValidateRecords = async (
-    existingData: RecordingItem[],
-    m4aFiles: RNFS.ReadDirItem[]
-  ) => {
-    // 正規化路徑比對函數
-    const normalizePath = (path: string) =>
-      path.replace(/^file:\/+/i, '').toLowerCase().replace(/\/+$/, '');
+const mergeAndValidateRecords = async (
+  existingData: RecordingItem[],
+  m4aFiles: RNFS.ReadDirItem[]
+) => {
+  const normalizePath = (path: string) =>
+    decodeURI(path.replace(/^file:\/+/, '').replace(/\/+$/, '')).toLowerCase();
 
-    // 建立現有記錄的索引（使用正規化路徑）
-    const existingRecordsMap = new Map<string, RecordingItem>();
-    existingData.forEach(item => {
-      existingRecordsMap.set(normalizePath(item.uri), item);
-    });
+  const existingRecordsMap = new Map<string, RecordingItem>();
+  existingData.forEach(item => {
+    existingRecordsMap.set(normalizePath(item.uri), item);
+  });
 
-    // 合併流程
-    const result: RecordingItem[] = [];
+  const result: RecordingItem[] = [];
 
-    // 首先保留所有現有有效記錄
-    for (const item of existingData) {
-      try {
-        const path = normalizePath(item.uri);
-        if (await RNFS.exists(path)) {
-          result.push(item);
-        } else {
-          debugWarn('移除不存在檔案的記錄:', item.uri);
-        }
-      } catch (error) {
-        debugWarn('驗證記錄時出錯:', item.uri, error);
-      }
+  for (const file of m4aFiles) {
+    try {
+      const fileUri = `file://${file.path}`;
+      const normalizedPath = normalizePath(fileUri);
+
+      const old = existingRecordsMap.get(normalizedPath);
+      const { date, durationSec, size } = await generateRecordingMetadata(fileUri);
+
+      const now = new Date();
+      const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const dateStr = `${now.getMonth() + 1}/${now.getDate()}`;
+      const fallbackName = `錄音 ${time} ${dateStr}`;
+
+      result.push({
+        uri: fileUri,
+        name: file.name,
+        displayName: old?.displayName || fallbackName,
+        derivedFiles: old?.derivedFiles || {},
+        date: old?.date || date,
+        notes: old?.notes || '',
+        transcript: old?.transcript || '',
+        summaries: old?.summaries || {},
+        isStarred: old?.isStarred || false,
+        size: old?.size || size,
+      });
+    } catch (error) {
+      debugWarn('處理新音檔失敗，已跳過:', file.name, error);
     }
+  }
 
-    // 然後添加新掃描到的未記錄檔案
-    for (const file of m4aFiles) {
-      try {
-        const fileUri = `file://${file.path}`;
-        const normalizedPath = normalizePath(fileUri);
+  return result.sort((a, b) => {
+    const dateA = a.date ? new Date(a.date).getTime() : 0;
+    const dateB = b.date ? new Date(b.date).getTime() : 0;
+    return dateB - dateA;
+  });
+};
 
-        if (!existingRecordsMap.has(normalizedPath)) {
-          // 🧠 正確取得 metadata（包含 displayName 與 duration）
-          const { displayName, date, durationSec } = await generateRecordingMetadata(fileUri);
-
-          result.push({
-            uri: fileUri,
-            name: file.name,
-            displayName, // ✅ 正確 displayName
-            derivedFiles: {},
-            date,
-            notes: '',
-          });
-
-          debugLog('➕ 新增未記錄音檔（含 metadata）:', file.name);
-        }
-      } catch (error) {
-        debugWarn('處理新音檔失敗，已跳過:', file.name, error);
-      }
-    }
-    // 按修改時間降序排序
-    return result.sort((a, b) => {
-      const dateA = a.date ? new Date(a.date).getTime() : 0;
-      const dateB = b.date ? new Date(b.date).getTime() : 0;
-      return dateB - dateA;
-    });
-  };
 
   const safeDeleteFile = async (uri: string) => {
     try {
