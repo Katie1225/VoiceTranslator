@@ -337,6 +337,10 @@ export default function NoteDetailPage() {
 
   //轉文字邏輯
   const handleTranscribe = async (): Promise<void> => {
+
+    if (isTranscribing) return; // ✅ 避免同時跑兩個
+    setIsTranscribing(true);
+
     // ✅ 如果已有逐字稿，就不重複處理
     const currentItem = recordings[index];
     if (currentItem?.transcript) return;
@@ -406,50 +410,72 @@ export default function NoteDetailPage() {
         setRecordings(updated);
         setFinalTranscript(placeholder);
         setPartialTranscript('');
-        //    setIsTranscribing(false);
         return;
       }
 
-      if (rawText.length < 20) {
-        // ✅ 顯示短內容但不做摘要
+      const notesText = currentItem.notes || '';
+      const totalTextLength = (rawText + notesText).trim().length;
+
+      if (totalTextLength < 20) {
+        const autoSummaries: Record<string, string> = {};
+        summarizeModes.forEach(mode => {
+          autoSummaries[mode.key] = '內容缺乏足夠資訊分析';
+        });
+
+        const updatedItem: RecordingItem = {
+          ...currentItem,
+          transcript: rawText,
+          summaries: autoSummaries,
+        };
+
+        const updated = [...recordings];
+        updated[index] = updatedItem;
+
+        await saveRecordings(updated);
+        setRecordings(updated);
+
         setFinalTranscript(rawText);
         setPartialTranscript('');
-        //     setIsTranscribing(false);
+        setSummaries(autoSummaries);
+        setSummaryMode('summary');
+        setViewType('summary');
         return;
       }
 
-      // ✅ 做 summary，顯示 summary 分頁
-      const summary = await summarizeWithMode(rawText, 'summary', summaryLang);
-      const updatedItem: RecordingItem = {
+
+      // ✅ 先存 transcript
+      const updatedItem = {
         ...currentItem,
         transcript: rawText,
-        summaries: {
-          ...(currentItem.summaries || {}),
-          summary,
-        },
       };
-
-      // 更新狀態
-      setFinalTranscript(rawText); // 仍保留轉文字內容
-      setSummaries(updatedItem.summaries || {});
-      setSummaryMode('summary');   // ✅ 切到 summary 分頁
-      setViewType('summary');      // ✅ 主動切換畫面分頁
-
-      // 寫入 storage
       const updated = [...recordings];
       updated[index] = updatedItem;
       await saveRecordings(updated);
+      setRecordings(updated);
+      setFinalTranscript(rawText); // ✅ 可以先顯示
 
-      setRecordings(prev => {
-        const newRecordings = [...prev];
-        newRecordings[index] = updatedItem;
-        return newRecordings;
-      });
+      // ✅ transcript 確保儲存後，再跑摘要
+      const summary = await summarizeWithMode(rawText, 'summary', summaryLang);
 
-
-
+      // ✅ 接著補寫 summary
+      const updatedWithSummary = {
+        ...updatedItem,
+        summaries: {
+          ...(updatedItem.summaries || {}),
+          summary,
+        },
+      };
+      const finalUpdated = [...updated];
+      finalUpdated[index] = updatedWithSummary;
+      await saveRecordings(finalUpdated);
+      setRecordings(finalUpdated);
+      setSummaries(updatedWithSummary.summaries || {});
+      setSummaryMode('summary');
+      setViewType('summary');
     } catch (err) {
       Alert.alert("❌ 錯誤", (err as Error).message || "轉換失敗，這次不會扣金幣");
+    } finally {
+      setIsTranscribing(false);
     }
   };
 
@@ -624,29 +650,29 @@ export default function NoteDetailPage() {
     <SafeAreaView style={{ backgroundColor: colors.container, flex: 1 }}>
 
       {/* Header */}
-      
-        <RecorderHeader
-          mode="detail"
-          onBack={() => navigation.goBack()}
-          searchQuery={searchKeyword}
-          setSearchQuery={setSearchKeyword}
-        />
+
+      <RecorderHeader
+        mode="detail"
+        onBack={() => navigation.goBack()}
+        searchQuery={searchKeyword}
+        setSearchQuery={setSearchKeyword}
+      />
 
 
       {/* 播放列 */}
-      <View style={[styles.container, { marginTop: 0, paddingBottom: 16  }]}>
-<View
-  style={{
-    marginTop: -10,
-    marginHorizontal: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 6,
-    borderRadius: 10,
-    backgroundColor: colors.container,
-    borderWidth: 1,
-    borderColor: colors.border || colors.primary + '22',
-  }}
->
+      <View style={[styles.container, { marginTop: 0, paddingBottom: 16 }]}>
+        <View
+          style={{
+            marginTop: -10,
+            marginHorizontal: 4,
+            paddingHorizontal: 6,
+            paddingVertical: 6,
+            borderRadius: 10,
+            backgroundColor: colors.container,
+            borderWidth: 1,
+            borderColor: colors.border || colors.primary + '22',
+          }}
+        >
           <PlaybackBar
             editableName={true}
             editingState={editingState}
@@ -695,7 +721,7 @@ export default function NoteDetailPage() {
             }}
             styles={styles}
             colors={colors}
-  setEditingState={setEditingState}
+            setEditingState={setEditingState}
             setRecordings={setRecordings}
             saveRecordings={saveRecordings}
             renderRightButtons={editingState.type === 'name' && editingState.index === index ? (
@@ -712,7 +738,7 @@ export default function NoteDetailPage() {
         </View>
 
         {/* 三顆切換按鈕 */}
-        <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 12, marginBottom: 0 ,  marginTop: 10 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 12, marginBottom: 0, marginTop: 10 }}>
           {['note', 'transcript', 'summary'].map((key) => (
             <TouchableOpacity
               key={key}
@@ -925,17 +951,15 @@ export default function NoteDetailPage() {
             <TouchableOpacity
               key={mode.key}
               disabled={
-                !summaries?.[mode.key] &&
                 !!summarizingState &&
                 summarizingState.index === index &&
-                summarizingState.mode !== mode.key
+                summarizingState.mode === mode.key
               }
               onPress={() => {
                 const isBlocked =
-                  !summaries?.[mode.key] &&
                   !!summarizingState &&
                   summarizingState.index === index &&
-                  summarizingState.mode !== mode.key;
+                  summarizingState.mode === mode.key;
 
                 if (isBlocked) return;
 
@@ -943,6 +967,7 @@ export default function NoteDetailPage() {
                 handleSummarize(index, mode.key as 'summary' | 'tag' | 'action', !isFree);
                 setSummaryMenuContext(null);
               }}
+
               style={{
                 paddingVertical: 8,
                 paddingHorizontal: 12,

@@ -598,7 +598,7 @@ const displayDate = metadataLine;
           displayDate, 
           derivedFiles: {},
           date: metadata.date,
-          notes: notesEditing,
+          notes: notesEditing || '',
         };
 
         debugLog('📌 建立新錄音項目', { name, displayName });

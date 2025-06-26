@@ -285,94 +285,100 @@ export const transcribeAudio = async (
   item: RecordingItem,
   onPartial?: (text: string, index: number, total: number) => void,
   targetLang: 'tw' | 'cn' = 'tw'
-):  Promise<{
-  transcript: { text: string },
-  skippedSilentSegments: number,
-  text: string }> => {
+): Promise<{
+  transcript: { text: string };
+  skippedSilentSegments: number;
+  text: string;
+}> => {
   if (!item.uri || !item.displayName) {
     throw new Error('音檔資訊不完整（uri 或 name 為 null）');
   }
 
-  // 1. Split into segments
+  // 1. Split audio
   const segmentUris = await splitAudioIntoSegments(item.uri, 30);
   let accumulatedText = '';
   const baseName = item.displayName.replace(/\.[^/.]+$/, '');
-    const silentCounter = { count: 0 };
+  const silentCounter = { count: 0 };
 
-     onPartial?.('⏳ 開始處理音檔...', 0, 0);
+  // 🔄 開始提示
+ // onPartial?.('⏳ 開始處理音檔...', 0, segmentUris.length);
+  onPartial?.('⏳ 開始處理音檔...', 0, 0);
 
-
-  // 2. Process each segment sequentially
   for (let index = 0; index < segmentUris.length; index++) {
+    const segmentUri = segmentUris[index];
+    let audioToSend = segmentUri;
+    let trimmed: RecordingItem | null = null;
+    let spedUp: string | null = null;
+    let segmentText = '';
+
     try {
-const segmentUri = segmentUris[index];
-let audioToSend = segmentUri;  // 預設使用原始段
-let trimmed: RecordingItem | null = null;
-let spedUp: string | null = null;
+      // ✂️ 剪輯
+      try {
+        trimmed = await trimSilence(segmentUri, `${baseName}_seg${index}`);
+        audioToSend = trimmed.uri;
 
-try {
-  // ✂️ 嘗試剪輯
-  trimmed = await trimSilence(segmentUri, `${baseName}_seg${index}`);
-  audioToSend = trimmed.uri;
+        try {
+          spedUp = await speedUpAudio(trimmed.uri, 1.5, `${baseName}_seg${index}`);
+          audioToSend = spedUp;
+        } catch (e) {
+          debugError(`⚠️ 加速失敗，使用剪輯檔`, e);
+        }
+      } catch (e) {
+        debugError(`⚠️ 剪輯失敗，使用原始段`, e);
+      }
 
-  // ⏩ 嘗試加速
-  try {
-    spedUp = await speedUpAudio(trimmed.uri, 1.5, `${baseName}_seg${index}`);
-    audioToSend = spedUp;
-  } catch (e) {
-    debugError(`⚠️ 加速失敗，使用剪輯檔`, e);
-  }
-
-} catch (e) {
-  debugError(`⚠️ 剪輯失敗，使用原始段`, e);
-  audioToSend = segmentUri;
-}
-
-// ✅ 檢查音檔有效性（大小、靜音）
-const validAudio = await processTrimmedAudio(audioToSend, silentCounter);
-if (!validAudio) {
-  debugLog(`🛑 第 ${index + 1} 段被視為無效或靜音，跳過`);
-  continue;
-}
-
-// 📤 上傳到 Whisper
-debugLog(`📤 上傳第 ${index + 1} 段至 Whisper`);
-const text = await sendToWhisper(audioToSend, targetLang);
-
-// 累積結果
-if (text.trim()) {
-  accumulatedText += text + '\n';
-}
-
-// 回傳進度
-if (index < segmentUris.length - 1) {
-  onPartial?.(`⏳ 處理音檔中...\n${accumulatedText.trim()}`, index + 1, segmentUris.length);
-} else onPartial?.(accumulatedText.trim(), index + 1, segmentUris.length);
-
-// 🧹 清理檔案
-if (trimmed?.uri) await FileSystem.deleteAsync(trimmed.uri, { idempotent: true });
-if (spedUp) await FileSystem.deleteAsync(spedUp, { idempotent: true });
-await FileSystem.deleteAsync(segmentUri, { idempotent: true });
-
-debugLog(`✅ 第 ${index + 1} 段處理完成`);
-
-
+      // 🧪 驗證音檔
+      const validAudio = await processTrimmedAudio(audioToSend, silentCounter);
+      if (!validAudio) {
+        debugLog(`🛑 第 ${index + 1} 段被視為無效或靜音，跳過`);
+        segmentText = ''; // 跳過不加內容，但要回傳空進度
+      } else {
+        // 📤 傳送至 Whisper
+        debugLog(`📤 上傳第 ${index + 1} 段至 Whisper`);
+        segmentText = await sendToWhisper(audioToSend, targetLang);
+      }
     } catch (err) {
       debugError(`❌ 第 ${index + 1} 段處理失敗：`, err);
-      // Continue with next segment even if one fails
-      accumulatedText += `[第 ${index + 1} 段處理失敗]\n`;
-      // onPartial?.(accumulatedText.trim(), index + 1, segmentUris.length);
+     // segmentText = `[第 ${index + 1} 段處理失敗]\n`;
+        segmentText = ''; // 跳過不加內容，但要回傳空進度
     }
+
+    // 加入累積內容
+    if (segmentText.trim()) {
+      accumulatedText += segmentText.trim() + '\n';
+    }
+
+    // ⏳ 回傳進度（包含處理失敗或靜音也會回傳）
+    const isLast = index === segmentUris.length - 1;
+    const cleanText = accumulatedText.trim();
+    onPartial?.(
+      isLast ? cleanText : `⏳ 處理音檔中...\n${cleanText}`,
+      index + 1,
+      segmentUris.length
+    );
+
+    // 🧹 清理暫存檔案
+    try {
+      if (trimmed?.uri) await FileSystem.deleteAsync(trimmed.uri, { idempotent: true });
+      if (spedUp) await FileSystem.deleteAsync(spedUp, { idempotent: true });
+      await FileSystem.deleteAsync(segmentUri, { idempotent: true });
+    } catch (e) {
+      debugError('🧹 清理失敗', e);
+    }
+
+    debugLog(`✅ 第 ${index + 1} 段處理完成`);
   }
-  const estimatedSeconds = silentCounter.count * 30;
- //Alert.alert('靜音剪輯結果', `共略過 ${silentCounter.count} 段（約 ${estimatedSeconds} 秒靜音）`);
+
+  // 💡 最後再補一段純淨結果，避免 UI 卡在漏斗
+  onPartial?.(accumulatedText.trim(), segmentUris.length, segmentUris.length);
 
   return {
     transcript: { text: accumulatedText.trim() },
     skippedSilentSegments: silentCounter.count,
-    text: accumulatedText.trim() 
+    text: accumulatedText.trim()
   };
 };
+
 
 const basePrompt =
   '錄音文字是一段可能由多人或單人錄製, 由whisper所處理聲音轉文字的逐字稿, 參考使用者補充筆記校正逐字稿音譯選字, 尤其是姓名及專有名詞以使用者補充筆記為準. 當內容是生活類以生活方式回答, 當涉及工商領域時, 你是一位資深技術助理，使用者是專業人員, 你的回答將用於會議紀錄、內部報告與技術決策。回答需具備：1. 條列清楚 2. 有工程深度 3. 避免空泛或無效內容。 不要給廢話或像新手的解釋，要講重點，貼近實作與決策需要。';
