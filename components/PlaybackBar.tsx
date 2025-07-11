@@ -2,10 +2,15 @@ import React from 'react';
 import { View, Text, TextInput, TouchableOpacity } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
-import { RecordingItem } from '../utils/audioHelpers';
+import {
+    RecordingItem, transcribeAudio, summarizeWithMode, summarizeModes, notifyAwsRecordingEvent, SplitPart,
+    notitifyWhisperEvent, splitAudioSegments,
+    parseDateTimeFromDisplayName, generateDisplayNameParts, generateRecordingMetadata,
+} from '../utils/audioHelpers';
 
 interface PlaybackBarProps {
-    item: RecordingItem;
+    //  item: RecordingItem;
+    item: RecordingItem | SplitPart;
     isPlaying: boolean;
     isVisible: boolean;
     playbackPosition: number;
@@ -35,7 +40,13 @@ interface PlaybackBarProps {
     itemIndex?: number;
     setRecordings: React.Dispatch<React.SetStateAction<RecordingItem[]>>;
     saveRecordings: (items: RecordingItem[]) => void;
+    variant?: 'main' | 'sub';
 }
+
+function isRecordingItem(item: RecordingItem | SplitPart): item is RecordingItem {
+    return 'isStarred' in item || 'displayDate' in item;
+}
+
 
 const PlaybackBar: React.FC<PlaybackBarProps> = ({
     item,
@@ -59,6 +70,8 @@ const PlaybackBar: React.FC<PlaybackBarProps> = ({
     itemIndex,
     setRecordings,
     saveRecordings,
+    variant = 'main',
+
 }) => {
     const isEditingName = editableName && editingState?.type === 'name' && editingState?.index === itemIndex;
     const [editName, setEditName] = React.useState(item.displayName || '');
@@ -128,12 +141,16 @@ const PlaybackBar: React.FC<PlaybackBarProps> = ({
                     >
                         <View style={{ flex: 1, minHeight: 60 }}>
                             <Text
-                                style={[styles.audioTitle, { color: colors.text, fontWeight: isVisible ? 'bold' : 'normal' }]}
+                                style={[styles.audioTitle, {
+                                    fontSize: variant === 'sub' ? 13 : 16,
+                                    fontWeight: isPlaying ? 'bold' : 'normal',
+                                    color: colors.text,
+                                },]}
                                 numberOfLines={1}
                             >
                                 {(editName || '').split('\n')[0]}
                             </Text>
-                            {item.displayDate && (
+                            {isRecordingItem(item) && item.displayDate && (
                                 <Text
                                     style={[styles.audioSubtitle, { color: colors.subtext, fontSize: 13 }]}
                                     numberOfLines={1}
@@ -142,8 +159,6 @@ const PlaybackBar: React.FC<PlaybackBarProps> = ({
                                 </Text>
                             )}
                         </View>
-
-
                     </TouchableOpacity>
                 )}
 
@@ -160,36 +175,52 @@ const PlaybackBar: React.FC<PlaybackBarProps> = ({
 
                     style={{ marginRight: 10, top: -15 }}
                 >
-                    <Icon
-                        name={item.isStarred ? 'star' : 'star-outline'}
-                        size={28}
-                        color={item.isStarred ? colors.primary : '#999999'}
-                    />
+                    {isRecordingItem(item) && (
+                        <TouchableOpacity
+                            onPress={() => {
+                                setRecordings(prev => {
+                                    const updated = prev.map(r =>
+                                        r.uri === item.uri ? { ...r, isStarred: !r.isStarred } : r
+                                    );
+                                    saveRecordings(updated);
+                                    return updated;
+                                });
+                            }}
+                            style={{ marginRight: 10, top: -15 }}
+                        >
+                            <Icon
+                                name={item.isStarred ? 'star' : 'star-outline'}
+                                size={28}
+                                color={item.isStarred ? colors.primary : '#999999'}
+                            />
+                        </TouchableOpacity>
+                    )}
                 </TouchableOpacity>
 
-
-                {renderRightButtons ? (
+                {typeof renderRightButtons === 'string' ? (
+                    <Text>{renderRightButtons}</Text>
+                ) : renderRightButtons ? (
                     renderRightButtons
                 ) : (
-                    <TouchableOpacity onPress={onMorePress} >
+                    <TouchableOpacity onPress={onMorePress}>
                         <Icon name="dots-vertical" size={20} color={colors.text} />
                     </TouchableOpacity>
                 )}
-
             </View>
 
             {/* 第二行：進度條 */}
-            {isVisible && (
-                <Slider
-                    minimumValue={0}
-                    maximumValue={playbackDuration}
-                    value={playbackPosition}
-                    onSlidingComplete={onSeek}
-                    style={styles.playbackSlider}
-                    minimumTrackTintColor={colors.primary}
-                    maximumTrackTintColor={colors.subtext}
-                    thumbTintColor={colors.primary}
-                />)}
+{isVisible && (
+  <Slider
+    minimumValue={0}
+    maximumValue={playbackDuration}
+    value={playbackPosition}
+    onSlidingComplete={onSeek}
+    style={styles.playbackSlider}
+    minimumTrackTintColor={colors.primary}
+    maximumTrackTintColor={colors.subtext}
+    thumbTintColor={colors.primary}
+  />
+)}
 
             {/* 第三行：時間與播放速度 */}
             {isVisible && (

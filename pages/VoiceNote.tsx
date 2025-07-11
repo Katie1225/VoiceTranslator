@@ -29,22 +29,15 @@ import { useLoginContext } from '../constants/LoginContext';
 import PlaybackBar from '../components/PlaybackBar';
 
 import {
-  RecordingItem,
-  enhanceAudio, trimSilence,
-  transcribeAudio, summarizeWithMode, summarizeModes,
+  RecordingItem, transcribeAudio, summarizeWithMode, summarizeModes, notifyAwsRecordingEvent, SplitPart,
+  notitifyWhisperEvent,  splitAudioSegments,
   parseDateTimeFromDisplayName, generateDisplayNameParts, generateRecordingMetadata,
-  splitAudioByInterval,
 } from '../utils/audioHelpers';
 import { useFileStorage } from '../utils/useFileStorage';
 import { useAudioPlayer } from '../utils/useAudioPlayer';
 import { ANDROID_AUDIO_ENCODERS, ANDROID_OUTPUT_FORMATS } from '../constants/AudioConstants';
 import RecorderHeader from '../components/RecorderHeader';
 
-import MoreMenu from '../components/MoreMenu';
-import {
-  renderFilename,
-  renderNoteBlock
-} from '../components/AudioItem';
 import { uFPermissions } from '../src/hooks/uFPermissions';
 import { handleLogin, loadUserAndSync, COIN_UNIT_MINUTES, COIN_COST_PER_UNIT, COIN_COST_AI } from '../utils/loginHelpers';
 import { productIds, productToCoins, purchaseManager, setTopUpProcessingCallback, setTopUpCompletedCallback, waitForTopUp } from '../utils/iap';
@@ -57,7 +50,7 @@ import LoginOverlay from '../components/LoginOverlay';
 import RecorderLists from '../components/RecorderLists';
 import SelectionToolbar from '../components/SelectionToolbar';
 import SearchToolbar from '../components/SearchToolbar';
-import { APP_TITLE } from '../constants/variant';
+import { APP_TITLE, debugValue } from '../constants/variant';
 
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 GoogleSignin.configure({
@@ -116,7 +109,6 @@ const RecorderPageVoiceNote = () => {
     position: { x: number; y: number };
   } | null>(null);
 
-
   const userLang = Localization.getLocales()[0]?.languageTag || 'zh-TW';
 
   const ITEM_HEIGHT = 80; // 音檔名稱高度
@@ -140,69 +132,6 @@ const RecorderPageVoiceNote = () => {
   >(null);
 
   const onTopUpProcessingChangeRef = useRef<(isProcessing: boolean) => void>();
-
-
-  /*
-      //儲值中
-      const [isTopUpProcessing, setIsTopUpProcessing] = useState(false);
-    
-      useEffect(() => {
-        const callback = (isProcessing: boolean) => {
-          setIsTopUpProcessing(isProcessing);
-        };
-    
-        setTopUpProcessingCallback(callback);
-    
-        return () => {
-          setTopUpProcessingCallback(null); // 清理時取消回調
-        };
-      }, []);
-    
-    
-      // 替換原有的 handlePurchase 函數
-      const handleTopUp = async (productId: string) => {
-        debugLog('🟢 handleTopUp called with productId:', productId);
-        try {
-          // 1. 請求儲值
-          await purchaseManager.requestPurchase(productId);
-          setShowTopUpModal(false);
-    
-          // 2. 等待金幣更新（不再需要手動同步，因為 handlePurchaseUpdate 已經處理）
-          // 3. 清除中斷操作的標記
-    
-        } catch (err) {
-          Alert.alert('購買失敗', err instanceof Error ? err.message : '請稍後再試');
-        }
-      };
-    
-      // 在組件中添加 useEffect 來監聽 pendingActions
-      useEffect(() => {
-        const checkPendingActions = async () => {
-          // 使用公共方法替代直接訪問私有屬性
-          if (purchaseManager.hasPendingActions()) {
-            const actions = purchaseManager.getPendingActions();
-            const action = actions[0];
-    
-            if (action.type === 'transcribe' && action.index !== undefined) {
-              const freshUser = await AsyncStorage.getItem('user');
-              if (freshUser) {
-                const user = JSON.parse(freshUser);
-                if (user.coins > 0) { // 確保金幣已更新
-                  const indexToResume = action.index;
-                  purchaseManager.clearPendingActions();
-                  setSelectedPlayingIndex(indexToResume);
-                  setTimeout(() => {
-                    handleTranscribe(indexToResume);
-                  }, 500);
-                }
-              }
-            }
-          }
-        };
-    
-        checkPendingActions();
-      }, [purchaseManager]); // 依賴 purchaseManager 實例
-    */
 
   // 在組件掛載時初始化 IAP
   useEffect(() => {
@@ -311,23 +240,6 @@ const RecorderPageVoiceNote = () => {
 
     }
   }, []);
-
-  // 進度條更新
-  useEffect(() => {
-    let timer: NodeJS.Timeout;
-
-    if (isPlaying && currentSound) {
-      timer = setInterval(() => {
-        currentSound.getCurrentTime((seconds) => {
-          setPlaybackPosition(seconds * 1000); // 單位：毫秒
-        });
-      }, 300); // 每 300 毫秒更新一次
-    }
-
-    return () => {
-      if (timer) clearInterval(timer);
-    };
-  }, [isPlaying, currentSound]);
 
   // 分貝
   useEffect(() => {
@@ -532,6 +444,18 @@ const RecorderPageVoiceNote = () => {
         }
       }, 180 * 60 * 1000);
       // 測試版用結束
+      const userId = 'Katie';
+
+      await notifyAwsRecordingEvent('start', {
+        timestamp: Date.now(),
+        userId,
+      });
+
+      await notitifyWhisperEvent('start', {
+        timestamp: Date.now(),
+        userId,
+      });
+
     } catch (err) {
       debugError("❌ 錄音啟動錯誤：", err);
       Alert.alert("錄音失敗", (err as Error).message || "請檢查權限或儲存空間");
@@ -587,22 +511,23 @@ const RecorderPageVoiceNote = () => {
 
       if (fileInfo.size > 0) {
         const metadata = await generateRecordingMetadata(normalizedUri);
-        const { label, metadataLine }  = generateDisplayNameParts(noteTitleEditing, metadata.durationSec);
-const displayName = label;
-const displayDate = metadataLine;
+        const { label, metadataLine } = generateDisplayNameParts(noteTitleEditing, metadata.durationSec);
+        const displayName = label;
+        const displayDate = metadataLine;
         const newItem: RecordingItem = {
           size: fileInfo.size,
           uri: normalizedUri,
           name,
-          displayName, 
-          displayDate, 
+          displayName,
+          displayDate,
           derivedFiles: {},
           date: metadata.date,
           notes: notesEditing || '',
+          durationSec: metadata.durationSec,
         };
 
         debugLog('📌 建立新錄音項目', { name, displayName });
-        
+
         setRecordings(prev => {
           const now = Date.now();
           const recentItem = prev[0];
@@ -622,7 +547,7 @@ const displayDate = metadataLine;
         setShowNotesModal(false);
         setNotesEditing('');
         setNoteTitleEditing('');
-       setSelectedPlayingIndex(0);
+        setSelectedPlayingIndex(0);
       }
       else {
         Alert.alert("錄音失敗", "錄音檔案為空");
@@ -716,9 +641,9 @@ const displayDate = metadataLine;
 
         const normalizedUri = uri.replace('file://', '');
         const metadata = await generateRecordingMetadata(normalizedUri);
-         const { label, metadataLine }  = generateDisplayNameParts(noteTitleEditing, metadata.durationSec);
-const displayName = label;
-const displayDate = metadataLine;
+        const { label, metadataLine } = generateDisplayNameParts(noteTitleEditing, metadata.durationSec);
+        const displayName = label;
+        const displayDate = metadataLine;
         debugLog('📥 匯入錄音 metadata:', {
           name,
           displayName,
@@ -841,8 +766,8 @@ const displayDate = metadataLine;
                 selectedItems={selectedItems}      // 	哪些錄音（用 URI）目前已被選中
                 setIsSelectionMode={setIsSelectionMode}  // 切換多選模式（進入／退出）
                 setSelectedItems={setSelectedItems}  // 新增／移除已選項目，或清空全部
-                  selectedPlayingIndex={selectedPlayingIndex}  // 選擇想撥放的音檔
-  setSelectedPlayingIndex={setSelectedPlayingIndex}         // 哪個音檔是被選中的
+                selectedPlayingIndex={selectedPlayingIndex}  // 選擇想撥放的音檔
+                setSelectedPlayingIndex={setSelectedPlayingIndex}         // 哪個音檔是被選中的
               />
 
               {/* 放在這裡！不要放在 map 循環內部 */}

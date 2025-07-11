@@ -10,5 +10,7 @@
 # react-native-reanimated
 -keep class com.swmansion.reanimated.** { *; }
 -keep class com.facebook.react.turbomodule.** { *; }
+-keep class com.arthenica.** { *; }
+-keep class com.arthenica.smartexception.** { *; }
 
 # Add any project specific keep options here:

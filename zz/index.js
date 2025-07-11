@@ -4,7 +4,8 @@ require('dotenv').config();
 
 const whisperRoute = require('./whisper');
 const summarizeRoute = require('./summarize');
-const iapRoute = require('./iap-redeem'); 
+const iapRoute = require('./iap-redeem');
+const recordingRoute = require('./recording-event');
 
 const app = express();
 app.use(cors());
@@ -19,6 +20,7 @@ app.get('/ping', (req, res) => {
 app.use('/transcribe', whisperRoute);
 app.use('/summarize', summarizeRoute);
 app.use('/iap-redeem', iapRoute);
+app.use('/recording-event', recordingRoute);
 
 // 啟動伺服器
 const PORT = process.env.PORT || 3000;

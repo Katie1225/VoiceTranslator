@@ -8,7 +8,7 @@
     "scheme": "myapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-"jsEngine": "hermes",
+    "jsEngine": "hermes",
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
@@ -48,6 +48,7 @@
           "backgroundColor": "#ffffff"
         }
       ],
+
       "expo-localization"
     ],
     "experiments": {

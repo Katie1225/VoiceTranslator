@@ -4,6 +4,7 @@ import RNFS from 'react-native-fs';
 import { Alert } from 'react-native';
 import { RecordingItem, generateRecordingMetadata, } from './audioHelpers';
 import { debugLog, debugWarn, debugError } from './debugLog';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const useFileStorage = (setRecordings: React.Dispatch<React.SetStateAction<RecordingItem[]>>) => {
   const [isLoading, setIsLoading] = useState(true);
@@ -57,10 +58,26 @@ const validItems = await Promise.all(
 
       // 3. 智能合併與驗證
       const validatedRecordings = await mergeAndValidateRecords(existingData, m4aFiles);
+      
+      // ✅ 補上 durationSec 做成展開三角形
+const withDuration = await Promise.all(validatedRecordings.map(async (rec) => {
+  if (!rec.durationSec && rec.uri) {
+    try {
+      const metadata = await generateRecordingMetadata(rec.uri);
+      return { ...rec, durationSec: metadata.durationSec };
+    } catch (err) {
+      debugWarn('⚠️ 無法取得 durationSec:', rec.uri);
+    }
+  }
+  return rec;
+}));
 
       // 4. 更新狀態並保存
-      setRecordings(validatedRecordings);
-      await saveRecordings(validatedRecordings);
+setRecordings(withDuration);
+await saveRecordings(withDuration);
+
+await AsyncStorage.setItem('recordings', JSON.stringify(withDuration));
+
 
       debugLog('✅ 錄音列表載入完成，有效記錄數:', validatedRecordings.length);
     } catch (err) {

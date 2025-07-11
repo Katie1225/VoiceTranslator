@@ -12,7 +12,6 @@ import { logCoinUsage } from '../utils/googleSheetAPI';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   RecordingItem,
-  enhanceAudio, trimSilence,
   transcribeAudio, summarizeWithMode, summarizeModes,
   parseDateTimeFromDisplayName, generateRecordingMetadata,
 } from '../utils/audioHelpers';
@@ -72,12 +71,13 @@ export default function NoteDetailPage() {
 
   const [selectedMenuIndex, setSelectedMenuIndex] = useState<number | null>(null);
 
+  const isAnyProcessing = isTranscribing || isSummarizing;
+
   // 特殊著色
   const highlightKeyword = (text: string, keyword: string | undefined, highlightColor: string) => {
     if (!keyword || !text.includes(keyword)) return <Text>{text}</Text>;
 
     const parts = text.split(new RegExp(`(${keyword})`, 'gi'));
-
     return (
       <Text style={styles.transcriptText}>
         {parts.map((part, i) =>
@@ -99,6 +99,11 @@ export default function NoteDetailPage() {
     );
   };
 
+// 編輯重置
+  const resetEditingState = () => {
+  setIsEditing(false);
+  setEditingState({ type: null, index: null, text: '' });
+};
 
   // 初始化音檔
   useEffect(() => {
@@ -389,29 +394,40 @@ export default function NoteDetailPage() {
       });
 
       if (!coinResult.success) {
-        Alert.alert("轉換成功，但扣金幣失敗", coinResult.message || "請稍後再試");
+        debugWarn("轉換成功，但扣金幣失敗", coinResult.message || "請稍後再試");
       }
 
       // 確認音檔是否有效
       const rawText = result?.transcript?.text?.trim() || '';
       const summaryLang = userLang.includes('CN') ? 'cn' : 'tw';
 
-      if (!rawText) {
-        const placeholder = '<未偵測到有效語音內容>';
+if (!rawText) {
+  const placeholder = '<未偵測到有效語音內容>';
 
-        const updatedItem: RecordingItem = {
-          ...currentItem,
-          transcript: placeholder,
-        };
+  // ✅ 為所有摘要欄位都加上這個 placeholder，避免後續再做摘要
+  const autoSummaries: Record<string, string> = {};
+  summarizeModes.forEach(mode => {
+    autoSummaries[mode.key] = placeholder;
+  });
 
-        const updated = [...recordings];
-        updated[index] = updatedItem;
-        await saveRecordings(updated);
-        setRecordings(updated);
-        setFinalTranscript(placeholder);
-        setPartialTranscript('');
-        return;
-      }
+  const updatedItem: RecordingItem = {
+    ...currentItem,
+    transcript: placeholder,
+    summaries: autoSummaries, // ✅ 寫入所有模式
+  };
+
+  const updated = [...recordings];
+  updated[index] = updatedItem;
+  await saveRecordings(updated);
+  setRecordings(updated);
+  setFinalTranscript(placeholder);
+  setPartialTranscript('');
+  setSummaries(autoSummaries); // ✅ 畫面立即顯示打勾
+  setSummaryMode('summary');
+
+  return;
+}
+
 
       const notesText = currentItem.notes || '';
       const totalTextLength = (rawText + notesText).trim().length;
@@ -419,7 +435,7 @@ export default function NoteDetailPage() {
       if (totalTextLength < 20) {
         const autoSummaries: Record<string, string> = {};
         summarizeModes.forEach(mode => {
-          autoSummaries[mode.key] = '內容缺乏足夠資訊分析';
+          autoSummaries[mode.key] = rawText + '\n'+ '內容缺乏足夠資訊分析';
         });
 
         const updatedItem: RecordingItem = {
@@ -438,7 +454,8 @@ export default function NoteDetailPage() {
         setPartialTranscript('');
         setSummaries(autoSummaries);
         setSummaryMode('summary');
-        setViewType('summary');
+
+        resetEditingState();
         return;
       }
 
@@ -579,6 +596,7 @@ export default function NoteDetailPage() {
     } finally {
       setSummarizingState(null);
     }
+    resetEditingState();
     return null;
   };
 
@@ -804,6 +822,7 @@ export default function NoteDetailPage() {
           onCancel: () => setEditingState({ type: null, index: null, text: '' }),
           onShare: handleShare,
           onDelete: handleDelete,
+           editable: !isAnyProcessing, 
           styles,
           colors,
           wrapperStyle: {

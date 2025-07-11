@@ -1,5 +1,6 @@
 // components/RecorderLists.tsx
 import React, { useState, useEffect, useRef } from 'react';
+
 import { Platform, PermissionsAndroid } from 'react-native';
 import {
   View,
@@ -23,13 +24,14 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../App';
 import PlaybackBar from './PlaybackBar';
+import { NativeModules } from 'react-native';
+const { FFmpegWrapper } = NativeModules;
+import { APP_TITLE, debugValue, SEGMENT_DURATION } from '../constants/variant';
 
 import {
-  RecordingItem,
-  enhanceAudio, trimSilence,
-  transcribeAudio, summarizeWithMode, summarizeModes,
-  parseDateTimeFromDisplayName, generateRecordingMetadata,
-  splitAudioByInterval,
+  RecordingItem, transcribeAudio, summarizeWithMode, summarizeModes, notifyAwsRecordingEvent, SplitPart,
+  notitifyWhisperEvent, splitAudioSegments,
+  parseDateTimeFromDisplayName, generateDisplayNameParts, generateRecordingMetadata,
 } from '../utils/audioHelpers';
 import { useFileStorage } from '../utils/useFileStorage';
 import { useAudioPlayer } from '../utils/useAudioPlayer';
@@ -41,7 +43,6 @@ import { debugLog, debugWarn, debugError } from '../utils/debugLog';
 import { shareRecordingNote, shareRecordingFile, saveEditedRecording, deleteTextRecording, prepareEditing } from '../utils/editingHelpers';
 import { useTheme } from '../constants/ThemeContext';
 import { useRecordingContext } from '../constants/RecordingContext';
-import { APP_TITLE } from '../constants/variant';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 interface Props {
@@ -53,7 +54,8 @@ interface Props {
   setIsSelectionMode: React.Dispatch<React.SetStateAction<boolean>>;
   setSelectedItems: React.Dispatch<React.SetStateAction<Set<string>>>;
   selectedPlayingIndex: number | null;
-setSelectedPlayingIndex: React.Dispatch<React.SetStateAction<number | null>>;
+  setSelectedPlayingIndex: React.Dispatch<React.SetStateAction<number | null>>;
+  variant?: 'main' | 'sub';
 }
 
 const GlobalRecorderState = {
@@ -61,6 +63,7 @@ const GlobalRecorderState = {
   filePath: '',
   startTime: 0,
 };
+
 
 const RecorderLists: React.FC<Props> = ({
   items,
@@ -71,7 +74,7 @@ const RecorderLists: React.FC<Props> = ({
   setIsSelectionMode,
   setSelectedItems,
   selectedPlayingIndex,
-setSelectedPlayingIndex,
+  setSelectedPlayingIndex,
 }) => {
   const { colors, styles, isDarkMode } = useTheme();
   const { recordings } = useRecordingContext();
@@ -92,7 +95,7 @@ setSelectedPlayingIndex,
   const [showNotesIndex, setShowNotesIndex] = useState<number | null>(null);
   const [playbackRates, setPlaybackRates] = useState<Record<string, number>>({});
 
-  const flatListRef = useRef<FlatList>(null);
+    const flatListRef = useRef<FlatList>(null);
   const [itemOffsets, setItemOffsets] = useState<Record<number, number>>({});
   const resetEditingState = () => {
     setEditingState({ type: null, index: null, text: '' });
@@ -104,6 +107,66 @@ setSelectedPlayingIndex,
     position: { x: number; y: number };
   } | null>(null);
 
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+
+  const toggleExpand = async (uri: string) => {
+    const found = recordings.find(r => r.uri === uri);
+    if (!found) {
+      debugWarn(`❌ toggleExpand：找不到錄音 uri: ${uri}`);
+      return;
+    }
+
+    const hasSplit = found.derivedFiles?.splitParts?.length > 0;
+
+    // 若尚未分段，先進行切割
+    if (!hasSplit) {
+      debugLog(`🪓 [分段展開] ${found.displayName} 尚未切段，開始切割`);
+
+      const path = uri.replace('file://', '');
+      try {
+        const metadata = await generateRecordingMetadata(path);
+        const totalSec = Math.floor(metadata.durationSec);
+        const segmentLength = SEGMENT_DURATION;
+        const parts: SplitPart[] = [];
+
+        for (let start = 0; start < totalSec; start += segmentLength) {
+          try {
+            debugLog(`⏱ 嘗試分段：start=${start}s, duration=${segmentLength}s`);
+            const part = await splitAudioSegments(uri, start, segmentLength);
+            if (part) {
+              debugLog(`✅ 成功分段：${part.displayName}`);
+              parts.push(part);
+            } else {
+              debugWarn(`⚠️ 分段失敗（null）：start=${start}`);
+            }
+          } catch (e) {
+            debugError(`❌ 分段錯誤：start=${start}`, e);
+          }
+        }
+
+        const updated = recordings.map(r =>
+          r.uri === uri
+            ? { ...r, derivedFiles: { ...r.derivedFiles, splitParts: parts } }
+            : r
+        );
+
+        setRecordings(updated);
+        await saveRecordings(updated);
+        debugLog(`📦 分段完成，共 ${parts.length} 段`);
+      } catch (e) {
+        debugError(`❌ 分段前 metadata 錯誤: ${path}`, e);
+      }
+    } else {
+      debugLog(`📂 [分段展開] ${found.displayName} 已有 ${found.derivedFiles.splitParts.length} 段，直接展開`);
+    }
+
+    // toggle 展開/收合
+    setExpandedItems(prev => {
+      const copy = new Set(prev);
+      copy.has(uri) ? copy.delete(uri) : copy.add(uri);
+      return copy;
+    });
+  };
 
   const userLang = Localization.getLocales()[0]?.languageTag || 'zh-TW';
 
@@ -191,7 +254,6 @@ setSelectedPlayingIndex,
   // 進度條更新
   useEffect(() => {
     let timer: NodeJS.Timeout;
-
     if (isPlaying && currentSound) {
       timer = setInterval(() => {
         currentSound.getCurrentTime((seconds) => {
@@ -199,11 +261,10 @@ setSelectedPlayingIndex,
         });
       }, 300); // 每 300 毫秒更新一次
     }
-
     return () => {
       if (timer) clearInterval(timer);
     };
-  }, [isPlaying, currentSound]);
+}, [isPlaying, currentSound, playingUri]);
 
   useEffect(() => {
     return () => {
@@ -246,6 +307,11 @@ setSelectedPlayingIndex,
               }
               if (item.derivedFiles?.trimmed?.uri) {
                 await safeDeleteFile(item.derivedFiles.trimmed.uri);
+              }
+              if (item.derivedFiles?.splitParts?.length) {
+                for (const part of item.derivedFiles.splitParts) {
+                  await safeDeleteFile(part.uri);
+                }
               }
 
               // 2. 更新 state 並立即儲存
@@ -361,7 +427,7 @@ setSelectedPlayingIndex,
                     marginTop: 40,
                     marginBottom: 90, // 給 Controls 留出空間
                   }]}
-                  data={items}  // 使用從父組件傳入的已排序項目
+                  data={recordings}  // 使用從父組件傳入的已排序項目
                   keyExtractor={(item) => item.uri}
                   contentContainerStyle={{
                     paddingTop: 10,
@@ -465,11 +531,11 @@ setSelectedPlayingIndex,
                                 </View>
                               </View>
                             )}
-                            {/* 替換原本的播放控制部分 */}
+                            {/* 大音檔 */}
                             <PlaybackBar
                               item={item}
-                              isPlaying={isPlayingThis}
-                              isVisible={selectedPlayingIndex === index}
+                              isPlaying={isPlaying && playingUri === item.uri}
+                              isVisible={playingUri === item.uri}
                               playbackPosition={playingUri === item.uri ? playbackPosition : 0}
                               playbackDuration={playbackDuration}
                               playbackRate={playingUri === item.uri ? currentPlaybackRate : 1.0}  // ✅ 真正正在播放才顯示當前速度
@@ -538,9 +604,70 @@ setSelectedPlayingIndex,
                                       <Text style={styles.transcriptActionButton}>✖️</Text>
                                     </TouchableOpacity>
                                   </View>
-                                ) : undefined
+                                ) : null
                               }
                             />
+                            {item.durationSec > SEGMENT_DURATION && (
+                              <TouchableOpacity
+                                onPress={() => toggleExpand(item.uri)}
+                                style={{ paddingLeft: 16, paddingTop: 4 }}
+                              >
+                                <Text style={{ fontSize: 12, color: colors.primary }}>
+                                  {expandedItems.has(item.uri) ? '▾ 收合分段' : '▸ 展開分段'}
+                                </Text>
+                              </TouchableOpacity>
+                            )}
+
+{expandedItems.has(item.uri) && item.derivedFiles?.splitParts?.map((part: SplitPart, subIndex: number) => (
+  <View
+    key={`${item.uri}_split_${subIndex}`}
+    style={{
+      marginLeft: 16,
+      paddingLeft: 8,
+      borderLeftWidth: 2,
+      borderLeftColor: colors.primary + '40',
+    }}
+  >
+    <PlaybackBar
+      item={part}
+      isPlaying={isPlaying && playingUri === part.uri}
+      isVisible={playingUri === part.uri}
+playbackPosition={playbackPosition}
+  playbackDuration={(part.durationSec ?? 0) * 1000}
+      playbackRate={currentPlaybackRate}
+      styles={styles}
+      colors={colors}
+      showSpeedControl={true}
+onPlayPause={async () => {
+  closeAllMenus();
+  const rate = playbackRates[part.uri] ?? 1.0;
+  if (currentSound) {
+    currentSound.setSpeed(rate);  }
+
+  await togglePlayback(part.uri, index);
+  setSelectedPlayingIndex(-1);
+}}
+      onSeek={(positionMs) => {
+        if (currentSound) {
+          currentSound.setCurrentTime(positionMs / 1000);
+          setPlaybackPosition(positionMs);
+        }
+      }}
+      onEditRename={undefined}
+      onMorePress={() => {}}
+      onSpeedPress={(e) => {
+        e.stopPropagation();
+        e.target.measureInWindow((x: any, y: any, width: any, height: any) => {
+          setSpeedMenuIndex(index);
+          setSpeedMenuPosition({ x, y: y + height });
+        });
+      }}
+      setRecordings={setRecordings}
+      saveRecordings={saveRecordings}
+      variant="sub"
+    />
+  </View>
+))}
                             {/* 兩行小字摘要 */}
                             <View pointerEvents="box-none">
                               {(item.notes || item.transcript) && (
@@ -632,7 +759,7 @@ setSelectedPlayingIndex,
                                       opacity: isAnyProcessing ? 0.4 : 1,
                                     }}
                                     disabled={isAnyProcessing}
-                                    onPress={() => {
+                                    onPress={async () => {
                                       closeAllMenus();
                                       stopPlayback();
                                       navigation.navigate('NoteDetail', {
@@ -754,7 +881,8 @@ setSelectedPlayingIndex,
                       onPress={async () => {
                         closeAllMenus();
 
-                        const uri = recordings[speedMenuIndex].uri;
+                        const uri = playingUri;
+                        if (!uri) return;
                         setPlaybackRates(prev => ({ ...prev, [uri]: rate })); // ✅ 記住這筆的速度
 
                         if (isPlaying && playingUri === uri) {

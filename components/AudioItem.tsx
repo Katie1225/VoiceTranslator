@@ -1,11 +1,7 @@
 // components/AudioItem.tsx
 import React from 'react';
-import { View, Text, TouchableOpacity, TextInput, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput, ScrollView, Alert } from 'react-native';
 import { APP_VARIANT } from '../constants/variant';
-import { lightTheme, darkTheme, additionalColors } from '../constants/Colors';
-import { createStyles } from '../constants/audioStyles';
-import { RecordingItem } from '../utils/audioHelpers';
-
 
 // 音檔檔名顯示
 export const renderFilename = (
@@ -89,6 +85,7 @@ export const renderNoteBlock = (props: {
   styles: any;
   colors: any;
   wrapperStyle?: any;
+  editable?: boolean;
   renderContent?: () => React.ReactNode;
 }) => {
   const {
@@ -110,7 +107,7 @@ export const renderNoteBlock = (props: {
 
   const isEditing = editingIndex === index;
 
-  
+
   return (
     <View style={[{
       maxHeight: 500,
@@ -183,14 +180,24 @@ export const renderNoteBlock = (props: {
           </>
         ) : (
           <>
-            <TouchableOpacity onPress={() => onChangeEdit(value)}>
+            <TouchableOpacity
+              disabled={!props.editable}
+              onPress={() => onChangeEdit(value)}
+              style={{ opacity: props.editable ? 1 : 0.4 }}
+            >
               <Text style={styles.transcriptActionButton}>✏️ 修改    </Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={onShare}>
+            <TouchableOpacity
+              disabled={!props.editable}
+              onPress={onShare}
+              style={{ opacity: props.editable ? 1 : 0.4 }} >
               <Text style={styles.transcriptActionButton}>📤 轉發    </Text>
             </TouchableOpacity>
             {APP_VARIANT === 'notedebug' && (
-              <TouchableOpacity onPress={onDelete}>
+              <TouchableOpacity
+                disabled={!props.editable}
+                onPress={onDelete}
+                style={{ opacity: props.editable ? 1 : 0.4 }}>
                 <Text style={styles.transcriptActionButton}>🗑️ 刪除  </Text>
               </TouchableOpacity>
             )}
@@ -199,5 +206,4 @@ export const renderNoteBlock = (props: {
       </View>
     </View>
   );
-
 };

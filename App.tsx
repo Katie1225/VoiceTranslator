@@ -10,7 +10,7 @@ import RecorderPageVoiceNote from './pages/VoiceNote';
 import NoteDetailPage from './pages/NoteDetail';
 
 import TopicSummaryPage from './pages/TopicSummary';
-import { RecordingItem } from './utils/audioHelpers'; 
+import { RecordingItem } from './utils/audioHelpers-new'; 
 import { RecordingProvider } from './constants/RecordingContext';
 import { LoginProvider } from './constants/LoginContext';
 
