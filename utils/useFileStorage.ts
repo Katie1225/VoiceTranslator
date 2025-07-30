@@ -5,10 +5,12 @@ import { Alert } from 'react-native';
 import { RecordingItem, generateRecordingMetadata, } from './audioHelpers';
 import { debugLog, debugWarn, debugError } from './debugLog';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useTranslation } from '../constants/i18n';
+import { useLanguage } from '../constants/LanguageContext';
 
-export const useFileStorage = (setRecordings: React.Dispatch<React.SetStateAction<RecordingItem[]>>) => {
+export const useFileStorage = (setRecordings: React.Dispatch<React.SetStateAction<RecordingItem[]>>,   t: (key: string, params?: Record<string, string | number>) => string = (k) => k) => {
   const [isLoading, setIsLoading] = useState(true);
-
+const { setAppLocale } = useLanguage();
   const saveRecordings = async (items: RecordingItem[]) => {
     try {
       // 先驗證檔案是否存在
@@ -57,7 +59,7 @@ const validItems = await Promise.all(
       const m4aFiles = await scanAudioFiles();
 
       // 3. 智能合併與驗證
-      const validatedRecordings = await mergeAndValidateRecords(existingData, m4aFiles);
+      const validatedRecordings = await mergeAndValidateRecords(existingData, m4aFiles,t);
       
       // ✅ 補上 durationSec 做成展開三角形
 const withDuration = await Promise.all(validatedRecordings.map(async (rec) => {
@@ -131,7 +133,8 @@ await AsyncStorage.setItem('recordings', JSON.stringify(withDuration));
   // 輔助函數 3：智能合併與驗證
 const mergeAndValidateRecords = async (
   existingData: RecordingItem[],
-  m4aFiles: RNFS.ReadDirItem[]
+  m4aFiles: RNFS.ReadDirItem[],
+    t: (key: string, params?: Record<string, string | number>) => string = (k) => k
 ) => {
   const normalizePath = (path: string) =>
     decodeURI(path.replace(/^file:\/+/, '').replace(/\/+$/, '')).toLowerCase();
@@ -154,7 +157,8 @@ const mergeAndValidateRecords = async (
       const now = new Date();
       const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       const dateStr = `${now.getMonth() + 1}/${now.getDate()}`;
-      const fallbackName = `錄音 ${time} ${dateStr}`;
+      //const fallbackName = `錄音 ${time} ${dateStr}`;
+const fallbackName = t('record', { time, date: dateStr });
 
       result.push({
         uri: fileUri,
@@ -168,6 +172,7 @@ const mergeAndValidateRecords = async (
         summaries: old?.summaries || {},
         isStarred: old?.isStarred || false,
         size: old?.size || size,
+        durationSec: old?.durationSec || durationSec,
       });
     } catch (error) {
       debugWarn('處理新音檔失敗，已跳過:', file.name, error);
@@ -202,7 +207,8 @@ const mergeAndValidateRecords = async (
 
     } catch (err) {
       debugError("❌ safeDeleteFile 刪除失敗:", err);
-      Alert.alert("刪除失敗", (err as Error).message);
+      //Alert.alert("刪除失敗", (err as Error).message);
+      Alert.alert(t('deleteFailed'), (err as Error).message);
       throw err;
     }
   };

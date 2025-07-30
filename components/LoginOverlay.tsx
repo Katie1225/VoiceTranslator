@@ -3,11 +3,12 @@ import React from 'react';
 import { View, Text } from 'react-native';
 import { useLoginContext } from '../constants/LoginContext';
 import { useTheme } from '../constants/ThemeContext';
+import { useTranslation } from '../constants/i18n';
 
 export default function LoginOverlay() {
   const { isLoggingIn } = useLoginContext();
   const { colors } = useTheme();
-
+const { t } = useTranslation();
   if (!isLoggingIn) return null;
 
   return (
@@ -26,8 +27,8 @@ export default function LoginOverlay() {
         borderRadius: 12,
         alignItems: 'center'
       }}>
-        <Text style={{ color: colors.text, fontSize: 18, marginBottom: 10 }}>🔄 登入中...</Text>
-        <Text style={{ color: colors.text, fontSize: 14 }}>請稍候，正在與 Google 驗證身份</Text>
+        <Text style={{ color: colors.text, fontSize: 18, marginBottom: 10 }}>🔄 {t('loggingIn')}</Text>
+        <Text style={{ color: colors.text, fontSize: 14 }}>{t('authenticatingWithGoogle')}</Text>
       </View>
     </View>
   );

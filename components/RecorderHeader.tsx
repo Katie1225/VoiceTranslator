@@ -7,6 +7,7 @@ import { useTheme } from '../constants/ThemeContext';
 import { handleLogin } from '../utils/loginHelpers';
 import { Platform } from 'react-native';
 import { APP_TITLE } from '../constants/variant';
+import { useTranslation } from '../constants/i18n';
 
 interface RecorderHeaderProps {
   mode?: 'main' | 'detail';
@@ -22,19 +23,20 @@ interface RecorderHeaderProps {
   setIsLoggingIn?: (v: boolean) => void;
 }
 
-const labelMap: Record<string, string> = {
-  latest: '最新在上',
-  oldest: '最舊在上',
-  size: '依大小排序',
-  'name-asc': '名稱 A → Z',
-  'name-desc': '名稱 Z → A',
-  starred: '收藏⭐在上',
-};
+
 
 const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
   const noop = () => { };
   const defaultStr = '';
-
+const { t } = useTranslation(); 
+const labelMap: Record<string, string> = {
+  latest: t('sortNewest'),
+  oldest: t('sortOldest'),
+  size: t('sortBySize'),
+  'name-asc': t('sortByName'),
+'name-desc': t('sortByNameDesc'),
+starred: t('sortByFavoriteStar'),
+};
   const {
     mode,
     onBack,
@@ -164,7 +166,7 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
           }}
         >
           <Text style={{ fontSize: 12, color: colors.subtext, marginBottom: 4 }}>
-            目前排序：{labelMap[sortOption]}
+ {`${t('currentSort')}：${labelMap[sortOption]}`}
           </Text>
           <View style={{ height: 12 }} />
           <Text
@@ -175,7 +177,7 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
               marginBottom: 8,
             }}
           >
-            選擇排序方式
+            {t('chooseSort')}
           </Text>
 
           {Object.entries(labelMap).map(([key, label]) => (
@@ -210,13 +212,13 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
               }}
               style={{ paddingVertical: 10, flex: 1, alignItems: 'center' }}
             >
-              <Text style={{ color: colors.subtext }}>取消</Text>
+              <Text style={{ color: colors.subtext }}>{t('cancel')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setIsSortModalVisible(false)}
               style={{ paddingVertical: 10, flex: 1, alignItems: 'center' }}
             >
-              <Text style={{ color: colors.primary }}>完成</Text>
+              <Text style={{ color: colors.primary }}>{t('confirm')}</Text>
             </TouchableOpacity>
 
 
@@ -248,11 +250,11 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
               marginBottom: 8,
             }}
           >
-            {mode === 'detail' ? '搜尋內容關鍵字' : '搜尋錄音名稱'}
+ {mode === 'detail' ? t('searchContent') : t('searchPlaceholder')}
           </Text>
 
           <TextInput
-            placeholder="輸入關鍵字"
+            placeholder={t('enterKeyword')}
             placeholderTextColor="#888"
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -275,7 +277,7 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
               }}
               style={{ paddingVertical: 10, flex: 1, alignItems: 'center' }}
             >
-              <Text style={{ color: colors.subtext }}>取消</Text>
+              <Text style={{ color: colors.subtext }}>{t('cancel')}</Text>
 
             </TouchableOpacity>
 
@@ -283,17 +285,12 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
               onPress={() => setIsSearchModalVisible(false)}
               style={{ paddingVertical: 10, flex: 1, alignItems: 'center' }}
             >
-              <Text style={{ color: colors.primary }}>完成</Text>
+              <Text style={{ color: colors.primary }}>{t('confirm')}</Text>
             </TouchableOpacity>
-
-
           </View>
-
         </View>
       )}
-
     </>
-
   );
 };
 

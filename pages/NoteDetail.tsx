@@ -12,8 +12,8 @@ import { logCoinUsage } from '../utils/googleSheetAPI';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   RecordingItem,
-  transcribeAudio, summarizeWithMode, summarizeModes,
-  parseDateTimeFromDisplayName, generateRecordingMetadata,
+  transcribeAudio, summarizeWithMode, summarizeModes, 
+  parseDateTimeFromDisplayName, generateRecordingMetadata, updateRecordingFields, getSummarizeModes,
 } from '../utils/audioHelpers';
 import type { RootStackParamList } from '../App';
 import * as Localization from 'expo-localization';
@@ -23,7 +23,6 @@ import { productIds, productToCoins, purchaseManager, setTopUpProcessingCallback
 import { useFileStorage } from '../utils/useFileStorage';
 import { useRecordingContext } from '../constants/RecordingContext';
 import TopUpModal from '../components/TopUpModal';
-import SplitPromptModal, { splitTimeInSeconds } from '../components/SplitPromptModal';
 import LoginOverlay from '../components/LoginOverlay';
 import { useLoginContext } from '../constants/LoginContext';
 import { APP_TITLE } from '../constants/variant';
@@ -35,14 +34,44 @@ import PlaybackBar from '../components/PlaybackBar';
 import MoreMenu from '../components/MoreMenu';
 import { shareRecordingNote, shareRecordingFile, saveEditedRecording, deleteTextRecording, prepareEditing } from '../utils/editingHelpers';
 import { TouchableWithoutFeedback, Keyboard } from 'react-native';
-
+import { useTranslation } from '../constants/i18n';
 
 export default function NoteDetailPage() {
   const navigation = useNavigation();
   const { styles, colors } = useTheme();
   const route = useRoute<RouteProp<RootStackParamList, 'NoteDetail'>>();
-  const { index, type: initialType, summaryMode: initialSummaryMode } = route.params;
+  const { t } = useTranslation();
+  const { index, uri, type: initialType, summaryMode: initialSummaryMode } = route.params;
 
+  const {
+    recordings,
+    setRecordings,
+    lastVisitedRecording,
+    setLastVisitedRecording
+  } = useRecordingContext();
+
+  // 🎯 抓主音檔與小音檔
+if (index === undefined) {
+  Alert.alert(t('error'), t('audioIndexNotFound')); // 錯誤. 找不到音檔 index
+  navigation.goBack();
+  return null;
+}
+  const mainItem = recordings[index];
+  const subItem = uri
+    ? mainItem?.derivedFiles?.splitParts?.find((p: { uri: string }) => p.uri === uri)
+    : null;
+
+const currentItem: RecordingItem  = subItem ?? mainItem;
+
+
+  /* 檢查 currentItem 結構
+  debugLog('currentItem:', {
+    uri: currentItem.uri,
+    transcript: currentItem.transcript,
+    summaries: currentItem.summaries,
+    notes: currentItem.notes,
+  });
+  */
 
   const toolboxButtonRef = useRef<View | null>(null);
 
@@ -97,13 +126,13 @@ export default function NoteDetailPage() {
         )}
       </Text>
     );
-  };
+  };  
 
-// 編輯重置
+  // 編輯重置
   const resetEditingState = () => {
-  setIsEditing(false);
-  setEditingState({ type: null, index: null, text: '' });
-};
+    setIsEditing(false);
+    setEditingState({ type: null, index: null, text: '' });
+  };
 
   // 初始化音檔
   useEffect(() => {
@@ -135,23 +164,32 @@ export default function NoteDetailPage() {
     if (isPlaying) {
       sound.pause();
       setIsPlaying(false);
+      setLastVisitedRecording(prev => prev ? {...prev, isPlaying: false } : null); // 暫停時更新狀態
     } else {
       sound.play(() => {
         setIsPlaying(false);
         setPosition(0);
       });
       setIsPlaying(true);
+    setLastVisitedRecording({ // 播放時更新狀態
+      index, 
+      uri: currentItem.uri,
+      type: viewType,
+      isPlaying: true
+    });
     }
   };
 
-  const { recordings, setRecordings } = useRecordingContext();
-
-  const currentItem = recordings[index];
-
   useEffect(() => {
-    setSummaries(currentItem.summaries || {});
-    setFinalTranscript(currentItem.transcript || '');
-  }, [currentItem]);
+    const updatedMain = recordings[index];
+    const updatedSub = uri
+      ? updatedMain?.derivedFiles?.splitParts?.find((p: { uri: string }) => p.uri === uri)
+      : null;
+    const updatedItem = updatedSub ?? updatedMain;
+
+    setSummaries(updatedItem?.summaries || {});
+    setFinalTranscript(updatedItem?.transcript || '');
+  }, [recordings, index, uri]);
 
   const {
     isLoading,
@@ -196,9 +234,9 @@ export default function NoteDetailPage() {
       // 2. 等待金幣更新（不再需要手動同步，因為 handlePurchaseUpdate 已經處理）
       // 3. 清除中斷操作的標記
 
-    } catch (err) {
-      Alert.alert('購買失敗', err instanceof Error ? err.message : '請稍後再試');
-    }
+    }  catch (err) {
+  debugWarn('購買錯誤:', err);
+  }
   };
 
   // 在組件中添加 useEffect 來監聽 pendingActions
@@ -231,6 +269,7 @@ export default function NoteDetailPage() {
 
   // 在 useEffect 中處理轉文字邏輯
   useEffect(() => {
+    setLastVisitedRecording({ index, uri, type: initialType }); 
     const init = async () => {
       if (route.params.shouldTranscribe && !currentItem.transcript) {
         await handleTranscribe();
@@ -239,13 +278,18 @@ export default function NoteDetailPage() {
     init();
   }, [route.params.shouldTranscribe]);
 
+  useEffect(() => {
+  setLastVisitedRecording({ index, uri, type: initialType, isPlaying: true });
+}, [index, uri, initialType]);
+
+
   useFocusEffect(
     React.useCallback(() => {
       const checkLogin = async () => {
         const stored = await AsyncStorage.getItem('user');
         if (!stored && !isLoggingIn) {
           // ✅ 顯示提示：「尚未登入」
-          Alert.alert('尚未登入', '登入後可解鎖 AI 工具箱與錄音文檔轉文字功能');
+          debugWarn('尚未登入', '登入後可解鎖 AI 工具箱與錄音文檔轉文字功能');
         }
       };
       checkLogin();
@@ -265,33 +309,36 @@ export default function NoteDetailPage() {
     let stored = await AsyncStorage.getItem('user');
 
     // 如果未登入，要求登入
-    if (!stored) {
-      const loginResult = await new Promise<boolean>((resolve) => {
-        Alert.alert("請先登入", "使用此功能需要登入", [
-          { text: "取消", onPress: () => resolve(false) },
-          {
-            text: "登入",
-            onPress: async () => {
-              const result = await handleLogin(setIsLoggingIn);
-              if (result) {
-                Alert.alert('✅ 登入成功', result.message, [
-                  { text: '繼續', onPress: () => resolve(true) }
-                ]);
-              } else {
-                resolve(false);
-              }
+if (!stored) {
+  const loginResult = await new Promise<boolean>((resolve) => {
+    Alert.alert(
+      t('loginRequiredTitle'),       // 原本的「請先登入」
+      t('loginRequiredMessage'),     // 原本的「使用此功能需要登入」
+      [
+        { text: t('cancel'), onPress: () => resolve(false) },
+        {
+          text: t('login'),
+          onPress: async () => {
+            const result = await handleLogin(setIsLoggingIn,t);
+            if (result) {
+              Alert.alert(t('loginSuccessTitle'), result.message, [
+                { text: t('continue'), onPress: () => resolve(true) }
+              ]);
+            } else {
+              resolve(false);
             }
           }
-        ]);
-      });
+        }
+      ]
+    );
+  });
 
-      // 如果登入失敗或取消，直接返回 false
-      if (!loginResult) return false;
+  if (!loginResult) return false;
 
-      // 登入成功後重新獲取用戶資料
-      stored = await AsyncStorage.getItem('user');
-      if (!stored) return false;
-    }
+  stored = await AsyncStorage.getItem('user');
+  if (!stored) return false;
+}
+
 
     // 解析用戶資料
     const user = JSON.parse(stored);
@@ -302,43 +349,41 @@ export default function NoteDetailPage() {
 
     // 金幣不足處理
     debugLog('確認點 3:進入處理');
-    return new Promise((resolve) => {
-      Alert.alert("金幣不足", `此操作需要 ${requiredCoins} 金幣，你目前剩餘 ${user.coins} 金幣`, [
-        { text: "取消", style: "cancel", onPress: () => resolve(false) },
-        {
-          text: "立即儲值",
-          onPress: async () => {
-            setShowTopUpModal(true);
-            const coinsAdded = await waitForTopUp(); // 等待儲值完成
-            const refreshed = await AsyncStorage.getItem('user');
-            const updatedUser = refreshed ? JSON.parse(refreshed) : user;
-            resolve(updatedUser.coins >= requiredCoins);
-          }
-        }
-      ]);
-    });
+return new Promise((resolve) => {
+  Alert.alert(
+    t('notEnoughCoinsTitle'), // 金幣不足
+    t('notEnoughCoinsMessage')
+      .replace('{{required}}', String(requiredCoins))
+      .replace('{{current}}', String(user.coins)),
+    [
+      { text: t('cancel'), style: 'cancel', onPress: () => resolve(false) },
+      {
+        text: t('topUpNow'), // 立即儲值
+        onPress: async () => {
+          setShowTopUpModal(true);
+          const coinsAdded = await waitForTopUp(); // 等待儲值完成
+          const refreshed = await AsyncStorage.getItem('user');
+          const updatedUser = refreshed ? JSON.parse(refreshed) : user;
+          resolve(updatedUser.coins >= requiredCoins);
+        },
+      },
+    ]
+  );
+});
+
   };
 
   const saveEditing = () => {
-    if (editingState.index === null) return;
+    const updated = updateRecordingFields(recordings, index, uri, {
+      [editingState.type!]: editingState.text,
+    });
 
-    const updated = saveEditedRecording(recordings, editingState, summaryMode);
-    const newItem = updated[editingState.index];
-
-    // 更新全局 recordings
     setRecordings(updated);
     saveRecordings(updated);
-
-    // 確保畫面也用上最新資料
-    setEditValue(
-      viewType === 'transcript' ? newItem.transcript || '' :
-        viewType === 'summary' ? newItem.summaries?.[summaryMode] || '' :
-          newItem.notes || ''
-    );
-
-    setEditingState({ type: null, index: null, text: '' });
+    setEditValue(editingState.text);
+    setEditingState({ type: null, index: null, text: '', uri: null });
+    setIsEditing(false);
   };
-
 
   //轉文字邏輯
   const handleTranscribe = async (): Promise<void> => {
@@ -347,24 +392,25 @@ export default function NoteDetailPage() {
     setIsTranscribing(true);
 
     // ✅ 如果已有逐字稿，就不重複處理
-    const currentItem = recordings[index];
-    if (currentItem?.transcript) return;
+    if (currentItem?.transcript && !uri) return;
+
+  // Create a RecordingItem-compatible object if currentItem is SplitPart
 
     try {
       setIsTranscribing(true);
-      setPartialTranscript('正在轉文字...');
+setPartialTranscript(t('transcribingInProgress')); // 正在轉文字...
 
       //先確認音檔長度跟需要金額
       const durationSec = await new Promise<number>((resolve, reject) => {
         const sound = new Sound(currentItem.uri, '', (error) => {
           if (error) {
-            reject(new Error("無法載入音訊：" + error.message));
+reject(new Error(t('errorLoadingAudio') + ': ' + error.message)); // 無法載入音訊
             return;
           }
           const duration = sound.getDuration();
           sound.release(); // ✅ 記得釋放資源
           if (duration === 0) {
-            reject(new Error("無法取得音檔長度"));
+reject(new Error(t('invalidAudioDuration'))); // 無法取得音檔長度
           } else {
             resolve(Math.ceil(duration));
           }
@@ -378,10 +424,12 @@ export default function NoteDetailPage() {
       // ✅ 取得使用者資訊
       const stored = await AsyncStorage.getItem('user');
       const user = JSON.parse(stored!);
+
       // ✅ 呼叫 Whisper API 轉文字，並逐段顯示文字
       const result = await transcribeAudio(currentItem, (updatedTranscript) => {
         setPartialTranscript(updatedTranscript); // ✅ 畫面立即顯示
-      }, userLang.includes('CN') ? 'cn' : 'tw');
+      }, userLang.includes('CN') ? 'cn' : 'tw', t);
+
 
       // ✅ 紀錄金幣使用
       const coinResult = await logCoinUsage({
@@ -401,33 +449,29 @@ export default function NoteDetailPage() {
       const rawText = result?.transcript?.text?.trim() || '';
       const summaryLang = userLang.includes('CN') ? 'cn' : 'tw';
 
-if (!rawText) {
-  const placeholder = '<未偵測到有效語音內容>';
+      if (!rawText) {
+       // const placeholder = '<未偵測到有效語音內容>';
+       const placeholder = t('noValidSpeechDetected');
 
-  // ✅ 為所有摘要欄位都加上這個 placeholder，避免後續再做摘要
-  const autoSummaries: Record<string, string> = {};
-  summarizeModes.forEach(mode => {
-    autoSummaries[mode.key] = placeholder;
-  });
+        // ✅ 為所有摘要欄位都加上這個 placeholder，避免後續再做摘要
+        const autoSummaries: Record<string, string> = {};
+        summarizeModes.forEach(mode => {
+          autoSummaries[mode.key] = placeholder;
+        });
 
-  const updatedItem: RecordingItem = {
-    ...currentItem,
-    transcript: placeholder,
-    summaries: autoSummaries, // ✅ 寫入所有模式
-  };
+        const updated = updateRecordingFields(recordings, index, uri, {
+          transcript: placeholder,
+          summaries: autoSummaries,
+        });
+        await saveRecordings(updated);
+        setRecordings(updated);
+        setFinalTranscript(placeholder);
+        setPartialTranscript('');
+        setSummaries(autoSummaries); // ✅ 畫面立即顯示打勾
+        setSummaryMode('summary');
 
-  const updated = [...recordings];
-  updated[index] = updatedItem;
-  await saveRecordings(updated);
-  setRecordings(updated);
-  setFinalTranscript(placeholder);
-  setPartialTranscript('');
-  setSummaries(autoSummaries); // ✅ 畫面立即顯示打勾
-  setSummaryMode('summary');
-
-  return;
-}
-
+        return;
+      }
 
       const notesText = currentItem.notes || '';
       const totalTextLength = (rawText + notesText).trim().length;
@@ -435,62 +479,72 @@ if (!rawText) {
       if (totalTextLength < 20) {
         const autoSummaries: Record<string, string> = {};
         summarizeModes.forEach(mode => {
-          autoSummaries[mode.key] = rawText + '\n'+ '內容缺乏足夠資訊分析';
+          autoSummaries[mode.key] = rawText + '\n' + t('insufficientContentForSummary');
+       //   autoSummaries[mode.key] = rawText + '\n' + '內容缺乏足夠資訊分析';
         });
 
-        const updatedItem: RecordingItem = {
-          ...currentItem,
+        const updated = updateRecordingFields(recordings, index, uri, {
           transcript: rawText,
           summaries: autoSummaries,
-        };
-
-        const updated = [...recordings];
-        updated[index] = updatedItem;
-
+        });
         await saveRecordings(updated);
         setRecordings(updated);
-
         setFinalTranscript(rawText);
         setPartialTranscript('');
         setSummaries(autoSummaries);
         setSummaryMode('summary');
-
         resetEditingState();
         return;
       }
 
+ // ✅ 先寫入 transcript
+let updated = updateRecordingFields(recordings, index, uri, {
+  transcript: rawText,
+});
+await saveRecordings(updated);
+setRecordings(updated);
 
-      // ✅ 先存 transcript
-      const updatedItem = {
-        ...currentItem,
-        transcript: rawText,
-      };
-      const updated = [...recordings];
-      updated[index] = updatedItem;
-      await saveRecordings(updated);
-      setRecordings(updated);
-      setFinalTranscript(rawText); // ✅ 可以先顯示
+// ✅ 再取得正確的 item（主音檔或子音檔）
+const updatedItem = uri
+  ? updated[index].derivedFiles?.splitParts?.find((p) => p.uri === uri)
+  : updated[index];
 
-      // ✅ transcript 確保儲存後，再跑摘要
-      const summary = await summarizeWithMode(rawText, 'summary', summaryLang);
+// ✅ 呼叫摘要 API
+// 取得音檔時間資訊
+let startTime = '';
+let date = '';
+if (updatedItem?.date) {
+  const dateObj = new Date(updatedItem.date);
+  startTime = `${dateObj.getHours().toString().padStart(2, '0')}:${dateObj.getMinutes().toString().padStart(2, '0')}:${dateObj.getSeconds().toString().padStart(2, '0')}`;
+  date = `${dateObj.getFullYear()}/${dateObj.getMonth() + 1}/${dateObj.getDate()}`;
+}
 
-      // ✅ 接著補寫 summary
-      const updatedWithSummary = {
-        ...updatedItem,
-        summaries: {
-          ...(updatedItem.summaries || {}),
-          summary,
-        },
-      };
-      const finalUpdated = [...updated];
-      finalUpdated[index] = updatedWithSummary;
-      await saveRecordings(finalUpdated);
-      setRecordings(finalUpdated);
-      setSummaries(updatedWithSummary.summaries || {});
-      setSummaryMode('summary');
-      setViewType('summary');
+const summary = await summarizeWithMode(
+  rawText,
+  'summary',
+  t,
+  { startTime, date }
+);
+
+// ✅ 補寫 summary 回該筆資料
+updated = updateRecordingFields(updated, index, uri, {
+  summaries: {
+    ...(updatedItem?.summaries || {}),
+    summary,
+  },
+});
+await saveRecordings(updated);
+setRecordings(updated);
+setSummaries(
+  uri
+    ? updated[index].derivedFiles?.splitParts?.find((p) => p.uri === uri)?.summaries || {}
+    : updated[index].summaries || {}
+);
+setSummaryMode('summary');
+setViewType('summary');
     } catch (err) {
-      Alert.alert("❌ 錯誤", (err as Error).message || "轉換失敗，這次不會扣金幣");
+      Alert.alert(t('error'), (err as Error).message || t('transcriptionFailedNoCharge'));
+   //   Alert.alert("❌ 錯誤", (err as Error).message || "轉換失敗，這次不會扣金幣");
     } finally {
       setIsTranscribing(false);
     }
@@ -504,7 +558,7 @@ if (!rawText) {
   ): Promise<RecordingItem | null> => {
     const pay = requirePayment ?? (mode !== 'summary'); // ← 決定實際是否要扣金幣
 
-    const item = recordings[index];
+    const item = currentItem;
     let startTime = '';
     let date = '';
 
@@ -538,7 +592,8 @@ if (!rawText) {
 
       const fresh = await AsyncStorage.getItem('user');
       if (!fresh) {
-        Alert.alert("錯誤", "無法取得使用者資料");
+      //  Alert.alert("錯誤", "無法取得使用者資料");
+        Alert.alert(t('error'), t('userDataUnavailable'));
         return null;
       }
       user = JSON.parse(fresh);
@@ -554,26 +609,23 @@ if (!rawText) {
       const summary = await summarizeWithMode(
         fullPrompt,
         mode,
-        userLang.includes('CN') ? 'cn' : 'tw',
+        t,
         { startTime, date }
       );
 
-      const updatedItem = {
-        ...recordings[index],
+      const updated = updateRecordingFields(recordings, index, uri, {
         summaries: {
-          ...(recordings[index].summaries || {}),
+          ...(currentItem.summaries || {}),
           [mode]: summary,
         },
-      };
-
-      setRecordings(prev => {
-        const newRecordings = [...prev];
-        newRecordings[index] = updatedItem;
-        saveRecordings(newRecordings);
-        setSummaries(updatedItem.summaries);
-        return newRecordings;
       });
-
+      await saveRecordings(updated);
+      setRecordings(updated);
+      setSummaries(
+        uri
+          ? updated[index].derivedFiles?.splitParts?.find((p) => p.uri === uri)?.summaries || {}
+          : updated[index].summaries || {}
+      );
 
       // ✅ 顯示摘要
       setSummaryMode(mode);
@@ -592,7 +644,8 @@ if (!rawText) {
       }
       debugLog('8', mode);
     } catch (err) {
-      Alert.alert("❌ 摘要失敗", (err as Error).message || "處理失敗");
+     // Alert.alert("❌ 摘要失敗", (err as Error).message || "處理失敗");
+     Alert.alert(t('summarizeFailedTitle'), (err as Error).message || t('summarizeFailedMessage'));
     } finally {
       setSummarizingState(null);
     }
@@ -600,9 +653,8 @@ if (!rawText) {
     return null;
   };
 
-
   const handleShare = async () => {
-    await shareRecordingNote(recordings[index], viewType as 'transcript' | 'summary' | 'notes', summaryMode);
+    await shareRecordingNote(currentItem, viewType as 'transcript' | 'summary' | 'notes', summaryMode);
   };
 
   const content =
@@ -614,7 +666,7 @@ if (!rawText) {
 
   useEffect(() => {
     if (!isEditing) {
-      const latestItem = recordings[index];
+      const latestItem = currentItem;
       const newValue =
         viewType === 'transcript' ? latestItem.transcript :
           viewType === 'summary' ? latestItem.summaries?.[summaryMode] || '' :
@@ -627,9 +679,11 @@ if (!rawText) {
   const [editingState, setEditingState] = useState<{
     type: 'transcript' | 'summary' | 'name' | 'notes' | null;
     index: number | null;
+    uri?: string | null;
     text: string;
     mode?: string;
-  }>({ type: null, index: null, text: '' });
+  }>({ type: null, index: null, text: '', uri: null });
+
 
   const handleDelete = async () => {
     try {
@@ -655,11 +709,9 @@ if (!rawText) {
       setRecordings(updated);
       setEditValue('');
       setRecordings([...updated]); // 強制刷新
-      Alert.alert('刪除成功', `已刪除 ${viewType === 'summary' ? summaryMode : viewType} 內容`);
-
+  //    Alert.alert('刪除成功', `已刪除 ${viewType === 'summary' ? summaryMode : viewType} 內容`);
     } catch (error) {
-      console.error('刪除失敗:', error);
-      Alert.alert('刪除失敗', '刪除內容時發生錯誤');
+      debugError('刪除失敗:', error);
     }
 
   };
@@ -801,40 +853,52 @@ if (!rawText) {
               }}
             >
               <Text style={{ color: 'white', fontSize: 13 }}>
-                {key === 'transcript' ? '錄音文檔' : key === 'summary' ? 'AI工具箱' : '談話筆記'}
+              {/* {key === 'transcript' ? '錄音文檔' : key === 'summary' ? 'AI工具箱' : '談話筆記'}*/}  
+              <Text style={{ color: 'white', fontSize: 13 }}>
+  {key === 'transcript'
+    ? t('transcript')
+    : key === 'summary'
+    ? t('toolbox')
+    : t('notes')}
+</Text>
               </Text>
             </TouchableOpacity>
           ))}
         </View>
-
-
         {/* 內容區塊 */}
         {renderNoteBlock({
           type: viewType as 'transcript' | 'summary' | 'notes',
           index,
+          uri: currentItem.uri,  // 當前音檔的 URI（主音檔或小音檔）
           value: content,
-          editingIndex: editingState.type === viewType && editingState.index === index ? index : null,
+          editingIndex: editingState.index,
+          editingUri: editingState.uri,  // 編輯中的音檔 URI
           editValue: editingState.text,
           onChangeEdit: (text) => {
-            setEditingState({ type: viewType as any, index, text });
+            setEditingState({
+              type: viewType as any,
+              index,
+              uri: currentItem.uri,  // 確保傳入當前音檔 URI
+              text,
+            });
+              setIsEditing(true);
           },
           onSave: saveEditing,
-          onCancel: () => setEditingState({ type: null, index: null, text: '' }),
+          onCancel: () => setEditingState({ type: null, index: null, text: '', uri: null }),
           onShare: handleShare,
           onDelete: handleDelete,
-           editable: !isAnyProcessing, 
+          editable: !isAnyProcessing,
           styles,
           colors,
           wrapperStyle: {
-            maxHeight: 550,
+            maxHeight: isEditing ?220 : 520,
             width: '96%',
             alignSelf: 'center',
             marginVertical: 10,
           },
           renderContent: () =>
-            highlightKeyword(content, searchKeyword, colors.primary + '66')
+            highlightKeyword(content, searchKeyword, colors.primary + '66'),
         })}
-
         <TopUpModal
           visible={showTopUpModal}
           onClose={() => setShowTopUpModal(false)}
@@ -862,39 +926,11 @@ if (!rawText) {
               borderRadius: 12,
               alignItems: 'center'
             }}>
-              <Text style={{ color: colors.text, fontSize: 18, marginBottom: 10 }}>💰 處理儲值中...</Text>
-              <Text style={{ color: colors.text, fontSize: 14 }}>請稍候，正在驗證與加值</Text>
+              <Text style={{ color: colors.text, fontSize: 18, marginBottom: 10 }}>  {t('topUpProcessingTitle')}</Text> {/*💰 處理儲值中...*/}
+              <Text style={{ color: colors.text, fontSize: 14 }}>  {t('topUpProcessingMessage')}</Text> {/*請稍候，正在驗證與加值*/}
             </View>
           </View>
         )}
-        {/* 分割音檔 
-                          <SplitPromptModal
-                            visible={showSplitPrompt}
-                            onCancel={() => {
-                              setShowSplitPrompt(false);
-                              setPendingTranscribe(null);
-                            }}
-                            onSplit={async () => {
-                              if (!pendingTranscribe) return;
-                              setShowSplitPrompt(false);
-                              const item = recordings[pendingTranscribe.index];
-                              const parts = await splitAudioByInterval(item.uri);
-                              // 加入主列表
-                              const newItems = parts.map(p => ({
-                                ...p,
-                                date: new Date().toISOString(),
-                              }));
-                              setRecordings(prev => [...newItems, ...prev]);
-                              setPendingTranscribe(null);
-                            }}
-                            onFull={async () => {
-                              if (!pendingTranscribe) return;
-                              setShowSplitPrompt(false);
-                              await handleTranscribe(pendingTranscribe.index); // ⬅️ forceFull
-                              setPendingTranscribe(null);
-                            }}
-                          />*/}
-
       </View>
 
       {speedMenuVisible && speedAnchor && (
@@ -956,6 +992,7 @@ if (!rawText) {
           position: 'absolute',
           top: summaryMenuContext.position.y + 4,
           left: summaryMenuContext.position.x - 10,
+          right: 8,
           backgroundColor: colors.container,
           borderRadius: 8,
           padding: 8,
@@ -966,7 +1003,7 @@ if (!rawText) {
           shadowOffset: { width: 0, height: 2 },
           shadowRadius: 4,
         }}>
-          {summarizeModes.map((mode) => (
+{getSummarizeModes(t).map((mode) => (
             <TouchableOpacity
               key={mode.key}
               disabled={

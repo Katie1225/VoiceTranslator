@@ -5,4 +5,4 @@ export const APP_TITLE = 'Voice Note';
 
 export const version : string = '1.4.8';
 export const debugValue: string  = '1';  // 可切換 1 debug, 0 release
-export const SEGMENT_DURATION = debugValue === '1' ? 30 : 1800; // 測試模式用0.5分鐘，正式用30分鐘
+export const SEGMENT_DURATION = debugValue === '1' ? 120 : 1800; // 測試模式用0.5分鐘，正式用30分鐘

@@ -5,16 +5,18 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { debugError, debugLog, debugWarn } from './debugLog';
 import { ensureFreshIdToken } from './authToken';
 import { nginxVersion } from '../constants/variant';
+import { useTranslation } from '../constants/i18n';
 
 
 let BASE_URL: string;
+
 
 if (nginxVersion === 'blue') {
   BASE_URL = 'https://katielab.com/iap-redeem/';
 } else if (nginxVersion === 'green') {
   BASE_URL = 'https://katielab.com/v1/iap-redeem/';
 } else {
-  throw new Error('未知的 nginxVersion');
+  throw new Error('Server error'); 
 }
 
 type UserInfo = {
@@ -26,6 +28,8 @@ type UserInfo = {
 // 確認金額不同發送信件
 export const checkCoinMismatchAndNotify = async (cloudUser: any) => {
   try {
+    
+
     const stored = await AsyncStorage.getItem('user');
     if (!stored) return;
 
@@ -57,7 +61,7 @@ export const checkCoinMismatchAndNotify = async (cloudUser: any) => {
       debugLog('同步資料', cachedUser);
 
       // ✅ 通知使用者
-      alert(`⚠️ 金幣不一致\n已同步雲端金幣並登記差異：${note}`);
+  //    alert(`⚠️ 金幣不一致\n已同步雲端金幣並登記差異：${note}`);
     }
   } catch (err) {
     debugError('❌ checkCoinMismatchAndNotify 發生錯誤:', err);
@@ -79,7 +83,7 @@ export async function fetchUserInfo(id: string) {
     const contentType = response.headers.get('content-type');
     if (!contentType?.includes('application/json')) {
       const text = await response.text();
-      throw new Error(`非 JSON 回應: ${text.substring(0, 100)}`);
+      debugError(`非 JSON 回應: ${text.substring(0, 100)}`);
     }
 
     const json = await response.json();
@@ -167,13 +171,8 @@ export async function checkCoinUsage({
   try {
     debugLog('chekCoinUsage1');
     
-
     // 非強制取得
     const idToken = await ensureFreshIdToken(); // 這裡才驗證
-
-
-
-
 
     debugLog('chekCoinUsage2', JSON.stringify({ id, email, name, action, value, note, idToken }),);
 

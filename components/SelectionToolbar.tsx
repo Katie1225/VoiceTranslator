@@ -2,6 +2,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { useTheme } from '../constants/ThemeContext';
+import { useTranslation } from '../constants/i18n';
 
 const SelectionToolbar = ({
   selectedCount,
@@ -13,7 +14,7 @@ const SelectionToolbar = ({
   onCancel: () => void;
 }) => {
   const { colors } = useTheme();
-  
+  const { t } = useTranslation();
 return (
   <View style={{
     position: 'absolute',
@@ -32,16 +33,16 @@ return (
   }}>
     <View style={{ flex: 1, alignItems: 'flex-start' }}>
       <Text style={{ color: colors.text }}>
-        ✅ 已選 {selectedCount} 項
+  {t('selectedCountMessage').replace('{{count}}', String(selectedCount))}  {/*'✅ 已選 {{count}} 項'*/}
       </Text>
     </View>
     
     <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'center', gap: 50 }}>
       <TouchableOpacity onPress={onDelete}>
-        <Text style={{ color: 'red', fontWeight: 'bold' }}>🗑️ 刪除</Text>
+        <Text style={{ color: 'red', fontWeight: 'bold' }}>🗑️ {t('delete')}</Text>
       </TouchableOpacity>
       <TouchableOpacity onPress={onCancel}>
-        <Text style={{ color: colors.text }}>取消</Text>
+        <Text style={{ color: colors.text }}>{t('cancel')}</Text>
       </TouchableOpacity>
     </View>
   </View>

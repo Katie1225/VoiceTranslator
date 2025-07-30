@@ -3,6 +3,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { useTheme } from '../constants/ThemeContext';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
+import { useTranslation } from '../constants/i18n';
 
 export default function SearchToolbar({
     resultCount,
@@ -12,7 +13,7 @@ export default function SearchToolbar({
     onCancelSearch: () => void;
 }) {
     const { colors } = useTheme();
-
+const { t } = useTranslation();
     return (
         <View style={{
             position: 'absolute',
@@ -33,16 +34,16 @@ export default function SearchToolbar({
                 justifyContent: 'space-between',
                 width: '100%',
             }}>
-                <Text style={{ color: colors.text }}>
-                    🔍 <Text style={{ fontSize: 18, fontWeight: 'bold' }}>{resultCount}</Text> 筆搜尋結果
-                </Text>
+<Text style={{ color: colors.text, fontWeight: 'bold' }}>
+  {t('resultsCountFull').replace('{{count}}', String(resultCount))} {/*幾筆搜尋*/}
+</Text>
     <TouchableOpacity onPress={onCancelSearch} hitSlop={10}>
                 <Text style={{ color: colors.primary, fontWeight: 'bold', flexDirection: 'row', alignItems: 'center' }}>
                     <Icon
                         name="close"
                         size={28}
                         color={colors.primary}
-                    />取消搜尋
+                    />{t('cancelSearch')} {/*取消搜尋*/}
                 </Text>
                 </TouchableOpacity>
             </View>

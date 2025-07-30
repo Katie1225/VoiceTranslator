@@ -5,12 +5,15 @@ import { useRoute, useNavigation } from '@react-navigation/native';
 import { useTheme } from '../constants/ThemeContext';
 import { summarizeWithMode, RecordingItem } from '../utils/audioHelpers';
 import RecorderHeader from '@/components/RecorderHeader';
+import { useTranslation } from '../constants/i18n';
+
 
 export default function TopicSummaryPage() {
   const route = useRoute();
   const navigation = useNavigation();
   const { styles, colors } = useTheme();
 
+const { t } = useTranslation();
   const { items, keyword } = route.params as {
     items: RecordingItem[];
     keyword: string;
@@ -18,26 +21,7 @@ export default function TopicSummaryPage() {
 
   const [summary, setSummary] = useState<string>('');
   const [loading, setLoading] = useState(true);
-/*
-  useEffect(() => {
-    const runSummary = async () => {
-      try {
-        const text = items
-          .map(item => [item.displayName, item.transcript, item.notes].filter(Boolean).join('\n'))
-          .join('\n\n');
-        const prompt = `以下是關於「${keyword}」的所有錄音內容：\n\n${text}\n\n請根據這些內容產出統整摘要，包含：\n1. 主題摘要\n2. 事件時間軸\n3. 關鍵標籤\n4. 建議行動`;
 
-        const result = await summarizeWithMode({ transcript: prompt } as any, 'summary');
-        setSummary(result);
-      } catch (err) {
-        Alert.alert('AI 分析失敗', (err as Error).message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    runSummary();
-  }, []); */
   // 下面 debug
 useEffect(() => {
   setLoading(false); // 🔧 加這行看看畫面能否顯示 text
@@ -45,32 +29,54 @@ useEffect(() => {
 
 const text = items
   .map(item => {
-    const lines = [];
+    const lines: string[] = [];
 
     if (!item.displayName) return null;
-
-    lines.push(`🎙️ ${item.displayName}`);
+lines.push(`🎙️ ${t('record')}: ${item.displayName}`);
 
     if (item.summaries?.summary) {
-      lines.push(`🧠 AI工具箱重點整理:\n${item.summaries.summary}`);
+      //lines.push(`🧠 AI工具箱重點整理:\n${item.summaries.summary}`);
+      lines.push(`🧠 ${t('toolbox')}:\n${item.summaries.summary}`);
     } else if (item.transcript) {
-      lines.push(`📝 錄音文檔:\n${item.transcript}`);
+     // lines.push(`📝 錄音文檔:\n${item.transcript}`);
+     lines.push(`📝 ${t('transcript')}:\n${item.transcript}`);
     } else if (item.notes) {
-      lines.push(`✍️ 談話筆記:\n${item.notes}`);
-    } else {
-      return null; // 什麼都沒有就不顯示這筆
+     // lines.push(`✍️ 談話筆記:\n${item.notes}`);
+     lines.push(`✍️ ${t('notes')}:\n${item.notes}`);
+    }
+
+    // ✅ 加入子音檔內容
+    if (item.derivedFiles?.splitParts?.length) {
+      item.derivedFiles.splitParts.forEach((part, idx) => {
+      //  const label = part.displayName || `子音檔 ${idx + 1}`;
+      const label = part.displayName || `${t('splitPart')} ${idx + 1}`;
+        const content =
+          part.notes?.trim()
+            ? `✍️ ${label} ${t('notes')}:\n${part.notes}`
+            //`✍️ ${label} 筆記:\n${part.notes}`
+            : part.transcript?.trim()
+              ? `📝 ${label} ${t('transcript')}:\n${part.transcript}`
+              //`📝 ${label} 文檔:\n${part.transcript}`
+              : null;
+
+        if (content) {
+          lines.push(content);
+        }
+      });
     }
 
     return lines.join('\n\n');
   })
-  .filter(Boolean) // 移除 null
+  .filter(Boolean)
   .join('\n\n──────────────\n\n');
+
 // debug 結束
   return (
 <View style={{ flex: 1, backgroundColor: colors.background}}>
   <RecorderHeader
   mode="detail" 
-    title={`「${keyword}」重點整理`}
+   // title={`「${keyword}」重點整理`}
+   title={`「${keyword}」${t('summary')}`}
     onBack={() => navigation.goBack()}
   />
 

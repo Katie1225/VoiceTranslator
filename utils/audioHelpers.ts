@@ -7,8 +7,9 @@ import Sound from 'react-native-sound';
 import { nginxVersion } from '../constants/variant';
 import { debugLog, debugWarn, debugError } from './debugLog';
 import * as RNFS from 'react-native-fs';
-import { splitTimeInSeconds } from '../components/SplitPromptModal';
 import { Alert, } from 'react-native';
+import { useTranslation } from '../constants/i18n';
+
 
 export type RecordingItem = {
   size?: number;
@@ -34,9 +35,13 @@ export type RecordingItem = {
       name: string;
       displayName?: string;
     };
-        splitParts?: SplitPart[];
+splitParts?: RecordingItem[];
   };
   durationSec?: number;
+   start?: number;          
+  end?: number;            
+  createdAt?: string;       
+  isSplitPart?: boolean;    
 };
 
 export const notifyAwsRecordingEvent = async (
@@ -47,6 +52,7 @@ export const notifyAwsRecordingEvent = async (
     fileName?: string;
   }
 ) => {
+
   try {
     const baseUrl = nginxVersion === 'green'
       ? 'https://katielab.com/v1/recording-event/'
@@ -89,6 +95,7 @@ export const notitifyWhisperEvent = async (
   }
 ) => {
   try {
+  
     const baseUrl = nginxVersion === 'green'
       ? 'https://katielab.com/v1/transcribe/welcome/'
       : 'https://katielab.com/transcribe/welcome/';
@@ -124,7 +131,7 @@ export const trimSilence = async (uri: string, name: string): Promise<RecordingI
 
   await FFmpegWrapper.run(command);
   const exists = await RNFS.exists(outputPath);
-  if (!exists) throw new Error('靜音剪輯失敗');
+  if (!exists) debugError('靜音剪輯失敗');
 
   return {
     uri: outputPath,
@@ -147,11 +154,10 @@ export async function speedUpAudio(uri: string, speed: number, outputName?: stri
 
   await FFmpegWrapper.run(cmd);
   const exists = await RNFS.exists(outputUri);
-  if (!exists) throw new Error('加速音訊失敗');
+  if (!exists) debugError('加速音訊失敗');
 
   return outputUri;
 }
-
 
 export async function getAudioDurationInSeconds(uri: string): Promise<number> {
   return new Promise((resolve) => {
@@ -167,6 +173,7 @@ export async function getAudioDurationInSeconds(uri: string): Promise<number> {
     });
   });
 }
+
 // 累計靜音時間
 export async function processTrimmedAudio(
   uri: string,
@@ -188,14 +195,6 @@ export async function processTrimmedAudio(
 }
 
 // 切斷工具 for 自動存檔
-export type SplitPart = {
-  [x: string]: any;
-  uri: string;
-  displayName: string;
-  start: number;
-  end: number;
-  createdAt: string;
-};
 
 /**
  * 從主錄音中擷取一段片段（不重新編碼）
@@ -208,8 +207,9 @@ export type SplitPart = {
 export const splitAudioSegments = async (
   inputUri: string,
   startSec: number,
-  durationSec: number
-): Promise<SplitPart | null> => {
+  durationSec: number,
+    t: (key: string, params?: Record<string, string | number>) => string = (k) => k
+): Promise<RecordingItem | null> => {
   try {
     // 1. 正規化輸入路徑
     const inputPath = inputUri.replace(/^file:\/\//, ''); // 移除 file://
@@ -219,8 +219,9 @@ export const splitAudioSegments = async (
     const folder = `${RNFS.ExternalDirectoryPath}/segments/`;
     await RNFS.mkdir(folder); // 確保目錄存在
     
-    const outputName = `segment_${startSec}_${startSec + durationSec}.m4a`;
-    const outputPath = `${folder}${outputName}`;
+const baseName = inputPath.split('/').pop()?.replace(/\.[^/.]+$/, '') ?? `rec_${Date.now()}`;
+const outputName = `${baseName}_segment_${startSec}_${startSec + durationSec}.m4a`;
+const outputPath = `${folder}${outputName}`;
 
     // 3. 清理可能存在的舊檔案
     try {
@@ -241,7 +242,7 @@ export const splitAudioSegments = async (
     // 6. 驗證輸出檔案
     const exists = await RNFS.exists(outputPath);
     if (!exists) {
-      throw new Error('分割檔案未建立');
+      debugError('分割檔案未建立');
     }
 
     const stat = await RNFS.stat(outputPath);
@@ -251,13 +252,19 @@ export const splitAudioSegments = async (
       return null;
     }
 
-    return {
-      uri: `file://${outputPath}`,
-      start: startSec,
-      end: startSec + durationSec,
-      displayName: `${Math.floor(startSec / 60)}分~${Math.floor((startSec + durationSec) / 60)}分 分段`,
-      createdAt: new Date().toISOString(),
-    };
+return {
+  uri: `file://${outputPath}`,
+  name: outputName, // ✅ 補上必填欄位
+  start: startSec,
+  end: startSec + durationSec,
+  durationSec,
+displayName: t('splitRange', {
+  start: Math.floor(startSec / 60),
+  end: Math.floor((startSec + durationSec) / 60)
+}),
+  createdAt: new Date().toISOString(),
+  isSplitPart: true, // ✅ 可選識別欄位
+};
   } catch (err) {
     debugError('分割音檔失敗:', err);
     
@@ -279,7 +286,7 @@ export const splitAudioSegments = async (
 // 切段工具 for whisper
 export const splitAudioIntoSegments = async (
   uri: string,
-  seconds = 30
+  seconds = 30,
 ): Promise<string[]> => {
   const outputPattern = `${FileSystem.cacheDirectory}segment_%03d.wav`;
 
@@ -296,7 +303,7 @@ export const splitAudioIntoSegments = async (
 
   await FFmpegWrapper.run(command);
   const exists = await FileSystem.readDirectoryAsync(FileSystem.cacheDirectory!);
-  if (!exists.length) throw new Error('切割音檔失敗');
+  if (!exists.length) debugError('切割音檔失敗');
 
   // 讀取並排序分段檔案
   const allFiles = await FileSystem.readDirectoryAsync(FileSystem.cacheDirectory!);
@@ -308,22 +315,23 @@ export const splitAudioIntoSegments = async (
 
 export const sendToWhisper = async (
   wavUri: string,
-  lang: 'tw' | 'cn' = 'tw'
+  lang: 'tw' | 'cn' = 'tw',
+  t: (key: string, params?: Record<string, string | number>) => string = (k) => k
 ): Promise<string> => {
+   
   try {
-
     let apiUrl: string;
     if (nginxVersion === 'blue') {
       apiUrl = 'https://katielab.com/transcribe/';
     } else if (nginxVersion === 'green') {
       apiUrl = 'https://katielab.com/v1/transcribe/';
     } else {
-      throw new Error('未知的 nginxVersion');
+throw new Error(t('serverError'));
     }
-
     const fileStat = await FileSystem.getInfoAsync(wavUri);
     if (!fileStat.exists) {
-      throw new Error(`音檔不存在: ${wavUri}`);
+      debugError(`音檔不存在: ${wavUri}`);
+      return '';
     }
 
     const formData = new FormData();
@@ -346,7 +354,8 @@ export const sendToWhisper = async (
 
     if (!response.ok) {
       const errText = await response.text();
-      throw new Error(`Whisper API 失敗: ${response.status} - ${errText}`);
+      debugError(`Whisper API 錯誤: ${response.status} - ${errText}`);
+      return '';
     }
     const data = await response.json();
     let text = data?.text || data?.transcript || '';
@@ -394,12 +403,14 @@ export const sendToWhisper = async (
 export const transcribeAudio = async (
   item: RecordingItem,
   onPartial?: (text: string, index: number, total: number) => void,
-  targetLang: 'tw' | 'cn' = 'tw'
+  targetLang: 'tw' | 'cn' = 'tw',
+  t: (key: string, params?: Record<string, string | number>) => string = (k) => k
 ): Promise<{
   transcript: { text: string },
   skippedSilentSegments: number,
   text: string
 }> => {
+   
   if (!item.uri || !item.displayName) {
     throw new Error('音檔資訊不完整（uri 或 name 為 null）');
   }
@@ -410,8 +421,8 @@ export const transcribeAudio = async (
   const baseName = item.displayName.replace(/\.[^/.]+$/, '');
   const silentCounter = { count: 0 };
 
-  onPartial?.('⏳ 開始處理音檔...', 0, 0);
-
+  //onPartial?.('⏳ 開始處理音檔...', 0, 0);
+onPartial?.(t('transcriptionStart'), 0, 0);
 
   // 2. Process each segment sequentially
   for (let index = 0; index < segmentUris.length; index++) {
@@ -448,7 +459,7 @@ export const transcribeAudio = async (
 
       // 📤 上傳到 Whisper
       debugLog(`📤 上傳第 ${index + 1} 段至 Whisper`);
-      const text = await sendToWhisper(audioToSend, targetLang);
+      const text = await sendToWhisper(audioToSend, targetLang, t);
 
       // 累積結果
       if (text.trim()) {
@@ -457,7 +468,8 @@ export const transcribeAudio = async (
 
       // 回傳進度
       if (index < segmentUris.length - 1) {
-        onPartial?.(`⏳ 處理音檔中...\n${accumulatedText.trim()}`, index + 1, segmentUris.length);
+       // onPartial?.(`⏳ 處理音檔中...\n${accumulatedText.trim()}`, index + 1, segmentUris.length);
+onPartial?.(`${t('transcriptionStart')}\n${accumulatedText.trim()}`, index + 1, segmentUris.length);
       } else onPartial?.(accumulatedText.trim(), index + 1, segmentUris.length);
 
       // 🧹 清理檔案
@@ -485,6 +497,14 @@ export const transcribeAudio = async (
   };
 };
 
+export const getSummarizeModes = (t: (key: string) => string) => [
+  { key: 'summary', label: t('summary') },
+  { key: 'analysis', label: t('meetingNotes') },
+  { key: 'email', label: t('emailDraft') },
+  { key: 'news', label: t('pressRelease') },
+  { key: 'ai_answer', label: t('aiAnswer') },
+];
+
 const basePrompt =
   '錄音文字是一段可能由多人或單人錄製, 由whisper所處理聲音轉文字的逐字稿, 參考使用者補充筆記校正逐字稿音譯選字, 尤其是姓名及專有名詞以使用者補充筆記為準. 當內容是生活類以生活方式回答, 當涉及工商領域時, 你是一位資深技術助理，使用者是專業人員, 你的回答將用於會議紀錄、內部報告與技術決策。回答需具備：1. 條列清楚 2. 有工程深度 3. 避免空泛或無效內容。 不要給廢話或像新手的解釋，要講重點，貼近實作與決策需要。';
 
@@ -492,78 +512,73 @@ export const summarizeModes = [
   {
     key: 'summary',
     label: '重點整理',
-    prompt: `${basePrompt}將這段文字整理成清楚條列式的重點摘要。`,
+   // prompt: `${basePrompt}將這段文字整理成清楚條列式的重點摘要。`,
   },
   {
     key: 'analysis',
     label: '會議記錄',
-    prompt: `${basePrompt}將這段文字整理成會議記錄, 包含參與者(如果有提及), 會議時間(使用音檔時間), 討論項目, 下一步行動(依照日期排列)。`,
+  //  prompt: `${basePrompt}將這段文字整理成會議記錄, 包含參與者(如果有提及), 會議時間(使用音檔時間), 討論項目, 下一步行動(依照日期排列)。`,
   },
   {
     key: 'email',
     label: '信件撰寫',
-    prompt: `${basePrompt}把這段文字整理成一封正式的商業郵件，語氣禮貌。`,
+  //  prompt: `${basePrompt}把這段文字整理成一封正式的商業郵件，語氣禮貌。`,
   },
   {
     key: 'news',
     label: '新聞稿',
-    prompt: `${basePrompt}將這段文字改寫成新聞稿格式，具體且吸引人。`,
+ //   prompt: `${basePrompt}將這段文字改寫成新聞稿格式，具體且吸引人。`,
   },
   {
     key: 'ai_answer',
     label: 'AI給答案',
-    prompt: `${basePrompt} 將這段文字整理分析內容並回答文字中的問題。`,
+  //  prompt: `${basePrompt} 將這段文字整理分析內容並回答文字中的問題。`,
   },
 ];
+
 
 // 核心摘要函式
 export async function summarizeWithMode(
   transcript: string,
   modeKey: string,
-  targetLang: 'tw' | 'cn' = 'tw',
+  t: (key: string, params?: Record<string, string | number>) => string = (k) => k,
   metadata?: { startTime?: string; date?: string },
-  onPartial?: (text: string, index: number, total: number) => void // ✅ 加這行支援漏斗訊息
-) {
-  const mode = summarizeModes.find(m => m.key === modeKey);
-  if (!mode) throw new Error('未知的摘要模式');
+  onPartial?: (text: string, index: number, total: number) => void
+): Promise<string> {
 
   const timeStr =
     metadata?.date && metadata?.startTime
-      ? `事件發生時間 ${metadata.date} ${metadata.startTime}`
+      ? t('prompt.eventTime', { date: metadata.date, time: metadata.startTime })
       : '';
 
-  const finalPrompt = `${mode.prompt}\n${timeStr}\n使用者的主機語言是 ${targetLang}，用此語言回覆。`;
-  debugLog(finalPrompt);
+  const basePrompt = t('prompt.base');
+  const template = t(`prompt.${modeKey}`); // e.g. 'prompt.summary'
+  const fullPrompt = template.replace('{{base}}', basePrompt);
 
-  let BASE_URL: string;
+  const finalPrompt = [fullPrompt, timeStr, t('prompt.respondInUserLanguage')].filter(Boolean).join('\n');
 
-  if (nginxVersion === 'blue') {
-    BASE_URL = 'https://katielab.com/summarize/';
-  } else if (nginxVersion === 'green') {
-    BASE_URL = 'https://katielab.com/v1/summarize/';
-  } else {
-    throw new Error('未知的 nginxVersion');
-  }
+  debugLog('[🧠 summaryPrompt]', finalPrompt);
+
+  const BASE_URL = nginxVersion === 'blue'
+    ? 'https://katielab.com/summarize/'
+    : nginxVersion === 'green'
+    ? 'https://katielab.com/v1/summarize/'
+    : (() => { throw new Error(t('serverError')) })();
 
   const res = await fetch(BASE_URL, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ text: transcript, prompt: finalPrompt, targetLang }),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: transcript, prompt: finalPrompt }),
   });
 
-  if (!res.ok) {
-    throw new Error('API 回應錯誤');
-  }
+  if (!res.ok) throw debugError('API 回應錯誤');
 
   const data = await res.json();
-  if (!data || !data.result) {
-    throw new Error('API 回傳格式錯誤');
-  }
+  if (!data?.result) throw debugError('API 回傳格式錯誤');
 
   return data.result.trim();
 }
+
 
 // 取得檔名時解開
 export function parseDateTimeFromDisplayName(displayName: string): { startTime?: string; date?: string } {
@@ -583,25 +598,36 @@ export function parseDateTimeFromDisplayName(displayName: string): { startTime?:
 }
 
 // displayname 命名準則
-export function generateDisplayNameParts(userTitle: string = '', durationSec: number = 0): {
+export function generateDisplayNameParts(userTitle: string = '', 
+  durationSec: number = 0,
+  t: (key: string, params?: Record<string, string | number>) => string = (k) => k): {
   label: string;
   metadataLine: string;
 } {
-  const now = new Date();
-
+     const now = new Date();
   const h = Math.floor(durationSec / 3600);
   const m = Math.floor((durationSec % 3600) / 60);
   const s = durationSec % 60;
 
-  const durationText =
+/*  const durationText =
     h > 0 ? `${h}小${m}分${s}秒` :
       m > 0 ? `${m}分${s}秒` :
-        `${s}秒`;
+        `${s}秒`; */
+
+  let durationText = '';
+  if (h > 0) {
+    durationText = t('duration.hms', { h, m, s });
+  } else if (m > 0) {
+    durationText = t('duration.ms', { m, s });
+  } else {
+    durationText = t('duration.s', { s });
+  }
 
   const time = now.toTimeString().split(' ')[0]; // "HH:MM:SS"
   const dateStr = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
 
-  const label = userTitle.trim() || '錄音';
+ // const label = userTitle.trim() || '錄音';
+   const label = userTitle.trim() || t('record');
   const metadataLine = `${durationText} ${time} ${dateStr}`;
 
   return { label, metadataLine };
@@ -610,7 +636,7 @@ export async function getAudioDuration(uri: string): Promise<{ duration: number 
   return new Promise((resolve, reject) => {
     const sound = new Sound(uri, '', (error) => {
       if (error) {
-        reject(new Error('音訊載入失敗'));
+        reject(debugError('音訊載入失敗'));
         return;
       }
 
@@ -654,5 +680,34 @@ export async function generateRecordingMetadata(uri: string): Promise<{
   };
 }
 
+//存儲文字
+export function updateRecordingFields(
+  recordings: RecordingItem[],
+  index: number,
+  uri: string | undefined,
+  fields: Partial<RecordingItem>
+): RecordingItem[] {
+  const updated = [...recordings];
+
+  if (uri && uri !== recordings[index].uri) {
+    const updatedParts = (updated[index].derivedFiles?.splitParts || []).map((p) =>
+      p.uri === uri ? { ...p, ...fields } : p
+    );
+    updated[index] = {
+      ...updated[index],
+      derivedFiles: {
+        ...updated[index].derivedFiles,
+        splitParts: updatedParts,
+      },
+    };
+  } else {
+    updated[index] = {
+      ...updated[index],
+      ...fields,
+    };
+  }
+
+  return updated;
+}
 
 

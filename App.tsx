@@ -1,4 +1,5 @@
 // App.tsx
+
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -10,9 +11,10 @@ import RecorderPageVoiceNote from './pages/VoiceNote';
 import NoteDetailPage from './pages/NoteDetail';
 
 import TopicSummaryPage from './pages/TopicSummary';
-import { RecordingItem } from './utils/audioHelpers-new'; 
+import { RecordingItem } from './utils/audioHelpers'; 
 import { RecordingProvider } from './constants/RecordingContext';
 import { LoginProvider } from './constants/LoginContext';
+import { LanguageProvider } from './constants/LanguageContext';
 
 const variantMap: Record<string, React.FC> = {
   note: RecorderPageVoiceNote,
@@ -29,10 +31,11 @@ const SelectedPage = variantMap[APP_VARIANT] || (() => {
 export type RootStackParamList = {
   RecorderPage: undefined;
   NoteDetail: {
-    index: number;
+    index?: number;
+    uri?: string;
     type: 'notes' | 'transcript' | 'summary';
+    shouldTranscribe?: boolean;
     summaryMode?: string;
-    shouldTranscribe?: boolean; // 新增標記表示需要轉文字
   };
   TopicSummaryPage: {
     items: RecordingItem[];
@@ -47,6 +50,7 @@ export default function App() {
   <LoginProvider>
     <RecordingProvider>
       <ThemeProvider>
+            <LanguageProvider>
         <NavigationContainer>
           <Stack.Navigator initialRouteName="RecorderPage" screenOptions={{ headerShown: false }}>
             <Stack.Screen name="RecorderPage" component={SelectedPage} />
@@ -54,6 +58,7 @@ export default function App() {
             <Stack.Screen name="TopicSummaryPage" component={TopicSummaryPage} />
           </Stack.Navigator>
         </NavigationContainer>
+        </LanguageProvider>
       </ThemeProvider>
     </RecordingProvider>
   </LoginProvider>

@@ -2,6 +2,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, Alert } from 'react-native';
 import { RecordingItem } from '../utils/audioHelpers';
+import { useTranslation } from '../constants/i18n';
 
 interface MoreMenuProps {
   position: { x: number; y: number };
@@ -32,6 +33,7 @@ const MoreMenu: React.FC<MoreMenuProps> = ({
   isDerived,
   showDelete,
 }) => {
+  const { t } = useTranslation();
   return (
     <View
       style={[
@@ -66,7 +68,7 @@ const MoreMenu: React.FC<MoreMenuProps> = ({
             onRename?.(index);
           }}
         >
-          <Text style={styles.optionText}>✏️ 重新命名</Text>
+          <Text style={styles.optionText}>✏️ {t('rename')}</Text>
         </TouchableOpacity>
       )}
       <TouchableOpacity
@@ -76,7 +78,7 @@ const MoreMenu: React.FC<MoreMenuProps> = ({
           onShare(item.uri);
         }}
       >
-        <Text style={styles.optionText}>📤 分享</Text>
+        <Text style={styles.optionText}>📤 {t('share')}</Text>
       </TouchableOpacity>
 
 {showDelete && (
@@ -87,7 +89,7 @@ const MoreMenu: React.FC<MoreMenuProps> = ({
       onDelete(index);
     }}
   >
-    <Text style={styles.optionText}>🗑️ 刪除</Text>
+    <Text style={styles.optionText}>🗑️ {t('delete')}</Text>
   </TouchableOpacity>
 )}
     </View>

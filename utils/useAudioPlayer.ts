@@ -23,13 +23,9 @@ export const useAudioPlayer = () => {
     debugLog('▶️ startProgressTimer 被呼叫');
     clearProgressTimer();
     progressUpdateInterval.current = setInterval(() => {
-      debugLog('⏱ timer tick');
-
-
       if (currentSoundRef.current) {
-        debugLog('✅ 符合條件，嘗試讀取時間');
         currentSoundRef.current.getCurrentTime((seconds) => {
-          debugLog('📦 getCurrentTime =', seconds);
+   //       debugLog('📦 getCurrentTime =', seconds);
           setPlaybackPosition(seconds * 1000);
         });
       }
@@ -70,10 +66,7 @@ export const useAudioPlayer = () => {
           debugError('❌ 加載音頻失敗:', uri, error);
           return;
         }
-
-        debugLog('✅ 音頻載入成功:', uri);
         sound.setNumberOfLoops(0);
-
         const duration = sound.getDuration();
         if (!duration || isNaN(duration)) {
           debugWarn('❗ 無法取得音檔時長:', uri);
@@ -125,6 +118,7 @@ export const useAudioPlayer = () => {
     currentSound: currentSoundRef.current,
     isPlaying,
     playingUri,
+     setPlayingUri,
     currentPlaybackRate,
     setPlaybackRate,
     playbackPosition,

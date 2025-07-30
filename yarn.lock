@@ -3304,11 +3304,6 @@ expo-asset@~11.1.7:
     "@expo/image-utils" "^0.7.6"
     expo-constants "~17.1.7"
 
-expo-av@^15.1.7:
-  version "15.1.7"
-  resolved "https://registry.npmjs.org/expo-av/-/expo-av-15.1.7.tgz"
-  integrity sha512-NC+JR+65sxXfQN1mOHp3QBaXTL2J+BzNwVO27XgUEc5s9NaoBTdHWElYXrfxvik6xwytZ+a7abrqfNNgsbQzsA==
-
 expo-blur@~14.0.3:
   version "14.0.3"
   resolved "https://registry.npmjs.org/expo-blur/-/expo-blur-14.0.3.tgz"

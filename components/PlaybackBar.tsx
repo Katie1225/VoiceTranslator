@@ -3,14 +3,15 @@ import { View, Text, TextInput, TouchableOpacity } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import {
-    RecordingItem, transcribeAudio, summarizeWithMode, summarizeModes, notifyAwsRecordingEvent, SplitPart,
+    RecordingItem, transcribeAudio, summarizeWithMode, summarizeModes, notifyAwsRecordingEvent,
     notitifyWhisperEvent, splitAudioSegments,
     parseDateTimeFromDisplayName, generateDisplayNameParts, generateRecordingMetadata,
 } from '../utils/audioHelpers';
 
+
 interface PlaybackBarProps {
     //  item: RecordingItem;
-    item: RecordingItem | SplitPart;
+    item: RecordingItem;
     isPlaying: boolean;
     isVisible: boolean;
     playbackPosition: number;
@@ -43,7 +44,7 @@ interface PlaybackBarProps {
     variant?: 'main' | 'sub';
 }
 
-function isRecordingItem(item: RecordingItem | SplitPart): item is RecordingItem {
+function isRecordingItem(item: RecordingItem): item is RecordingItem {
     return 'isStarred' in item || 'displayDate' in item;
 }
 
@@ -146,7 +147,7 @@ const PlaybackBar: React.FC<PlaybackBarProps> = ({
                                     fontWeight: isPlaying ? 'bold' : 'normal',
                                     color: colors.text,
                                 },]}
-                                numberOfLines={1}
+                                numberOfLines={2}
                             >
                                 {(editName || '').split('\n')[0]}
                             </Text>
@@ -209,18 +210,18 @@ const PlaybackBar: React.FC<PlaybackBarProps> = ({
             </View>
 
             {/* 第二行：進度條 */}
-{isVisible && (
-  <Slider
-    minimumValue={0}
-    maximumValue={playbackDuration}
-    value={playbackPosition}
-    onSlidingComplete={onSeek}
-    style={styles.playbackSlider}
-    minimumTrackTintColor={colors.primary}
-    maximumTrackTintColor={colors.subtext}
-    thumbTintColor={colors.primary}
-  />
-)}
+            {isVisible && (
+                <Slider
+                    minimumValue={0}
+                    maximumValue={playbackDuration}
+                    value={playbackPosition}
+                    onSlidingComplete={onSeek}
+                    style={styles.playbackSlider}
+                    minimumTrackTintColor={colors.primary}
+                    maximumTrackTintColor={colors.subtext}
+                    thumbTintColor={colors.primary}
+                />
+            )}
 
             {/* 第三行：時間與播放速度 */}
             {isVisible && (

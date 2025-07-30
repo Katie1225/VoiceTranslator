@@ -2,6 +2,9 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, TextInput, ScrollView, Alert } from 'react-native';
 import { APP_VARIANT } from '../constants/variant';
+import { useTranslation } from '../constants/i18n';
+
+
 
 // 音檔檔名顯示
 export const renderFilename = (
@@ -21,7 +24,7 @@ export const renderFilename = (
 
   const isPlayingThis = playingUri === uri;
   const label = iconPrefix ? `${iconPrefix} ${name}` : name;
-
+const { t } = useTranslation();
   return (
     <TouchableOpacity
       style={[isDerived ? styles.derivedFileItem : styles.nameContainer, { flex: 1 }]}
@@ -75,7 +78,9 @@ export const renderNoteBlock = (props: {
   type: 'transcript' | 'summary' | 'notes';
   index: number;
   value: string;
+  uri?: string; 
   editingIndex: number | null;
+   editingUri?: string | null;  
   editValue: string;
   onChangeEdit: (text: string) => void;
   onSave: () => void;
@@ -91,8 +96,10 @@ export const renderNoteBlock = (props: {
   const {
     type,
     index,
+    uri,
     value,
     editingIndex,
+    editingUri,
     editValue,
     onChangeEdit,
     onSave,
@@ -105,7 +112,8 @@ export const renderNoteBlock = (props: {
     renderContent,
   } = props;
 
-  const isEditing = editingIndex === index;
+const isEditing = editingIndex === index || editingUri === uri;
+const { t } = useTranslation();
 
 
   return (
@@ -172,10 +180,10 @@ export const renderNoteBlock = (props: {
         {isEditing ? (
           <>
             <TouchableOpacity onPress={onSave}>
-              <Text style={styles.transcriptActionButton}>💾 儲存    </Text>
+              <Text style={styles.transcriptActionButton}>💾 {t('save')}    </Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={onCancel}>
-              <Text style={styles.transcriptActionButton}>✖️ 取消  </Text>
+              <Text style={styles.transcriptActionButton}>✖️ {t('cancel')}  </Text>
             </TouchableOpacity>
           </>
         ) : (
@@ -185,20 +193,20 @@ export const renderNoteBlock = (props: {
               onPress={() => onChangeEdit(value)}
               style={{ opacity: props.editable ? 1 : 0.4 }}
             >
-              <Text style={styles.transcriptActionButton}>✏️ 修改    </Text>
+              <Text style={styles.transcriptActionButton}>✏️ {t('edit')}    </Text>
             </TouchableOpacity>
             <TouchableOpacity
               disabled={!props.editable}
               onPress={onShare}
               style={{ opacity: props.editable ? 1 : 0.4 }} >
-              <Text style={styles.transcriptActionButton}>📤 轉發    </Text>
+              <Text style={styles.transcriptActionButton}>📤 {t('forward')}    </Text>
             </TouchableOpacity>
             {APP_VARIANT === 'notedebug' && (
               <TouchableOpacity
                 disabled={!props.editable}
                 onPress={onDelete}
                 style={{ opacity: props.editable ? 1 : 0.4 }}>
-                <Text style={styles.transcriptActionButton}>🗑️ 刪除  </Text>
+                <Text style={styles.transcriptActionButton}>🗑️ {t('delete')}  </Text>
               </TouchableOpacity>
             )}
           </>

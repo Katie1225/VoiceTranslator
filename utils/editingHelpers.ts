@@ -136,8 +136,6 @@ export async function shareRecordingNote(
 
   const filename = item.displayName || '';
   const prefix = `${filename} - ${label}\n\n`;
-
-
     try {
         await Share.share({ message: prefix + text });
 

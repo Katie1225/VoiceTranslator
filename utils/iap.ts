@@ -16,6 +16,7 @@ import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { debugValue } from '../constants/variant'
 import { debugLog, debugWarn, debugError } from './debugLog';
 
+
 let onTopUpCompleted: (() => void) | null = null;
 
 export const setTopUpCompletedCallback = (fn: (() => void) | null) => {
@@ -61,7 +62,7 @@ class PurchaseManager {
             // 初始化IAP連接
             const connected = await initConnection();
             if (!connected) {
-                throw new Error('無法連接到應用商店');
+                debugError('無法連接到應用商店');
             }
 
             // 設置監聽器
@@ -131,7 +132,7 @@ class PurchaseManager {
             // 驗證產品
             const coinsToAdd = productToCoins[purchase.productId];
             if (!coinsToAdd) {
-                throw new Error(`無效產品ID: ${purchase.productId}`);
+                debugError(`無效產品ID: ${purchase.productId}`);
             }
             debugLog('✅ 有效產品 ID');
 
@@ -152,7 +153,7 @@ class PurchaseManager {
             debugLog(result);
 
             if (!result.success) {
-                throw new Error(result.message || '金幣記錄失敗');
+                debugError(result.message || '金幣記錄失敗');
             }
 
             // 更新本地金幣已在CheckCoinUsage 完成
@@ -176,7 +177,7 @@ if (this.onTopUpCompleted) {
                        return actions;
                    } */
         } catch (err) {
-            Alert.alert('❌ 購買處理失敗', err instanceof Error ? err.message : '未知錯誤');
+            debugError('❌ 購買處理失敗', err instanceof Error ? err.message : '未知錯誤');
         } finally {
             // 無論成功失敗都關閉遮罩
             if (onTopUpProcessingChange) onTopUpProcessingChange(false);
@@ -187,12 +188,12 @@ if (this.onTopUpCompleted) {
     public async requestPurchase(productId: string): Promise<boolean> {
         debugLog('🟡 requestPurchase 被呼叫, productId =', productId);
         if (!productToCoins[productId]) {
-            throw new Error('無效的產品ID');
+            debugError('無效的產品ID');
         }
 
         try {
             const iapReady = await this.checkIAPReady();
-            if (!iapReady) throw new Error('應用商店服務不可用');
+            if (!iapReady) debugError('應用商店服務不可用');
 
             await iapRequestPurchase(
                 Platform.OS === 'android'

@@ -1,6 +1,8 @@
 // utils/showAlertHint.ts
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert } from 'react-native';
+import { useTranslation } from '../constants/i18n';
+import { useLanguage } from '../constants/LanguageContext';
 
 /**
  * 顯示一次性 Alert 提示訊息。
@@ -14,9 +16,11 @@ import { Alert } from 'react-native';
 export const showAlertHint = async (
   key: string,
   title: string,
-  message: string
+  message: string, 
+    t: (key: string, params?: Record<string, string | number>) => string = (k) => k
 ): Promise<boolean> => {
   const disabled = await AsyncStorage.getItem(key);
+const { setAppLocale } = useLanguage();
   if (disabled === 'true') return false;
 
   return new Promise((resolve) => {
@@ -25,7 +29,8 @@ export const showAlertHint = async (
       message,
       [
         {
-          text: '不再顯示',
+          //text: '不再顯示',
+           text: t('doNotShowAgain'), 
           onPress: async () => {
             await AsyncStorage.setItem(key, 'true');
             resolve(false);

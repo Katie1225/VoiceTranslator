@@ -7,8 +7,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../constants/ThemeContext';
 import AudioRecorderPlayer from 'react-native-audio-recorder-player';
 import { Platform } from 'react-native';
-
-
+import { useTranslation } from '../constants/i18n';
 
 interface RecorderControlsProps {
     recording: boolean;
@@ -33,11 +32,11 @@ const RecorderControls: React.FC<RecorderControlsProps> = ({
     currentDecibels,
     onToggleNotesModal,
 }) => {
-      const { colors, toggleTheme, setCustomPrimaryColor } = useTheme();
+    const { colors, toggleTheme, setCustomPrimaryColor } = useTheme();
     const [displayTime, setDisplayTime] = useState(0);
     const [menuVisible, setMenuVisible] = useState(false);
     const [decibelHistory, setDecibelHistory] = useState<number[]>([]);
-
+const { t } = useTranslation();
     useEffect(() => {
         let timer: NodeJS.Timeout;
 
@@ -124,7 +123,7 @@ const RecorderControls: React.FC<RecorderControlsProps> = ({
                                         />
                                     );
                                 })
-                           /*      }).reverse()右到左 */}
+}
                             </View>
                         </>
                     ) : (
@@ -139,11 +138,11 @@ const RecorderControls: React.FC<RecorderControlsProps> = ({
                                 textAlign: 'center',
                                 marginRight: 0,
                                 marginBottom: 15,
-                                fontFamily: Platform.OS === 'ios' ? 'Avenir' : 'Noto Sans TC' ,
+                                fontFamily: Platform.OS === 'ios' ? 'Avenir' : 'Noto Sans TC',
                             }}
                         >
-                            {/*title*/}
-                            現在開始紀錄                           
+                            {/*現在開始記錄*/}
+                              {t('startRecording')}
                         </Text>
                     )}
                 </View>
@@ -173,41 +172,15 @@ const RecorderControls: React.FC<RecorderControlsProps> = ({
                         )}
                     </TouchableOpacity>
                 </View>
-                {/* 中間 15% 資料夾 */}                    
-<View style={{ flex: 1.5, marginRight: 20 }}>
-  {recording && (
-    <TouchableOpacity onPress={onToggleNotesModal}>
-  <MaterialCommunityIcons name="pencil-plus" size={30} color={colors.subtext}   style={{ marginLeft: 10}}/>
-    </TouchableOpacity>
-  )}
-</View>
-
-
-
-                {/* 目前不顯示右邊 10%： ☰ 
-                <View style={{ flex: 1, marginRight: 0 }}>
-                    <TouchableOpacity onPress={() => setMenuVisible(!menuVisible)}>
-                        <Text style={{ fontSize: 20, color: colors.primary }}>☰</Text>
-                    </TouchableOpacity>
-                </View>*/}
+                {/* 左邊 15% 編寫筆 */}
+                <View style={{ flex: 1.5, marginRight: 20 }}>
+                    {recording && (
+                        <TouchableOpacity onPress={onToggleNotesModal}>
+                            <MaterialCommunityIcons name="pencil-plus" size={30} color={colors.subtext} style={{ marginLeft: 10 }} />
+                        </TouchableOpacity>
+                    )}
+                </View>
             </View>
-            {/* ☰ 選單 */}
-            <HamburgerMenu
-                visible={menuVisible}
-                onClose={() => setMenuVisible(false)}
-                onLoginPress={async () => {
-                    const result = await handleLogin(setIsLoggingIn);
-                    if (result) {
-                        Alert.alert('✅ 登入成功', result.message, [
-                            { text: '繼續', onPress: () => setMenuVisible(false) }
-                        ]);
-                        return true;
-                    } else {
-                        return false;
-                    }
-                }}
-                onLoginSuccess={() => setMenuVisible(false)}
-            />
         </>
     );
 };
