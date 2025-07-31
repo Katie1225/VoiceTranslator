@@ -12,7 +12,7 @@ import { logCoinUsage } from '../utils/googleSheetAPI';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   RecordingItem,
-  transcribeAudio, summarizeWithMode, summarizeModes, 
+  transcribeAudio, summarizeWithMode, summarizeModes,
   parseDateTimeFromDisplayName, generateRecordingMetadata, updateRecordingFields, getSummarizeModes,
 } from '../utils/audioHelpers';
 import type { RootStackParamList } from '../App';
@@ -51,17 +51,17 @@ export default function NoteDetailPage() {
   } = useRecordingContext();
 
   // 🎯 抓主音檔與小音檔
-if (index === undefined) {
-  Alert.alert(t('error'), t('audioIndexNotFound')); // 錯誤. 找不到音檔 index
-  navigation.goBack();
-  return null;
-}
+  if (index === undefined) {
+    Alert.alert(t('error'), t('audioIndexNotFound')); // 錯誤. 找不到音檔 index
+    navigation.goBack();
+    return null;
+  }
   const mainItem = recordings[index];
   const subItem = uri
     ? mainItem?.derivedFiles?.splitParts?.find((p: { uri: string }) => p.uri === uri)
     : null;
 
-const currentItem: RecordingItem  = subItem ?? mainItem;
+  const currentItem: RecordingItem = subItem ?? mainItem;
 
 
   /* 檢查 currentItem 結構
@@ -126,7 +126,7 @@ const currentItem: RecordingItem  = subItem ?? mainItem;
         )}
       </Text>
     );
-  };  
+  };
 
   // 編輯重置
   const resetEditingState = () => {
@@ -164,19 +164,19 @@ const currentItem: RecordingItem  = subItem ?? mainItem;
     if (isPlaying) {
       sound.pause();
       setIsPlaying(false);
-      setLastVisitedRecording(prev => prev ? {...prev, isPlaying: false } : null); // 暫停時更新狀態
+      setLastVisitedRecording(prev => prev ? { ...prev, isPlaying: false } : null); // 暫停時更新狀態
     } else {
       sound.play(() => {
         setIsPlaying(false);
         setPosition(0);
       });
       setIsPlaying(true);
-    setLastVisitedRecording({ // 播放時更新狀態
-      index, 
-      uri: currentItem.uri,
-      type: viewType,
-      isPlaying: true
-    });
+      setLastVisitedRecording({ // 播放時更新狀態
+        index,
+        uri: currentItem.uri,
+        type: viewType,
+        isPlaying: true
+      });
     }
   };
 
@@ -234,9 +234,9 @@ const currentItem: RecordingItem  = subItem ?? mainItem;
       // 2. 等待金幣更新（不再需要手動同步，因為 handlePurchaseUpdate 已經處理）
       // 3. 清除中斷操作的標記
 
-    }  catch (err) {
-  debugWarn('購買錯誤:', err);
-  }
+    } catch (err) {
+      debugWarn('購買錯誤:', err);
+    }
   };
 
   // 在組件中添加 useEffect 來監聽 pendingActions
@@ -269,7 +269,7 @@ const currentItem: RecordingItem  = subItem ?? mainItem;
 
   // 在 useEffect 中處理轉文字邏輯
   useEffect(() => {
-    setLastVisitedRecording({ index, uri, type: initialType }); 
+    setLastVisitedRecording({ index, uri, type: initialType });
     const init = async () => {
       if (route.params.shouldTranscribe && !currentItem.transcript) {
         await handleTranscribe();
@@ -279,8 +279,8 @@ const currentItem: RecordingItem  = subItem ?? mainItem;
   }, [route.params.shouldTranscribe]);
 
   useEffect(() => {
-  setLastVisitedRecording({ index, uri, type: initialType, isPlaying: true });
-}, [index, uri, initialType]);
+    setLastVisitedRecording({ index, uri, type: initialType, isPlaying: true });
+  }, [index, uri, initialType]);
 
 
   useFocusEffect(
@@ -309,35 +309,35 @@ const currentItem: RecordingItem  = subItem ?? mainItem;
     let stored = await AsyncStorage.getItem('user');
 
     // 如果未登入，要求登入
-if (!stored) {
-  const loginResult = await new Promise<boolean>((resolve) => {
-    Alert.alert(
-      t('loginRequiredTitle'),       // 原本的「請先登入」
-      t('loginRequiredMessage'),     // 原本的「使用此功能需要登入」
-      [
-        { text: t('cancel'), onPress: () => resolve(false) },
-        {
-          text: t('login'),
-          onPress: async () => {
-            const result = await handleLogin(setIsLoggingIn,t);
-            if (result) {
-              Alert.alert(t('loginSuccessTitle'), result.message, [
-                { text: t('continue'), onPress: () => resolve(true) }
-              ]);
-            } else {
-              resolve(false);
+    if (!stored) {
+      const loginResult = await new Promise<boolean>((resolve) => {
+        Alert.alert(
+          t('loginRequiredTitle'),       // 原本的「請先登入」
+          t('loginRequiredMessage'),     // 原本的「使用此功能需要登入」
+          [
+            { text: t('cancel'), onPress: () => resolve(false) },
+            {
+              text: t('login'),
+              onPress: async () => {
+                const result = await handleLogin(setIsLoggingIn, t);
+                if (result) {
+                  Alert.alert(t('loginSuccessTitle'), result.message, [
+                    { text: t('continue'), onPress: () => resolve(true) }
+                  ]);
+                } else {
+                  resolve(false);
+                }
+              }
             }
-          }
-        }
-      ]
-    );
-  });
+          ]
+        );
+      });
 
-  if (!loginResult) return false;
+      if (!loginResult) return false;
 
-  stored = await AsyncStorage.getItem('user');
-  if (!stored) return false;
-}
+      stored = await AsyncStorage.getItem('user');
+      if (!stored) return false;
+    }
 
 
     // 解析用戶資料
@@ -349,34 +349,47 @@ if (!stored) {
 
     // 金幣不足處理
     debugLog('確認點 3:進入處理');
-return new Promise((resolve) => {
-  Alert.alert(
-    t('notEnoughCoinsTitle'), // 金幣不足
-    t('notEnoughCoinsMessage')
-      .replace('{{required}}', String(requiredCoins))
-      .replace('{{current}}', String(user.coins)),
-    [
-      { text: t('cancel'), style: 'cancel', onPress: () => resolve(false) },
-      {
-        text: t('topUpNow'), // 立即儲值
-        onPress: async () => {
-          setShowTopUpModal(true);
-          const coinsAdded = await waitForTopUp(); // 等待儲值完成
-          const refreshed = await AsyncStorage.getItem('user');
-          const updatedUser = refreshed ? JSON.parse(refreshed) : user;
-          resolve(updatedUser.coins >= requiredCoins);
-        },
-      },
-    ]
-  );
-});
+    return new Promise((resolve) => {
+      Alert.alert(
+        t('notEnoughCoinsTitle'), // 金幣不足
+        t('notEnoughCoinsMessage')
+          .replace('{{required}}', String(requiredCoins))
+          .replace('{{current}}', String(user.coins)),
+        [
+          { text: t('cancel'), style: 'cancel', onPress: () => resolve(false) },
+          {
+            text: t('topUpNow'), // 立即儲值
+            onPress: async () => {
+              setShowTopUpModal(true);
+              const coinsAdded = await waitForTopUp(); // 等待儲值完成
+              const refreshed = await AsyncStorage.getItem('user');
+              const updatedUser = refreshed ? JSON.parse(refreshed) : user;
+              resolve(updatedUser.coins >= requiredCoins);
+            },
+          },
+        ]
+      );
+    });
 
   };
 
   const saveEditing = () => {
-    const updated = updateRecordingFields(recordings, index, uri, {
-      [editingState.type!]: editingState.text,
-    });
+    let updatePayload: any = {};
+
+    if (editingState.type === 'summary') {
+      const targetItem = uri
+        ? recordings[index].derivedFiles?.splitParts?.find(p => p.uri === uri)
+        : recordings[index];
+
+      updatePayload.summaries = {
+        ...(targetItem?.summaries || {}),
+        [summaryMode]: editingState.text,
+      };
+    } else {
+      updatePayload[editingState.type!] = editingState.text;
+    }
+
+    const updated = updateRecordingFields(recordings, index, uri, updatePayload);
 
     setRecordings(updated);
     saveRecordings(updated);
@@ -384,6 +397,7 @@ return new Promise((resolve) => {
     setEditingState({ type: null, index: null, text: '', uri: null });
     setIsEditing(false);
   };
+
 
   //轉文字邏輯
   const handleTranscribe = async (): Promise<void> => {
@@ -394,23 +408,23 @@ return new Promise((resolve) => {
     // ✅ 如果已有逐字稿，就不重複處理
     if (currentItem?.transcript && !uri) return;
 
-  // Create a RecordingItem-compatible object if currentItem is SplitPart
+    // Create a RecordingItem-compatible object if currentItem is SplitPart
 
     try {
       setIsTranscribing(true);
-setPartialTranscript(t('transcribingInProgress')); // 正在轉文字...
+      setPartialTranscript(t('transcribingInProgress')); // 正在轉文字...
 
       //先確認音檔長度跟需要金額
       const durationSec = await new Promise<number>((resolve, reject) => {
         const sound = new Sound(currentItem.uri, '', (error) => {
           if (error) {
-reject(new Error(t('errorLoadingAudio') + ': ' + error.message)); // 無法載入音訊
+            reject(new Error(t('errorLoadingAudio') + ': ' + error.message)); // 無法載入音訊
             return;
           }
           const duration = sound.getDuration();
           sound.release(); // ✅ 記得釋放資源
           if (duration === 0) {
-reject(new Error(t('invalidAudioDuration'))); // 無法取得音檔長度
+            reject(new Error(t('invalidAudioDuration'))); // 無法取得音檔長度
           } else {
             resolve(Math.ceil(duration));
           }
@@ -450,8 +464,8 @@ reject(new Error(t('invalidAudioDuration'))); // 無法取得音檔長度
       const summaryLang = userLang.includes('CN') ? 'cn' : 'tw';
 
       if (!rawText) {
-       // const placeholder = '<未偵測到有效語音內容>';
-       const placeholder = t('noValidSpeechDetected');
+        // const placeholder = '<未偵測到有效語音內容>';
+        const placeholder = t('noValidSpeechDetected');
 
         // ✅ 為所有摘要欄位都加上這個 placeholder，避免後續再做摘要
         const autoSummaries: Record<string, string> = {};
@@ -480,7 +494,7 @@ reject(new Error(t('invalidAudioDuration'))); // 無法取得音檔長度
         const autoSummaries: Record<string, string> = {};
         summarizeModes.forEach(mode => {
           autoSummaries[mode.key] = rawText + '\n' + t('insufficientContentForSummary');
-       //   autoSummaries[mode.key] = rawText + '\n' + '內容缺乏足夠資訊分析';
+          //   autoSummaries[mode.key] = rawText + '\n' + '內容缺乏足夠資訊分析';
         });
 
         const updated = updateRecordingFields(recordings, index, uri, {
@@ -497,54 +511,54 @@ reject(new Error(t('invalidAudioDuration'))); // 無法取得音檔長度
         return;
       }
 
- // ✅ 先寫入 transcript
-let updated = updateRecordingFields(recordings, index, uri, {
-  transcript: rawText,
-});
-await saveRecordings(updated);
-setRecordings(updated);
+      // ✅ 先寫入 transcript
+      let updated = updateRecordingFields(recordings, index, uri, {
+        transcript: rawText,
+      });
+      await saveRecordings(updated);
+      setRecordings(updated);
 
-// ✅ 再取得正確的 item（主音檔或子音檔）
-const updatedItem = uri
-  ? updated[index].derivedFiles?.splitParts?.find((p) => p.uri === uri)
-  : updated[index];
+      // ✅ 再取得正確的 item（主音檔或子音檔）
+      const updatedItem = uri
+        ? updated[index].derivedFiles?.splitParts?.find((p) => p.uri === uri)
+        : updated[index];
 
-// ✅ 呼叫摘要 API
-// 取得音檔時間資訊
-let startTime = '';
-let date = '';
-if (updatedItem?.date) {
-  const dateObj = new Date(updatedItem.date);
-  startTime = `${dateObj.getHours().toString().padStart(2, '0')}:${dateObj.getMinutes().toString().padStart(2, '0')}:${dateObj.getSeconds().toString().padStart(2, '0')}`;
-  date = `${dateObj.getFullYear()}/${dateObj.getMonth() + 1}/${dateObj.getDate()}`;
-}
+      // ✅ 呼叫摘要 API
+      // 取得音檔時間資訊
+      let startTime = '';
+      let date = '';
+      if (updatedItem?.date) {
+        const dateObj = new Date(updatedItem.date);
+        startTime = `${dateObj.getHours().toString().padStart(2, '0')}:${dateObj.getMinutes().toString().padStart(2, '0')}:${dateObj.getSeconds().toString().padStart(2, '0')}`;
+        date = `${dateObj.getFullYear()}/${dateObj.getMonth() + 1}/${dateObj.getDate()}`;
+      }
 
-const summary = await summarizeWithMode(
-  rawText,
-  'summary',
-  t,
-  { startTime, date }
-);
+      const summary = await summarizeWithMode(
+        rawText,
+        'summary',
+        t,
+        { startTime, date }
+      );
 
-// ✅ 補寫 summary 回該筆資料
-updated = updateRecordingFields(updated, index, uri, {
-  summaries: {
-    ...(updatedItem?.summaries || {}),
-    summary,
-  },
-});
-await saveRecordings(updated);
-setRecordings(updated);
-setSummaries(
-  uri
-    ? updated[index].derivedFiles?.splitParts?.find((p) => p.uri === uri)?.summaries || {}
-    : updated[index].summaries || {}
-);
-setSummaryMode('summary');
-setViewType('summary');
+      // ✅ 補寫 summary 回該筆資料
+      updated = updateRecordingFields(updated, index, uri, {
+        summaries: {
+          ...(updatedItem?.summaries || {}),
+          summary,
+        },
+      });
+      await saveRecordings(updated);
+      setRecordings(updated);
+      setSummaries(
+        uri
+          ? updated[index].derivedFiles?.splitParts?.find((p) => p.uri === uri)?.summaries || {}
+          : updated[index].summaries || {}
+      );
+      setSummaryMode('summary');
+      setViewType('summary');
     } catch (err) {
       Alert.alert(t('error'), (err as Error).message || t('transcriptionFailedNoCharge'));
-   //   Alert.alert("❌ 錯誤", (err as Error).message || "轉換失敗，這次不會扣金幣");
+      //   Alert.alert("❌ 錯誤", (err as Error).message || "轉換失敗，這次不會扣金幣");
     } finally {
       setIsTranscribing(false);
     }
@@ -592,7 +606,7 @@ setViewType('summary');
 
       const fresh = await AsyncStorage.getItem('user');
       if (!fresh) {
-      //  Alert.alert("錯誤", "無法取得使用者資料");
+        //  Alert.alert("錯誤", "無法取得使用者資料");
         Alert.alert(t('error'), t('userDataUnavailable'));
         return null;
       }
@@ -644,8 +658,8 @@ setViewType('summary');
       }
       debugLog('8', mode);
     } catch (err) {
-     // Alert.alert("❌ 摘要失敗", (err as Error).message || "處理失敗");
-     Alert.alert(t('summarizeFailedTitle'), (err as Error).message || t('summarizeFailedMessage'));
+      // Alert.alert("❌ 摘要失敗", (err as Error).message || "處理失敗");
+      Alert.alert(t('summarizeFailedTitle'), (err as Error).message || t('summarizeFailedMessage'));
     } finally {
       setSummarizingState(null);
     }
@@ -709,7 +723,7 @@ setViewType('summary');
       setRecordings(updated);
       setEditValue('');
       setRecordings([...updated]); // 強制刷新
-  //    Alert.alert('刪除成功', `已刪除 ${viewType === 'summary' ? summaryMode : viewType} 內容`);
+      //    Alert.alert('刪除成功', `已刪除 ${viewType === 'summary' ? summaryMode : viewType} 內容`);
     } catch (error) {
       debugError('刪除失敗:', error);
     }
@@ -809,61 +823,68 @@ setViewType('summary');
 
         {/* 三顆切換按鈕 */}
         <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 12, marginBottom: 0, marginTop: 10 }}>
-          {['note', 'transcript', 'summary'].map((key) => (
-            <TouchableOpacity
-              key={key}
-              ref={key === 'summary' ? toolboxButtonRef : undefined}
-              onPress={() => {
-                setViewType(key as any);
-                setEditValue(content);
-                setIsEditing(false);
+{['note', 'transcript', 'summary'].map((key) => {
+  const isToolbox = key === 'summary';
+  const noInputContent = !currentItem.transcript?.trim() && !currentItem.notes?.trim();
+  const disabled = isToolbox && noInputContent;
 
-                if (key === 'transcript') {
-                  // ✅ 自動轉文字
-                  if (!currentItem.transcript && !isTranscribing) {
-                    handleTranscribe();
-                  }
-                  setSummaryMenuContext(null); // 確保工具箱收起
-                }
+  return (
+    <TouchableOpacity
+      key={key}
+      ref={isToolbox ? toolboxButtonRef : undefined}
+      disabled={disabled}
+      onPress={() => {
+        if (disabled) return; // ✅ 不觸發任何動作
 
-                if (key === 'summary') {
-                  if (!currentItem.summaries?.[summaryMode] && !isSummarizing) {
-                    handleSummarize(index, summaryMode as 'summary' | 'tag' | 'action');
-                  }
+        setViewType(key as any);
+        setEditValue(content);
+        setIsEditing(false);
 
-                  // ✅ 開關 AI 工具箱選單
-                  if (summaryMenuContext) {
-                    setSummaryMenuContext(null); // 再次點擊自動收起
-                  } else {
-                    toolboxButtonRef.current?.measureInWindow((x, y, width, height) => {
-                      setSummaryMenuContext({ position: { x, y: y + height } }); // 工具箱顯示位置
-                    });
-                  }
-                }
+        if (key === 'transcript') {
+          if (!currentItem.transcript && !isTranscribing) {
+            handleTranscribe();
+          }
+          setSummaryMenuContext(null);
+        }
 
-                if (key === 'note') {
-                  setSummaryMenuContext(null); // 工具箱切換時關閉
-                }
-              }}
-              style={{
-                paddingVertical: 4,
-                paddingHorizontal: 12,
-                borderRadius: 8,
-                backgroundColor: viewType === key ? colors.primary : colors.primary + '55',
-              }}
-            >
-              <Text style={{ color: 'white', fontSize: 13 }}>
-              {/* {key === 'transcript' ? '錄音文檔' : key === 'summary' ? 'AI工具箱' : '談話筆記'}*/}  
-              <Text style={{ color: 'white', fontSize: 13 }}>
-  {key === 'transcript'
-    ? t('transcript')
-    : key === 'summary'
-    ? t('toolbox')
-    : t('notes')}
-</Text>
-              </Text>
-            </TouchableOpacity>
-          ))}
+        if (key === 'summary') {
+          if (!currentItem.summaries?.[summaryMode] && !isSummarizing) {
+            handleSummarize(index, summaryMode as 'summary' | 'tag' | 'action');
+          }
+
+          if (summaryMenuContext) {
+            setSummaryMenuContext(null);
+          } else {
+            toolboxButtonRef.current?.measureInWindow((x, y, width, height) => {
+              setSummaryMenuContext({ position: { x, y: y + height } });
+            });
+          }
+        }
+
+        if (key === 'note') {
+          setSummaryMenuContext(null);
+        }
+      }}
+      style={{
+        paddingVertical: 4,
+        paddingHorizontal: 12,
+        borderRadius: 8,
+        backgroundColor:
+          viewType === key ? colors.primary : colors.primary + '55',
+        opacity: disabled ? 0.3 : 1, // ✅ 灰掉按鈕
+      }}
+    >
+      <Text style={{ color: 'white', fontSize: 13 }}>
+        {key === 'transcript'
+          ? t('transcript')
+          : key === 'summary'
+          ? t('toolbox')
+          : t('notes')}
+      </Text>
+    </TouchableOpacity>
+  );
+})}
+
         </View>
         {/* 內容區塊 */}
         {renderNoteBlock({
@@ -881,7 +902,7 @@ setViewType('summary');
               uri: currentItem.uri,  // 確保傳入當前音檔 URI
               text,
             });
-              setIsEditing(true);
+            setIsEditing(true);
           },
           onSave: saveEditing,
           onCancel: () => setEditingState({ type: null, index: null, text: '', uri: null }),
@@ -891,7 +912,7 @@ setViewType('summary');
           styles,
           colors,
           wrapperStyle: {
-            maxHeight: isEditing ?220 : 520,
+            maxHeight: isEditing ? 220 : 520,
             width: '96%',
             alignSelf: 'center',
             marginVertical: 10,
@@ -1003,7 +1024,7 @@ setViewType('summary');
           shadowOffset: { width: 0, height: 2 },
           shadowRadius: 4,
         }}>
-{getSummarizeModes(t).map((mode) => (
+          {getSummarizeModes(t).map((mode) => (
             <TouchableOpacity
               key={mode.key}
               disabled={
