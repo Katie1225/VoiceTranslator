@@ -137,6 +137,8 @@ const translations = {
       respondInUserLanguage: 'Please respond in Englilsh.',
       eventTime: 'Event time: {{date}} {{time}}',
     },
+    pleaseWait: 'Please wait',
+    anotherTaskInProgress:'Another task is in progress. Please wait until it finishes.',
   },
   zh: {
     record: '錄音',
@@ -270,7 +272,9 @@ const translations = {
 
       respondInUserLanguage: '請使用繁體中文回覆。',
       eventTime: '事件發生時間：{{date}} {{time}}',
-    },
+    },    
+    pleaseWait: '請稍候',
+    anotherTaskInProgress:'正在處理其他任務，請稍候完成後再試。',
   },
   ja: {
     record: '録音',
@@ -405,6 +409,8 @@ const translations = {
       respondInUserLanguage: '日本語で回答してください。',
       eventTime: 'イベント発生時間：{{date}} {{time}}',
     },
+        pleaseWait: 'しばらくお待ちください',
+    anotherTaskInProgress:'別の処理を実行中です。完了するまでお待ちください。',
   }
 };
 

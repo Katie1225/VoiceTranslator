@@ -42,6 +42,7 @@ export default function NoteDetailPage() {
   const route = useRoute<RouteProp<RootStackParamList, 'NoteDetail'>>();
   const { t } = useTranslation();
   const { index, uri, type: initialType, summaryMode: initialSummaryMode } = route.params;
+const [activeTask, setActiveTask] = useState<'transcribe' | 'summarize' | null>(null);
 
   const {
     recordings,
@@ -405,6 +406,13 @@ export default function NoteDetailPage() {
     if (isTranscribing) return; // ✅ 避免同時跑兩個
     setIsTranscribing(true);
 
+    if (activeTask) {
+  Alert.alert(t('pleaseWait'), t('anotherTaskInProgress'));
+  return;
+}
+setActiveTask('transcribe');
+setIsTranscribing(true);
+
     // ✅ 如果已有逐字稿，就不重複處理
     if (currentItem?.transcript && !uri) return;
 
@@ -560,112 +568,98 @@ export default function NoteDetailPage() {
       Alert.alert(t('error'), (err as Error).message || t('transcriptionFailedNoCharge'));
       //   Alert.alert("❌ 錯誤", (err as Error).message || "轉換失敗，這次不會扣金幣");
     } finally {
+        setActiveTask(null);
       setIsTranscribing(false);
     }
   };
 
   // 重點摘要AI工具箱邏輯
-  const handleSummarize = async (
-    index: number,
-    mode: 'summary' | 'tag' | 'action' = 'summary',
-    requirePayment?: boolean
-  ): Promise<RecordingItem | null> => {
-    const pay = requirePayment ?? (mode !== 'summary'); // ← 決定實際是否要扣金幣
+const handleSummarize = async (
+  index: number,
+  mode: 'summary' | 'analysis' | 'email' | 'news' | 'ai_answer' = 'summary',
+  requirePayment?: boolean
+): Promise<void> => {
+  if (activeTask) {
+    Alert.alert(t('pleaseWait'), t('anotherTaskInProgress'));
+    return;
+  }
 
-    const item = currentItem;
-    let startTime = '';
-    let date = '';
+  const pay = requirePayment ?? (mode !== 'summary');
+  setActiveTask('summarize');
+  setSummarizingState({ index, mode });
 
-    if (item.date) {
-      const dateObj = new Date(item.date);
-      startTime = `${dateObj.getHours().toString().padStart(2, '0')}:${dateObj.getMinutes().toString().padStart(2, '0')}:${dateObj.getSeconds().toString().padStart(2, '0')}`;
-      date = `${dateObj.getFullYear()}/${dateObj.getMonth() + 1}/${dateObj.getDate()}`;
-    } else {
-      // fallback：從 displayName 擷取
-      const parsed = parseDateTimeFromDisplayName(item.displayName || '');
-      if (parsed.startTime) startTime = parsed.startTime;
-      if (parsed.date) date = parsed.date;
-    }
-
-    debugLog('1', mode);
-
-    // ✅ 已有摘要就直接顯示
+  try {
+    // ✅ 1. 如果已經有摘要，就切換顯示即可
     if (currentItem.summaries?.[mode]) {
       setSummaryMode(mode);
-      //setShowTranscriptIndex(null);
-      //setShowSummaryIndex(index);
-      return item;
+      setViewType('summary');
+      return;
     }
 
-    debugLog('2', mode);
+    // ✅ 2. 如果需要金幣，先檢查是否足夠
     let user: any = null;
-
     if (pay) {
       const ok = await ensureCoins(COIN_COST_AI);
-      if (!ok) return null;
-
-      const fresh = await AsyncStorage.getItem('user');
-      if (!fresh) {
-        //  Alert.alert("錯誤", "無法取得使用者資料");
-        Alert.alert(t('error'), t('userDataUnavailable'));
-        return null;
-      }
-      user = JSON.parse(fresh);
+      if (!ok) return;
+      const stored = await AsyncStorage.getItem('user');
+      if (!stored) throw new Error(t('userDataUnavailable'));
+      user = JSON.parse(stored);
     }
 
-    // ✅ 開始處理摘要
-    setSummarizingState({ index, mode });
-    try {
-      const fullPrompt = currentItem.notes?.trim()
-        ? `使用者補充筆記：${currentItem.notes} 錄音文字如下：${currentItem.transcript}`
-        : currentItem.transcript || '';
+    // ✅ 3. 整理摘要上下文
+    const dateObj = currentItem.date ? new Date(currentItem.date) : null;
+    const startTime = dateObj
+      ? `${dateObj.getHours().toString().padStart(2, '0')}:${dateObj.getMinutes().toString().padStart(2, '0')}`
+      : '';
+    const date = dateObj
+      ? `${dateObj.getFullYear()}/${dateObj.getMonth() + 1}/${dateObj.getDate()}`
+      : '';
 
-      const summary = await summarizeWithMode(
-        fullPrompt,
-        mode,
-        t,
-        { startTime, date }
-      );
+    const textToSummarize = currentItem.notes?.trim()
+      ? `使用者補充筆記：${currentItem.notes} 錄音文字如下：${currentItem.transcript}`
+      : currentItem.transcript || '';
 
-      const updated = updateRecordingFields(recordings, index, uri, {
-        summaries: {
-          ...(currentItem.summaries || {}),
-          [mode]: summary,
-        },
+    // ✅ 4. 呼叫 API 產生摘要
+    const summary = await summarizeWithMode(textToSummarize, mode, t, { startTime, date });
+
+    // ✅ 5. 寫入資料
+    const updated = updateRecordingFields(recordings, index, uri, {
+      summaries: {
+        ...(currentItem.summaries || {}),
+        [mode]: summary,
+      },
+    });
+
+    await saveRecordings(updated);
+    setRecordings(updated);
+    setSummaries(
+      uri
+        ? updated[index].derivedFiles?.splitParts?.find((p) => p.uri === uri)?.summaries || {}
+        : updated[index].summaries || {}
+    );
+    setSummaryMode(mode);
+    setViewType('summary');
+
+    // ✅ 6. 扣金幣紀錄
+    if (pay && user) {
+      await logCoinUsage({
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        action: mode,
+        value: -COIN_COST_AI,
+        note: `${mode}：${currentItem.displayName || ''} 扣 ${COIN_COST_AI} 金幣`,
       });
-      await saveRecordings(updated);
-      setRecordings(updated);
-      setSummaries(
-        uri
-          ? updated[index].derivedFiles?.splitParts?.find((p) => p.uri === uri)?.summaries || {}
-          : updated[index].summaries || {}
-      );
-
-      // ✅ 顯示摘要
-      setSummaryMode(mode);
-      debugLog('7', mode);
-
-      if (pay && user) {
-
-        await logCoinUsage({
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          action: mode,
-          value: -COIN_COST_AI,
-          note: `${mode}：${item.displayName || item.displayName} 扣 ${COIN_COST_AI} 金幣`,
-        });
-      }
-      debugLog('8', mode);
-    } catch (err) {
-      // Alert.alert("❌ 摘要失敗", (err as Error).message || "處理失敗");
-      Alert.alert(t('summarizeFailedTitle'), (err as Error).message || t('summarizeFailedMessage'));
-    } finally {
-      setSummarizingState(null);
     }
+  } catch (err) {
+    Alert.alert(t('summarizeFailedTitle'), (err as Error).message || t('summarizeFailedMessage'));
+  } finally {
+    setActiveTask(null);
+    setSummarizingState(null);
     resetEditingState();
-    return null;
-  };
+  }
+};
+
 
   const handleShare = async () => {
     await shareRecordingNote(currentItem, viewType as 'transcript' | 'summary' | 'notes', summaryMode);
@@ -826,7 +820,7 @@ export default function NoteDetailPage() {
 {['note', 'transcript', 'summary'].map((key) => {
   const isToolbox = key === 'summary';
   const noInputContent = !currentItem.transcript?.trim() && !currentItem.notes?.trim();
-  const disabled = isToolbox && noInputContent;
+  const disabled = isToolbox && (noInputContent || isAnyProcessing);
 
   return (
     <TouchableOpacity
@@ -849,7 +843,7 @@ export default function NoteDetailPage() {
 
         if (key === 'summary') {
           if (!currentItem.summaries?.[summaryMode] && !isSummarizing) {
-            handleSummarize(index, summaryMode as 'summary' | 'tag' | 'action');
+            handleSummarize(index, summaryMode as 'summary' | 'analysis' | 'email' | 'news' | 'ai_answer');
           }
 
           if (summaryMenuContext) {
@@ -1041,7 +1035,7 @@ export default function NoteDetailPage() {
                 if (isBlocked) return;
 
                 const isFree = mode.key === 'summary';
-                handleSummarize(index, mode.key as 'summary' | 'tag' | 'action', !isFree);
+                handleSummarize(index, mode.key as 'summary' | 'analysis' | 'email' | 'news' | 'ai_answer', !isFree);
                 setSummaryMenuContext(null);
               }}
 

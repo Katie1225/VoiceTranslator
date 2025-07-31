@@ -183,7 +183,6 @@ const RecorderLists: React.FC<Props> = ({
       const numParts = found.derivedFiles?.splitParts?.length ?? 0;
       debugLog(`📂 [分段展開] ${found.displayName} 已有 ${numParts} 段，直接展開`);
 
-
       // toggle 展開/收合
       setExpandedItems(prev => {
         const copy = new Set(prev);
@@ -586,6 +585,7 @@ const RecorderLists: React.FC<Props> = ({
                                 return newSet;
                               });
                             } else {
+                                setLastVisitedRecording(null);
                               setSelectedPlayingIndex(index);
                               setPlayingUri(item.uri);       // ✅ 標示這張卡片被選中
                               setExpandedItems(prev => new Set([...prev, item.uri])); // ✅ 自動展開
