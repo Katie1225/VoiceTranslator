@@ -151,9 +151,8 @@ const RecorderLists: React.FC<Props> = ({
         for (let start = 0; start < totalSec; start += segmentLength) {
           try {
             debugLog(`⏱ 嘗試分段：start=${start}s, duration=${segmentLength}s`);
-            const part = await splitAudioSegments(uri, start, segmentLength, t);
+            const part = await splitAudioSegments(uri, start, segmentLength, t, found.displayName);
             if (part) {
-              part.displayName = `${found.displayName} | ${part.displayName}`;
               debugLog(`✅ 成功分段：${part.displayName}`);
               parts.push(part);
             } else {
@@ -333,15 +332,17 @@ const RecorderLists: React.FC<Props> = ({
   useEffect(() => {
     if (selectedPlayingIndex === 0 && recordings.length > 0) {
       const first = recordings[0];
-      if (first && (first.durationSec ?? 0) > SEGMENT_DURATION) {
+      const hasSplit = !!first?.derivedFiles?.splitParts?.length;
+      if (hasSplit && (first.durationSec ?? 0) > SEGMENT_DURATION) {
         setExpandedItems(prev => {
           const next = new Set(prev);
           next.add(first.uri);
           return next;
-        })
+        });
       }
     }
-  }, [selectedPlayingIndex]);
+  }, [selectedPlayingIndex, recordings]);
+
 
 
   // 刪除錄音
@@ -439,8 +440,12 @@ const RecorderLists: React.FC<Props> = ({
 
   // 所有的文字編輯邏輯
   // 確保 startEditing 函數正確處理
-  const startEditing = (index: number, type: 'name' | 'transcript' | 'summary' | 'notes') => {
-    const editing = prepareEditing(recordings, index, type, summaryMode);
+  const startEditing = (
+    index: number,
+    type: 'name' | 'transcript' | 'summary' | 'notes',
+    uri?: string
+  ) => {
+    const editing = prepareEditing(recordings, index, type, summaryMode, uri); // ← 傳入 uri
     if (editing) {
       setEditingState(editing);
       setSelectedIndex(null);
@@ -448,6 +453,7 @@ const RecorderLists: React.FC<Props> = ({
       debugError('Failed to prepare editing state');
     }
   };
+
 
   // 確保 saveEditing 函數正確處理
   const saveEditing = () => {
@@ -529,9 +535,19 @@ const RecorderLists: React.FC<Props> = ({
                     const isThisMainOrSubPlaying =
                       playingUri === item.uri ||
                       (item.derivedFiles?.splitParts?.some((p: RecordingItem) => p.uri === playingUri) ?? false)
+  const parts = item.derivedFiles?.splitParts || [];
+  const hasSplit = parts.length > 0;
+  const hasMainText = !!item.transcript?.trim()?.length;
 
+  const shortMainReady = !hasSplit && hasMainText; // 短音檔：主音檔自己有文字
+  const longMainReady =
+    hasSplit &&
+    parts.length > 0 &&
+    parts.every((p: any) => (p?.transcript || '').trim().length > 0); // 長音檔：全部小音檔都有文字
+
+  const canUseToolboxMain = shortMainReady || longMainReady;
                     const isPrimarySelected =
-                       isPlaying
+                      isPlaying
                         ? isCardPlaying
                         : selectedPlayingIndex === index || isLastVisitedMainOrChild;
                     let modeToShow = summaryMode; // 預設是全局 summaryMode                    
@@ -585,7 +601,7 @@ const RecorderLists: React.FC<Props> = ({
                                 return newSet;
                               });
                             } else {
-                                setLastVisitedRecording(null);
+                              setLastVisitedRecording(null);
                               setSelectedPlayingIndex(index);
                               setPlayingUri(item.uri);       // ✅ 標示這張卡片被選中
                               setExpandedItems(prev => new Set([...prev, item.uri])); // ✅ 自動展開
@@ -660,11 +676,34 @@ const RecorderLists: React.FC<Props> = ({
                                 }
                               }}
                               onEditRename={(newName) => {
-                                const updated = [...recordings];
-                                updated[index].displayName = newName;
+                                const updated = recordings.map((rec, i) => {
+                                  if (i !== index) return rec;
+
+                                  // 處理子音檔 displayName
+                                  const updatedParts = rec.derivedFiles?.splitParts?.map((part) => {
+                                    const suffix = part.displayName?.split('|')[1]?.trim(); // 取出 "30 ~ 60 分鐘" 這段
+                                    return {
+                                      ...part,
+                                      displayName: suffix ? `${newName} | ${suffix}` : newName,
+                                    };
+                                  });
+
+                                  return {
+                                    ...rec,
+                                    displayName: newName,
+                                    derivedFiles: {
+                                      ...rec.derivedFiles,
+                                      splitParts: updatedParts ?? rec.derivedFiles?.splitParts,
+                                    },
+                                  };
+                                });
+
                                 setRecordings(updated);
                                 saveRecordings(updated);
                               }}
+
+
+
                               onMorePress={(e) => {
                                 e.stopPropagation();
                                 if (selectedContext?.index === index && selectedContext?.type === 'main') {
@@ -836,9 +875,9 @@ const RecorderLists: React.FC<Props> = ({
                                       paddingHorizontal: 8,
                                       backgroundColor: visibleMiniType === 'summary' ? colors.primary : colors.primary + '80',
                                       borderRadius: 8,
-                                      opacity: item.transcript && !isAnyProcessing ? 1 : 0.4,
+                                      opacity: canUseToolboxMain && !isAnyProcessing ? 1 : 0.4,
                                     }}
-                                    disabled={!item.transcript || isAnyProcessing}
+                                    disabled={!canUseToolboxMain || isAnyProcessing}
                                     onPress={() => {
                                       closeAllMenus();
                                       stopPlayback();
@@ -884,6 +923,8 @@ const RecorderLists: React.FC<Props> = ({
 
                             {expandedItems.has(item.uri) && item.derivedFiles?.splitParts?.map((part: RecordingItem, subIndex: number) => {
                               const isThisSplitPlaying = playingUri === part.uri;
+                                  const partHasText = !!(part?.transcript || '').trim().length;
+    const canUseToolboxPart = partHasText;
 
                               return (
                                 <View
@@ -925,7 +966,30 @@ const RecorderLists: React.FC<Props> = ({
                                         setPlaybackPosition(positionMs);
                                       }
                                     }}
-                                    onEditRename={undefined}
+                                    onEditRename={(newName) => {
+                                      const updated = [...recordings];
+                                      const parent = updated[index];
+
+                                      if (!parent.derivedFiles?.splitParts) return;
+
+                                      const newParts = parent.derivedFiles.splitParts.map(p =>
+                                        p.uri === part.uri
+                                          ? { ...p, displayName: newName }
+                                          : p
+                                      );
+
+                                      updated[index] = {
+                                        ...parent,
+                                        derivedFiles: {
+                                          ...parent.derivedFiles,
+                                          splitParts: newParts,
+                                        },
+                                      };
+
+                                      setRecordings(updated);
+                                      saveRecordings(updated);
+                                    }}
+
                                     onMorePress={(e) => {
                                       e.stopPropagation();
 
@@ -1070,9 +1134,9 @@ const RecorderLists: React.FC<Props> = ({
                                             paddingHorizontal: 8,
                                             backgroundColor: visibleMiniType === 'summary' ? colors.primary : colors.primary + '80',
                                             borderRadius: 8,
-                                            opacity: recordings[index].transcript && !isAnyProcessing ? 1 : 0.4,
+                                            opacity: canUseToolboxPart && !isAnyProcessing ? 1 : 0.4,
                                           }}
-                                          disabled={!recordings[index].transcript || isAnyProcessing}
+                                          disabled={!canUseToolboxPart || isAnyProcessing}
                                           onPress={() => {
                                             closeAllMenus();
                                             stopPlayback();
@@ -1125,11 +1189,12 @@ const RecorderLists: React.FC<Props> = ({
                   styles={styles}
                   closeAllMenus={() => setSelectedContext(null)}
                   onRename={(index) => {
-                    setSelectedContext(null);
+                    setSelectedSplitContext(null);
                     setTimeout(() => {
-                      startEditing(index, 'name')
+                      startEditing(index, 'name');
                     }, 0);
                   }}
+
                   onShare={(uri) => {
                     shareRecordingFile(uri, () => setSelectedIndex(null));
                   }}
@@ -1159,8 +1224,9 @@ const RecorderLists: React.FC<Props> = ({
                   closeAllMenus={() => setSelectedSplitContext(null)}
                   onRename={(index) => {
                     setSelectedSplitContext(null);
+                    const partUri = selectedSplitContext?.partUri;
                     setTimeout(() => {
-                      startEditing(index, 'name');
+                      startEditing(index, 'name', partUri); // ✅ 把子音檔 uri 傳入
                     }, 0);
                   }}
                   onShare={(uri) => {

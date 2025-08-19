@@ -97,8 +97,8 @@ android {
         applicationId 'com.katiehuang.audiorecordermvp'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 99
-        versionName "1.4.8"
+        versionCode 101
+        versionName "1.5.0"
     }
 signingConfigs {
     debug {

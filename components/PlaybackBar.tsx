@@ -8,7 +8,6 @@ import {
     parseDateTimeFromDisplayName, generateDisplayNameParts, generateRecordingMetadata,
 } from '../utils/audioHelpers';
 
-
 interface PlaybackBarProps {
     //  item: RecordingItem;
     item: RecordingItem;
@@ -31,12 +30,14 @@ interface PlaybackBarProps {
         type: 'name' | 'transcript' | 'summary' | 'notes' | null;
         index: number | null;
         text: string;
+        uri?: string | null;
     };
     setEditingState?: React.Dispatch<React.SetStateAction<{
         type: 'transcript' | 'summary' | 'name' | 'notes' | null;
         index: number | null;
         text: string;
         mode?: string;
+        uri?: string | null;
     }>>;
     itemIndex?: number;
     setRecordings: React.Dispatch<React.SetStateAction<RecordingItem[]>>;
@@ -74,7 +75,12 @@ const PlaybackBar: React.FC<PlaybackBarProps> = ({
     variant = 'main',
 
 }) => {
-    const isEditingName = editableName && editingState?.type === 'name' && editingState?.index === itemIndex;
+const isEditingName =
+  editableName &&
+  editingState?.type === 'name' &&
+  editingState?.index === itemIndex &&
+  editingState?.uri === item.uri;
+
     const [editName, setEditName] = React.useState(item.displayName || '');
 
     const formatTime = (ms: number) => {

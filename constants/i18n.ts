@@ -138,7 +138,10 @@ const translations = {
       eventTime: 'Event time: {{date}} {{time}}',
     },
     pleaseWait: 'Please wait',
-    anotherTaskInProgress:'Another task is in progress. Please wait until it finishes.',
+    anotherTaskInProgress: 'Another task is in progress. Please wait until it finishes.',
+    notesPlaceholderLine1: "Please enter the content you want to record",
+    notesPlaceholderLine2: "For speech-to-text, press \"Transcript\"",
+    segmentTranscribingProgress: "({{current}}/{{total}}) Transcribing segment…",
   },
   zh: {
     record: '錄音',
@@ -272,9 +275,13 @@ const translations = {
 
       respondInUserLanguage: '請使用繁體中文回覆。',
       eventTime: '事件發生時間：{{date}} {{time}}',
-    },    
+    },
     pleaseWait: '請稍候',
-    anotherTaskInProgress:'正在處理其他任務，請稍候完成後再試。',
+    anotherTaskInProgress: '正在處理其他任務，請稍候完成後再試。',
+    notesPlaceholderLine1: "請填入想紀錄的內容",
+    notesPlaceholderLine2: "錄音轉文字請按 \"錄音文檔\"",
+    segmentTranscribingProgress: "({{current}}/{{total}}) 正在轉換分段…",
+
   },
   ja: {
     record: '録音',
@@ -409,8 +416,11 @@ const translations = {
       respondInUserLanguage: '日本語で回答してください。',
       eventTime: 'イベント発生時間：{{date}} {{time}}',
     },
-        pleaseWait: 'しばらくお待ちください',
-    anotherTaskInProgress:'別の処理を実行中です。完了するまでお待ちください。',
+    pleaseWait: 'しばらくお待ちください',
+    anotherTaskInProgress: '別の処理を実行中です。完了するまでお待ちください。',
+    notesPlaceholderLine1: "記録したい内容を入力してください",
+    notesPlaceholderLine2: "音声を文字起こしするには「録音文書」を押してください",
+    segmentTranscribingProgress: "({{current}}/{{total}}) 分割音声を変換中…",
   }
 };
 

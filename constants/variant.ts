@@ -3,6 +3,6 @@ export const APP_VARIANT: string = 'notedebug'; // 可切換為 'note'、'clamp'
 export const nginxVersion: string = 'blue'; // 可切換為 'green(V1)'、'blue' 等
 export const APP_TITLE = 'Voice Note';
 
-export const version : string = '1.4.8';
-export const debugValue: string  = '1';  // 可切換 1 debug, 0 release
-export const SEGMENT_DURATION = debugValue === '1' ? 120 : 1800; // 測試模式用0.5分鐘，正式用30分鐘
+export const version : string = '1.5.0';
+export const debugValue: string  = '0';  // 可切換 1 debug, 0 release
+export const SEGMENT_DURATION = debugValue === '1' ? 10 : 300; // 測試模式用0.5分鐘，正式用10分鐘

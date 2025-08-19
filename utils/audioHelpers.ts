@@ -208,38 +208,31 @@ export const splitAudioSegments = async (
   inputUri: string,
   startSec: number,
   durationSec: number,
-    t: (key: string, params?: Record<string, string | number>) => string = (k) => k
+  t: (key: string, params?: Record<string, string | number>) => string = (k) => k,
+  parentDisplayName?: string  // ✅ 新增參數，傳入主音檔的 displayName
 ): Promise<RecordingItem | null> => {
   try {
-    // 1. 正規化輸入路徑
-    const inputPath = inputUri.replace(/^file:\/\//, ''); // 移除 file://
+    const inputPath = inputUri.replace(/^file:\/\//, '');
     const normalizedInputPath = inputPath.startsWith('/') ? inputPath : `/${inputPath}`;
 
-    // 2. 準備輸出目錄和檔案
     const folder = `${RNFS.ExternalDirectoryPath}/segments/`;
-    await RNFS.mkdir(folder); // 確保目錄存在
-    
-const baseName = inputPath.split('/').pop()?.replace(/\.[^/.]+$/, '') ?? `rec_${Date.now()}`;
-const outputName = `${baseName}_segment_${startSec}_${startSec + durationSec}.m4a`;
-const outputPath = `${folder}${outputName}`;
+    await RNFS.mkdir(folder);
 
-    // 3. 清理可能存在的舊檔案
+    const baseName = inputPath.split('/').pop()?.replace(/\.[^/.]+$/, '') ?? `rec_${Date.now()}`;
+    const outputName = `${baseName}_segment_${startSec}_${startSec + durationSec}.m4a`;
+    const outputPath = `${folder}${outputName}`;
+
     try {
       await RNFS.unlink(outputPath);
     } catch (e) {
       debugLog('無舊檔案可刪除');
     }
 
-    // 4. 構建 FFmpeg 命令
     const adjustedStart = startSec === 0 ? 0.01 : startSec;
     const command = `-i "${normalizedInputPath}" -ss ${adjustedStart} -t ${durationSec} -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
-
     debugLog(`執行 FFmpeg 命令: ${command}`);
-    
-    // 5. 執行 FFmpeg
     await FFmpegWrapper.run(command);
 
-    // 6. 驗證輸出檔案
     const exists = await RNFS.exists(outputPath);
     if (!exists) {
       debugError('分割檔案未建立');
@@ -252,23 +245,23 @@ const outputPath = `${folder}${outputName}`;
       return null;
     }
 
-return {
-  uri: `file://${outputPath}`,
-  name: outputName, // ✅ 補上必填欄位
-  start: startSec,
-  end: startSec + durationSec,
-  durationSec,
-displayName: t('splitRange', {
-  start: Math.floor(startSec / 60),
-  end: Math.floor((startSec + durationSec) / 60)
-}),
-  createdAt: new Date().toISOString(),
-  isSplitPart: true, // ✅ 可選識別欄位
-};
+    const rangeText = t('splitRange', {
+      start: Math.floor(startSec / 60),
+      end: Math.floor((startSec + durationSec) / 60),
+    });
+
+    return {
+      uri: `file://${outputPath}`,
+      name: outputName,
+      start: startSec,
+      end: startSec + durationSec,
+      durationSec,
+      displayName: parentDisplayName ? `${parentDisplayName} | ${rangeText}` : rangeText,  // ✅ 主音檔名稱連動
+      createdAt: new Date().toISOString(),
+      isSplitPart: true,
+    };
   } catch (err) {
     debugError('分割音檔失敗:', err);
-    
-    // 嘗試獲取更詳細的錯誤訊息
     if (err instanceof Error) {
       debugError('錯誤詳情:', {
         message: err.message,
@@ -278,7 +271,6 @@ displayName: t('splitRange', {
         durationSec,
       });
     }
-    
     return null;
   }
 };
@@ -483,7 +475,7 @@ onPartial?.(`${t('transcriptionStart')}\n${accumulatedText.trim()}`, index + 1, 
     } catch (err) {
       debugError(`❌ 第 ${index + 1} 段處理失敗：`, err);
       // Continue with next segment even if one fails
-      accumulatedText += `[第 ${index + 1} 段處理失敗]\n`;
+     // accumulatedText += `[第 ${index + 1} 段處理失敗]\n`;
       // onPartial?.(accumulatedText.trim(), index + 1, segmentUris.length);
     }
   }
@@ -535,7 +527,6 @@ export const summarizeModes = [
   //  prompt: `${basePrompt} 將這段文字整理分析內容並回答文字中的問題。`,
   },
 ];
-
 
 // 核心摘要函式
 export async function summarizeWithMode(

@@ -9,21 +9,50 @@ export function prepareEditing(
   recordings: RecordingItem[],
   index: number,
   type: 'name' | 'transcript' | 'summary' | 'notes',
-  summaryMode: string
-): { type: typeof type; index: number; text: string } {
+  summaryMode: string,
+  uri?: string
+): {
+  type: typeof type;
+  index: number;
+  text: string;
+  uri?: string;
+  mode?: string;
+} {
   const item = recordings[index];
+
+  // 如果沒有指定 uri，代表是主音檔
+  if (!uri || item.uri === uri) {
+    const text =
+      type === 'name'
+        ? item.displayName || ''
+        : type === 'transcript'
+          ? item.transcript || ''
+          : type === 'summary'
+            ? item.summaries?.[summaryMode] || ''
+            : item.notes || '';
+
+    return { type, index, text, uri: item.uri, mode: summaryMode };
+  }
+
+  // 如果有指定 uri，從子音檔中尋找
+  const part = item.derivedFiles?.splitParts?.find(p => p.uri === uri);
+  if (!part) {
+    console.warn(`[prepareEditing] 找不到對應子音檔: ${uri}`);
+    return { type, index, text: '', uri, mode: summaryMode };
+  }
 
   const text =
     type === 'name'
-      ? item.displayName || ''
+      ? part.displayName || ''
       : type === 'transcript'
-        ? item.transcript || ''
+        ? part.transcript || ''
         : type === 'summary'
-          ? item.summaries?.[summaryMode] || ''
-          : item.notes || '';
+          ? part.summaries?.[summaryMode] || ''
+          : part.notes || '';
 
-  return { type, index, text };
+  return { type, index, text, uri: uri ?? item.uri, mode: summaryMode };
 }
+
 
 // 刪除文字
 export function deleteTextRecording(
