@@ -185,12 +185,16 @@ export default function NoteDetailPage() {
   // 👇 每段逐字稿渲染（顯示子段 displayName + 該段文字）
   const renderSegmentedTranscript = () => {
     const parts = recordings[index]?.derivedFiles?.splitParts || [];
-    const segments = parts
-      .map((p: any) => ({
+
+    //
+
+    const segments = parts.map((p: any) => {
+      const text = (p?.transcript || '').trim();
+      return {
         name: p.displayName || p.name || 'Segment',
-        text: (p.transcript || '').trim(),
-      }))
-      .filter(s => s.text.length > 0);
+        text: text || t('transcribingInProgress'), // 先佔位
+      };
+    });
 
     if (segments.length === 0) return null;
 
@@ -210,29 +214,29 @@ export default function NoteDetailPage() {
     );
   };
 
-// ✅ 每段摘要渲染（顯示子段 displayName + 該段摘要）
-const renderSegmentedSummary = (mode: SummarizeMode = 'summary') => {
-  const parts = recordings[index]?.derivedFiles?.splitParts || [];
-  const segments = parts
-    .map((p: any) => ({
-      name: p.displayName || p.name || 'Segment',
-      text: (p.summaries?.[mode] || '').trim(),
-    }))
-    .filter(s => s.text.length > 0);
+  // ✅ 每段摘要渲染（顯示子段 displayName + 該段摘要）
+  const renderSegmentedSummary = (mode: SummarizeMode = 'summary') => {
+    const parts = recordings[index]?.derivedFiles?.splitParts || [];
+    const segments = parts
+      .map((p: any) => ({
+        name: p.displayName || p.name || 'Segment',
+        text: (p.summaries?.[mode] || '').trim(),
+      }))
+      .filter(s => s.text.length > 0);
 
-  if (segments.length === 0) return null;
+    if (segments.length === 0) return null;
 
-  return (
-    <View style={{ gap: 12 }}>
-      {segments.map((seg, i) => (
-        <View key={`${seg.name}-${i}`} style={{ gap: 6 }}>
-          <Text style={[styles.transcriptText, { fontWeight: 'bold' }]}>{seg.name}</Text>
-          <Text style={styles.transcriptText}>{seg.text}</Text>
-        </View>
-      ))}
-    </View>
-  );
-};
+    return (
+      <View style={{ gap: 12 }}>
+        {segments.map((seg, i) => (
+          <View key={`${seg.name}-${i}`} style={{ gap: 6 }}>
+            <Text style={[styles.transcriptText, { fontWeight: 'bold' }]}>{seg.name}</Text>
+            <Text style={styles.transcriptText}>{seg.text}</Text>
+          </View>
+        ))}
+      </View>
+    );
+  };
 
 
   // 逐段轉文字（只處理還沒有 transcript 的分段）
@@ -261,8 +265,32 @@ const renderSegmentedSummary = (mode: SummarizeMode = 'summary') => {
 
       try {
         // ① 轉寫
-        const r = await transcribeAudio(part, undefined, lang, t);
-        const text = (r?.transcript?.text || '').trim();
+let lastFlush = 0;
+const r = await transcribeAudio(
+  part,
+  (liveText?: string) => {
+    const now = Date.now();
+    if (!liveText) return;
+
+    // 小節流，避免每個 token 都重繪
+    if (now - lastFlush < 250) return;
+    lastFlush = now;
+
+    // 將即時文字直接寫到「這個小音檔」的 transcript
+    // ✅ 只 setRecordings，不立即 saveRecordings（減少 I/O）
+    const temp = updateRecordingFields(
+      (recordingsInput ?? recordings),
+      index,
+      part.uri,
+      { transcript: String(liveText).trim() }
+    );
+    setRecordings(temp);
+  },
+  lang,
+  t
+);
+const text = (r?.transcript?.text || '').trim();
+
 
         // ② 先把 transcript 寫回該子段（即使空字串也先寫，後面會判斷）
         updated = updateRecordingFields(updated, index, part.uri, { transcript: text });
@@ -386,7 +414,7 @@ const renderSegmentedSummary = (mode: SummarizeMode = 'summary') => {
     // 清掉提示，用分段清單顯示結果
     setPartialTranscript('');
     setViewType('transcript'); // 讓你的 renderSegmentedTranscript() 出來
-    return true;
+    return updated;
   };
 
   // ✅ 工具：把長主音檔的小音檔逐字稿合併成一份（給新聞稿/各種摘要用）
@@ -756,43 +784,100 @@ const renderSegmentedSummary = (mode: SummarizeMode = 'summary') => {
         setActiveTask(null);
         return;
       }
-
-
-
       if (isMainAudio && !alreadySplit && NEED_AUTO_SPLIT) {
         setPartialTranscript(t('splittingInProgress')); // 顯示「分段中…」
 
         const parent = recordings[index];
-        const parts: RecordingItem[] = [];
         const segmentLength = SEGMENT_DURATION;
+        const totalSegments = Math.ceil(durationSec / segmentLength);
 
-        // 用已算出的 durationSec 迴圈切段
-        for (let start = 0; start < durationSec; start += segmentLength) {
-          try {
-            const part = await splitAudioSegments(parent.uri, start, segmentLength, t, parent.displayName);
-            if (part) parts.push(part);
-          } catch (e) {
-            // 分段失敗就略過，不插任何文字
-          }
-        }
-
-        // 寫回 splitParts
-        const updated = [...recordings];
+        // 先把 splitParts 初始化為空陣列，讓 UI 立刻進入「分段清單」模式
+        let updated = [...recordings];
         updated[index] = {
           ...parent,
-          derivedFiles: { ...(parent.derivedFiles || {}), splitParts: parts },
+          derivedFiles: { ...(parent.derivedFiles || {}), splitParts: [] },
         };
         setRecordings(updated);
         await saveRecordings(updated);
+        setViewType('transcript'); // 讓 NoteDetail 直接顯示分段（未出字會顯示「轉寫中…」）
 
-        // ✨ 新增：切完就開始轉「尚未轉過」的分段
-        await transcribeMissingSplitParts(parts, updated);
+        // 逐段：切一段 → 寫進 splitParts → 立刻轉字這一段
+        for (let seg = 0, start = 0; start < durationSec; seg++, start += segmentLength) {
+          try {
+            const part = await splitAudioSegments(parent.uri, start, segmentLength, t, parent.displayName);
+            if (!part) continue;
 
-        // 後續就不要再對母音檔跑整段轉文字了
+            // ① 立刻把這段 append 到 splitParts（畫面上會看到新的一段）
+            updated = [...updated];
+            const parentNow = updated[index];
+            const partsNow = parentNow?.derivedFiles?.splitParts || [];
+            updated[index] = {
+              ...parentNow,
+              derivedFiles: { ...(parentNow.derivedFiles || {}), splitParts: [...partsNow, part] },
+            };
+            setRecordings(updated);
+            await saveRecordings(updated);
+
+            // ② 立刻只轉「這一段」
+            // （提示可選：顯示第 seg+1 / totalSegments 進度）
+            setPartialTranscript(
+              t('segmentTranscribingProgress', { current: seg + 1, total: totalSegments })
+            );
+      const updatedAfter = await transcribeMissingSplitParts([part], updated);
+      if (updatedAfter) {
+        updated = updatedAfter; // ★ 用最新 recordings 當下一輪基準，避免覆蓋掉已寫入的 transcript
+      }
+
+            // 註：transcribeMissingSplitParts 內會負責剪靜音/上傳/回寫 transcript & summary/扣金幣
+            //     也會在結尾把 partialTranscript 清掉、把畫面保持在 transcript 分段清單
+
+          } catch (e) {
+            // 單段失敗就略過，避免卡住整體流程
+          }
+        }
+
+        setPartialTranscript('');
         setIsTranscribing(false);
         setActiveTask(null);
-        return;
+        return; // ← 別再往下跑整檔轉寫
       }
+
+
+
+      /*   if (isMainAudio && !alreadySplit && NEED_AUTO_SPLIT) {
+            setPartialTranscript(t('splittingInProgress')); // 顯示「分段中…」
+    
+            const parent = recordings[index];
+            const parts: RecordingItem[] = [];
+            const segmentLength = SEGMENT_DURATION;
+    
+            // 用已算出的 durationSec 迴圈切段
+            for (let start = 0; start < durationSec; start += segmentLength) {
+              try {
+                const part = await splitAudioSegments(parent.uri, start, segmentLength, t, parent.displayName);
+                if (part) parts.push(part);
+              } catch (e) {
+                // 分段失敗就略過，不插任何文字
+              }
+            }
+    
+            // 寫回 splitParts
+            const updated = [...recordings];
+            updated[index] = {
+              ...parent,
+              derivedFiles: { ...(parent.derivedFiles || {}), splitParts: parts },
+            };
+            setRecordings(updated);
+            await saveRecordings(updated);
+    
+            // ✨ 新增：切完就開始轉「尚未轉過」的分段
+            await transcribeMissingSplitParts(parts, updated);
+    
+            // 後續就不要再對母音檔跑整段轉文字了
+            setIsTranscribing(false);
+            setActiveTask(null);
+            return;
+          } */
 
       // …自動切段區塊之後、呼叫整段 transcribeAudio 之前，補這段：
       if (isMainAudio) {
@@ -805,9 +890,6 @@ const renderSegmentedSummary = (mode: SummarizeMode = 'summary') => {
           return; // 不要再跑整段母音檔的轉文字
         }
       }
-
-
-
 
       // ✅ 呼叫 Whisper API 轉文字，並逐段顯示文字
       const result = await transcribeAudio(currentItem, (updatedTranscript) => {
@@ -968,35 +1050,35 @@ const renderSegmentedSummary = (mode: SummarizeMode = 'summary') => {
         user = JSON.parse(stored);
       }
 
-// ✅ 3. 整理摘要上下文
-const dateObj = currentItem.date ? new Date(currentItem.date) : null;
-const startTime = dateObj
-  ? `${dateObj.getHours().toString().padStart(2, '0')}:${dateObj.getMinutes().toString().padStart(2, '0')}`
-  : '';
-const date = dateObj
-  ? `${dateObj.getFullYear()}/${dateObj.getMonth() + 1}/${dateObj.getDate()}`
-  : '';
+      // ✅ 3. 整理摘要上下文
+      const dateObj = currentItem.date ? new Date(currentItem.date) : null;
+      const startTime = dateObj
+        ? `${dateObj.getHours().toString().padStart(2, '0')}:${dateObj.getMinutes().toString().padStart(2, '0')}`
+        : '';
+      const date = dateObj
+        ? `${dateObj.getFullYear()}/${dateObj.getMonth() + 1}/${dateObj.getDate()}`
+        : '';
 
-// ✅ 主檔 vs 子檔：決定用合併還是單段
-const isMainAudio = !uri;
-const mergedTranscript = isMainAudio
-  ? buildMergedTranscript(recordings[index])   // 主檔：合併全部小檔
-  : (currentItem.transcript || '').trim();     // 子檔：只這段
+      // ✅ 主檔 vs 子檔：決定用合併還是單段
+      const isMainAudio = !uri;
+      const mergedTranscript = isMainAudio
+        ? buildMergedTranscript(recordings[index])   // 主檔：合併全部小檔
+        : (currentItem.transcript || '').trim();     // 子檔：只這段
 
-const textToSummarize = currentItem.notes?.trim()
-  ? `使用者補充筆記：${currentItem.notes} 錄音文字如下：${mergedTranscript}`
-  : mergedTranscript || '';
+      const textToSummarize = currentItem.notes?.trim()
+        ? `使用者補充筆記：${currentItem.notes} 錄音文字如下：${mergedTranscript}`
+        : mergedTranscript || '';
 
-  debugLog('[Summarize DEBUG]', {
-  mode,
-  isMainAudio,
-  uri,
-  mergedLen: mergedTranscript.length,
-  mergedPreview: mergedTranscript.slice(0, 180), // 先看前 180 字就好
-    TextPreview: textToSummarize,
-  notesLen: (currentItem.notes || '').length,
-  textToSummarizeLen: textToSummarize.length,
-});
+      debugLog('[Summarize DEBUG]', {
+        mode,
+        isMainAudio,
+        uri,
+        mergedLen: mergedTranscript.length,
+        mergedPreview: mergedTranscript.slice(0, 180), // 先看前 180 字就好
+        TextPreview: textToSummarize,
+        notesLen: (currentItem.notes || '').length,
+        textToSummarizeLen: textToSummarize.length,
+      });
 
 
       // ✅ 4. 呼叫 API 產生摘要
@@ -1247,25 +1329,14 @@ const textToSummarize = currentItem.notes?.trim()
 
             const isMainAudio = !uri;
             const parts = recordings[index]?.derivedFiles?.splitParts || [];
+            //
+
             const hasSplit = parts.length > 0;
+            const mainHasText = !!currentItem?.transcript?.trim()?.length;
+            const anyPartHasText = parts.some((p: any) => (p?.transcript || '').trim().length > 0);
+            const canUseToolbox = mainHasText || anyPartHasText;
 
-            const hasText = !!currentItem?.transcript?.trim()?.length;
-
-            // 子音檔：這段有文字即可
-            const childReady = !isMainAudio && hasText;
-
-            // 短母音檔：主音檔有文字即可
-            const shortMainReady = isMainAudio && !hasSplit && hasText;
-
-            // 長母音檔：所有小音檔都有文字（含 placeholder）
-            const longMainReady =
-              isMainAudio && hasSplit &&
-              parts.length > 0 &&
-              parts.every((p: any) => (p?.transcript || '').trim().length > 0);
-
-            const canUseToolbox = childReady || shortMainReady || longMainReady;
-
-            const disabled = isToolbox ? (!canUseToolbox || isAnyProcessing) : false;
+const disabled = isToolbox ? (!canUseToolbox || isSummarizing) : false;
 
             return (
               <TouchableOpacity
@@ -1285,20 +1356,26 @@ const textToSummarize = currentItem.notes?.trim()
                     }
                     setSummaryMenuContext(null);
                   }
+if (key === 'summary') {
+  const isMainAudio = !uri;
 
-                  if (key === 'summary') {
-                    if (!currentItem.summaries?.[summaryMode] && !isSummarizing) {
-                      handleSummarize(index, summaryMode);
-                    }
+  // 主音檔 + 預設 summary 模式：僅顯示已產生的小段摘要，不自動跑整檔摘要
+  const shouldAutoSummarize =
+    !isMainAudio && !currentItem.summaries?.[summaryMode] && !isSummarizing;
 
-                    if (summaryMenuContext) {
-                      setSummaryMenuContext(null);
-                    } else {
-                      toolboxButtonRef.current?.measureInWindow((x, y, width, height) => {
-                        setSummaryMenuContext({ position: { x, y: y + height } });
-                      });
-                    }
-                  }
+  if (shouldAutoSummarize) {
+    handleSummarize(index, summaryMode);
+  }
+
+  if (summaryMenuContext) {
+    setSummaryMenuContext(null);
+  } else {
+    toolboxButtonRef.current?.measureInWindow((x, y, width, height) => {
+      setSummaryMenuContext({ position: { x, y: y + height } });
+    });
+  }
+}
+
 
                   if (key === 'note') {
                     setSummaryMenuContext(null);
@@ -1373,19 +1450,20 @@ const textToSummarize = currentItem.notes?.trim()
             }
 
             // ② Transcript 區塊：主音檔且子段已有逐字稿 → 顯示分段內容清單
-            if (viewType === 'transcript' && isMainAudio && hasAnyPartText) {
+            // 
+            if (viewType === 'transcript' && isMainAudio && parts.length > 0) {
               return renderSegmentedTranscript();
             }
-             // ②-2 Summary 區塊：主音檔 → 顯示分段摘要清單（吃小音檔的摘要）
-if (viewType === 'summary' && isMainAudio && summaryMode === 'summary') {
-   const parts = recordings[index]?.derivedFiles?.splitParts || [];
-   const hasAnyPartSummary = parts.some(
-     (p: any) => (p?.summaries?.[summaryMode] || '').trim().length > 0
-   );
-   if (hasAnyPartSummary) {
-     return renderSegmentedSummary(summaryMode as SummarizeMode);
-   }
- }
+            // ②-2 Summary 區塊：主音檔 → 顯示分段摘要清單（吃小音檔的摘要）
+            if (viewType === 'summary' && isMainAudio && summaryMode === 'summary') {
+              const parts = recordings[index]?.derivedFiles?.splitParts || [];
+              const hasAnyPartSummary = parts.some(
+                (p: any) => (p?.summaries?.[summaryMode] || '').trim().length > 0
+              );
+              if (hasAnyPartSummary) {
+                return renderSegmentedSummary(summaryMode as SummarizeMode);
+              }
+            }
 
             // ③ 其他情況：走原本 highlight 顯示
             return highlightKeyword(content, searchKeyword, colors.primary + '66');
@@ -1498,64 +1576,71 @@ if (viewType === 'summary' && isMainAudio && summaryMode === 'summary') {
           shadowOffset: { width: 0, height: 2 },
           shadowRadius: 4,
         }}>
-          {getSummarizeModes(t).map((mode) => (
-            <TouchableOpacity
-              key={mode.key}
-              disabled={
-                !!summarizingState &&
-                summarizingState.index === index &&
-                summarizingState.mode === mode.key
-              }
-              onPress={() => {
-                const isBlocked =
-                  !!summarizingState &&
-                  summarizingState.index === index &&
-                  summarizingState.mode === mode.key;
+{getSummarizeModes(t).map((mode) => {
+  const isMainAudio = !uri;
 
-                if (isBlocked) return;
+  // 🔒 條件：母音檔正在轉文字 → 工具箱全鎖（包括 summary）
+  const isLockedByTranscribing = isMainAudio && isTranscribing;
 
-                const isFree = mode.key === 'summary';
-                handleSummarize(index, mode.key, !isFree);
-                setSummaryMenuContext(null);
-              }}
+  // 原本「同一模式正在跑」的狀態
+  const isBusySame =
+    !!summarizingState &&
+    summarizingState.index === index &&
+    summarizingState.mode === mode.key;
 
-              style={{
-                paddingVertical: 8,
-                paddingHorizontal: 12,
-                backgroundColor:
-                  summaryMode === mode.key
-                    ? colors.primary + '50'
-                    : currentItem.summaries?.[mode.key]
-                      ? colors.primary + '10'
-                      : 'transparent',
-                borderRadius: 4,
-              }}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={{
-                  color:
-                    !summaries?.[mode.key] &&
-                      !!summarizingState &&
-                      summarizingState.index === index &&
-                      summarizingState.mode !== mode.key
-                      ? colors.text + '66'
-                      : colors.text,
-                  fontWeight: summaries?.[mode.key] ? 'bold' : 'normal',
-                }}>
-                  {mode.label}
-                </Text>
+  const isLocked = isLockedByTranscribing || isBusySame;
 
-                {summaries?.[mode.key] && (
-                  <Text style={{ color: colors.text, fontSize: 14 }}>✓</Text>
-                )}
+  // 顯示沙漏：正在轉文字 + 這個模式是 summary
+  const showHourglass = isLockedByTranscribing && mode.key === 'summary';
 
-                {summarizingState?.mode === mode.key && summarizingState.index === index && (
-                  <Text style={{ color: colors.primary, fontSize: 14 }}>⏳</Text>
-                )}
-              </View>
-            </TouchableOpacity>
+  return (
+    <TouchableOpacity
+      key={mode.key}
+      disabled={isLocked}
+      onPress={() => {
+        if (isLocked) return;
+        const isFree = mode.key === 'summary';
+        handleSummarize(index, mode.key, !isFree);
+        setSummaryMenuContext(null);
+      }}
+      style={{
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+        backgroundColor:
+          summaryMode === mode.key
+            ? colors.primary + '50'
+            : currentItem.summaries?.[mode.key]
+              ? colors.primary + '10'
+              : 'transparent',
+        borderRadius: 4,
+        opacity: isLocked ? 0.35 : 1,
+      }}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Text
+          style={{
+            color: isLocked ? colors.text + '66' : colors.text,
+            fontWeight: summaries?.[mode.key] ? 'bold' : 'normal',
+          }}
+        >
+          {mode.label}
+        </Text>
 
-          ))}
+        {/* 已完成 ✓ */}
+        {summaries?.[mode.key] && (
+          <Text style={{ color: colors.text, fontSize: 14 }}>✓</Text>
+        )}
+
+        {/* 顯示沙漏 */}
+        {(showHourglass || isBusySame) && (
+          <Text style={{ color: colors.primary, fontSize: 14 }}>⏳</Text>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+})}
+
+
         </View>
       )}
     </SafeAreaView>
