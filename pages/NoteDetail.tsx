@@ -11,7 +11,7 @@ import * as FileSystem from 'expo-file-system';
 import { logCoinUsage } from '../utils/googleSheetAPI';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
-  RecordingItem,
+  RecordingItem, summarizeItemWithMode,
   transcribeAudio, summarizeWithMode, summarizeModes,
   parseDateTimeFromDisplayName, generateRecordingMetadata, updateRecordingFields, getSummarizeModes, splitAudioSegments,
 } from '../utils/audioHelpers';
@@ -265,31 +265,31 @@ export default function NoteDetailPage() {
 
       try {
         // ① 轉寫
-let lastFlush = 0;
-const r = await transcribeAudio(
-  part,
-  (liveText?: string) => {
-    const now = Date.now();
-    if (!liveText) return;
+        let lastFlush = 0;
+        const r = await transcribeAudio(
+          part,
+          (liveText?: string) => {
+            const now = Date.now();
+            if (!liveText) return;
 
-    // 小節流，避免每個 token 都重繪
-    if (now - lastFlush < 250) return;
-    lastFlush = now;
+            // 小節流，避免每個 token 都重繪
+            if (now - lastFlush < 250) return;
+            lastFlush = now;
 
-    // 將即時文字直接寫到「這個小音檔」的 transcript
-    // ✅ 只 setRecordings，不立即 saveRecordings（減少 I/O）
-    const temp = updateRecordingFields(
-      (recordingsInput ?? recordings),
-      index,
-      part.uri,
-      { transcript: String(liveText).trim() }
-    );
-    setRecordings(temp);
-  },
-  lang,
-  t
-);
-const text = (r?.transcript?.text || '').trim();
+            // 將即時文字直接寫到「這個小音檔」的 transcript
+            // ✅ 只 setRecordings，不立即 saveRecordings（減少 I/O）
+            const temp = updateRecordingFields(
+              (recordingsInput ?? recordings),
+              index,
+              part.uri,
+              { transcript: String(liveText).trim() }
+            );
+            setRecordings(temp);
+          },
+          lang,
+          t
+        );
+        const text = (r?.transcript?.text || '').trim();
 
 
         // ② 先把 transcript 寫回該子段（即使空字串也先寫，後面會判斷）
@@ -358,7 +358,14 @@ const text = (r?.transcript?.text || '').trim();
             startTime = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
             date = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
           }
-          const segmentSummary = await summarizeWithMode(text, 'summary', t, { startTime, date });
+          const segmentSummary = await summarizeItemWithMode(
+            { ...part, transcript: text },   // 確保帶到剛轉出的文字
+            'summary',
+            t,
+            { startTime, date },
+            { mergeSplitParts: false, withLabels: true }
+          );
+
 
           updated = updateRecordingFields(updated, index, part.uri, {
             summaries: { ...(part.summaries || {}), summary: segmentSummary },
@@ -807,6 +814,10 @@ const text = (r?.transcript?.text || '').trim();
             const part = await splitAudioSegments(parent.uri, start, segmentLength, t, parent.displayName);
             if (!part) continue;
 
+            // ✅ 複製主音檔 notes 到小音檔（避免重複才複製）
+            if (!part.notes?.trim() && parent.notes?.trim()) {
+              part.notes = parent.notes;
+            }
             // ① 立刻把這段 append 到 splitParts（畫面上會看到新的一段）
             updated = [...updated];
             const parentNow = updated[index];
@@ -823,10 +834,10 @@ const text = (r?.transcript?.text || '').trim();
             setPartialTranscript(
               t('segmentTranscribingProgress', { current: seg + 1, total: totalSegments })
             );
-      const updatedAfter = await transcribeMissingSplitParts([part], updated);
-      if (updatedAfter) {
-        updated = updatedAfter; // ★ 用最新 recordings 當下一輪基準，避免覆蓋掉已寫入的 transcript
-      }
+            const updatedAfter = await transcribeMissingSplitParts([part], updated);
+            if (updatedAfter) {
+              updated = updatedAfter; // ★ 用最新 recordings 當下一輪基準，避免覆蓋掉已寫入的 transcript
+            }
 
             // 註：transcribeMissingSplitParts 內會負責剪靜音/上傳/回寫 transcript & summary/扣金幣
             //     也會在結尾把 partialTranscript 清掉、把畫面保持在 transcript 分段清單
@@ -985,11 +996,12 @@ const text = (r?.transcript?.text || '').trim();
         date = `${dateObj.getFullYear()}/${dateObj.getMonth() + 1}/${dateObj.getDate()}`;
       }
 
-      const summary = await summarizeWithMode(
-        rawText,
+      const summary = await summarizeItemWithMode(
+        updatedItem,                 // 剛寫回 transcript 的主檔或子檔
         'summary',
         t,
-        { startTime, date }
+        { startTime, date },
+        { mergeSplitParts: false, withLabels: true }
       );
 
       // ✅ 補寫 summary 回該筆資料
@@ -1018,6 +1030,7 @@ const text = (r?.transcript?.text || '').trim();
   };
 
   // 重點摘要AI工具箱邏輯
+  // 重點摘要AI工具箱邏輯
   const handleSummarize = async (
     index: number,
     mode: SummarizeMode = 'summary',
@@ -1033,14 +1046,14 @@ const text = (r?.transcript?.text || '').trim();
     setSummarizingState({ index, mode });
 
     try {
-      // ✅ 1. 如果已經有摘要，就切換顯示即可
+      // 1) 已經有摘要 → 直接顯示
       if (currentItem.summaries?.[mode]) {
         setSummaryMode(mode);
         setViewType('summary');
         return;
       }
 
-      // ✅ 2. 如果需要金幣，先檢查是否足夠
+      // 2) 需要金幣就先檢查
       let user: any = null;
       if (pay) {
         const ok = await ensureCoins(COIN_COST_AI);
@@ -1050,7 +1063,7 @@ const text = (r?.transcript?.text || '').trim();
         user = JSON.parse(stored);
       }
 
-      // ✅ 3. 整理摘要上下文
+      // 3) 時間資訊
       const dateObj = currentItem.date ? new Date(currentItem.date) : null;
       const startTime = dateObj
         ? `${dateObj.getHours().toString().padStart(2, '0')}:${dateObj.getMinutes().toString().padStart(2, '0')}`
@@ -1059,32 +1072,30 @@ const text = (r?.transcript?.text || '').trim();
         ? `${dateObj.getFullYear()}/${dateObj.getMonth() + 1}/${dateObj.getDate()}`
         : '';
 
-      // ✅ 主檔 vs 子檔：決定用合併還是單段
+      // 4) 只在這裡宣告一次 isMainAudio，並決定 targetItem
       const isMainAudio = !uri;
-      const mergedTranscript = isMainAudio
-        ? buildMergedTranscript(recordings[index])   // 主檔：合併全部小檔
-        : (currentItem.transcript || '').trim();     // 子檔：只這段
+      const targetItem = isMainAudio ? recordings[index] : currentItem;
 
-      const textToSummarize = currentItem.notes?.trim()
-        ? `使用者補充筆記：${currentItem.notes} 錄音文字如下：${mergedTranscript}`
-        : mergedTranscript || '';
-
+      // （可選）除錯資訊
       debugLog('[Summarize DEBUG]', {
         mode,
         isMainAudio,
         uri,
-        mergedLen: mergedTranscript.length,
-        mergedPreview: mergedTranscript.slice(0, 180), // 先看前 180 字就好
-        TextPreview: textToSummarize,
-        notesLen: (currentItem.notes || '').length,
-        textToSummarizeLen: textToSummarize.length,
+        title: targetItem.displayName || targetItem.name || '',
+        notesLen: (targetItem.notes || '').length,
+        hasSplit: !!targetItem?.derivedFiles?.splitParts?.length,
       });
 
+      // 5) 呼叫 helpers：會自動把「標題＋筆記＋逐字稿」組成輸入
+      const summary = await summarizeItemWithMode(
+        targetItem,
+        mode,                         // 'summary' | 'analysis' | 'email' | ...
+        t,
+        { startTime, date },
+        { mergeSplitParts: isMainAudio, withLabels: true }
+      );
 
-      // ✅ 4. 呼叫 API 產生摘要
-      const summary = await summarizeWithMode(textToSummarize, mode, t, { startTime, date });
-
-      // ✅ 5. 寫入資料
+      // 6) 寫回資料
       const updated = updateRecordingFields(recordings, index, uri, {
         summaries: {
           ...(currentItem.summaries || {}),
@@ -1102,7 +1113,7 @@ const text = (r?.transcript?.text || '').trim();
       setSummaryMode(mode);
       setViewType('summary');
 
-      // ✅ 6. 扣金幣紀錄
+      // 7) 扣金幣紀錄
       if (pay && user) {
         await logCoinUsage({
           id: user.id,
@@ -1121,7 +1132,6 @@ const text = (r?.transcript?.text || '').trim();
       resetEditingState();
     }
   };
-
 
   const handleShare = async () => {
     await shareRecordingNote(currentItem, viewType as 'transcript' | 'summary' | 'notes', summaryMode);
@@ -1182,33 +1192,46 @@ const text = (r?.transcript?.text || '').trim();
 
   const handleDelete = async () => {
     try {
-      const updatedItem = { ...currentItem };
-      let updatedSummaries = { ...(currentItem.summaries || {}) };
-
+      // 子檔 or 母檔 → 一律用 updateRecordingFields 精準更新
       if (viewType === 'transcript') {
-        updatedItem.transcript = '';
+        // 只清掉逐字稿內容，不動其他欄位/物件結構
+        const updated = updateRecordingFields(recordings, index, uri, { transcript: '' });
+
         setFinalTranscript('');
         setPartialTranscript('');
-        setIsTranscribing(false); // 重置轉文字狀態
-      } else if (viewType === 'summary') {
-        delete updatedSummaries[summaryMode]; // ⬅️ 刪掉特定 summary mode
-        updatedItem.summaries = updatedSummaries;
-        setSummaries(updatedSummaries);
-      } else if (viewType === 'notes') {
-        updatedItem.notes = '';
+        setIsTranscribing(false);
+
+        await saveRecordings(updated);
+        setRecordings(updated);
+        return;
       }
 
-      const updated = [...recordings];
-      updated[index] = updatedItem;
-      await saveRecordings(updated);
-      setRecordings(updated);
-      setEditValue('');
-      setRecordings([...updated]); // 強制刷新
-      //    Alert.alert('刪除成功', `已刪除 ${viewType === 'summary' ? summaryMode : viewType} 內容`);
+      if (viewType === 'summary') {
+        // 刪除特定摘要 mode（需要先算出新物件再回寫）
+        const target =
+          uri
+            ? recordings[index].derivedFiles?.splitParts?.find(p => p.uri === uri)
+            : recordings[index];
+
+        const nextSummaries = { ...(target?.summaries || {}) };
+        delete nextSummaries[summaryMode];
+
+        const updated = updateRecordingFields(recordings, index, uri, { summaries: nextSummaries });
+        await saveRecordings(updated);
+        setRecordings(updated);
+        setSummaries(nextSummaries);
+        return;
+      }
+
+      if (viewType === 'notes') {
+        const updated = updateRecordingFields(recordings, index, uri, { notes: '' });
+        await saveRecordings(updated);
+        setRecordings(updated);
+        return;
+      }
     } catch (error) {
       debugError('刪除失敗:', error);
     }
-
   };
 
   return (
@@ -1336,7 +1359,7 @@ const text = (r?.transcript?.text || '').trim();
             const anyPartHasText = parts.some((p: any) => (p?.transcript || '').trim().length > 0);
             const canUseToolbox = mainHasText || anyPartHasText;
 
-const disabled = isToolbox ? (!canUseToolbox || isSummarizing) : false;
+            const disabled = isToolbox ? (!canUseToolbox || isSummarizing) : false;
 
             return (
               <TouchableOpacity
@@ -1356,25 +1379,25 @@ const disabled = isToolbox ? (!canUseToolbox || isSummarizing) : false;
                     }
                     setSummaryMenuContext(null);
                   }
-if (key === 'summary') {
-  const isMainAudio = !uri;
+                  if (key === 'summary') {
+                    const isMainAudio = !uri;
 
-  // 主音檔 + 預設 summary 模式：僅顯示已產生的小段摘要，不自動跑整檔摘要
-  const shouldAutoSummarize =
-    !isMainAudio && !currentItem.summaries?.[summaryMode] && !isSummarizing;
+                    // 主音檔 + 預設 summary 模式：僅顯示已產生的小段摘要，不自動跑整檔摘要
+                    const shouldAutoSummarize =
+                      !isMainAudio && !currentItem.summaries?.[summaryMode] && !isSummarizing;
 
-  if (shouldAutoSummarize) {
-    handleSummarize(index, summaryMode);
-  }
+                    if (shouldAutoSummarize) {
+                      handleSummarize(index, summaryMode);
+                    }
 
-  if (summaryMenuContext) {
-    setSummaryMenuContext(null);
-  } else {
-    toolboxButtonRef.current?.measureInWindow((x, y, width, height) => {
-      setSummaryMenuContext({ position: { x, y: y + height } });
-    });
-  }
-}
+                    if (summaryMenuContext) {
+                      setSummaryMenuContext(null);
+                    } else {
+                      toolboxButtonRef.current?.measureInWindow((x, y, width, height) => {
+                        setSummaryMenuContext({ position: { x, y: y + height } });
+                      });
+                    }
+                  }
 
 
                   if (key === 'note') {
@@ -1576,69 +1599,69 @@ if (key === 'summary') {
           shadowOffset: { width: 0, height: 2 },
           shadowRadius: 4,
         }}>
-{getSummarizeModes(t).map((mode) => {
-  const isMainAudio = !uri;
+          {getSummarizeModes(t).map((mode) => {
+            const isMainAudio = !uri;
 
-  // 🔒 條件：母音檔正在轉文字 → 工具箱全鎖（包括 summary）
-  const isLockedByTranscribing = isMainAudio && isTranscribing;
+            // 🔒 條件：母音檔正在轉文字 → 工具箱全鎖（包括 summary）
+            const isLockedByTranscribing = isMainAudio && isTranscribing;
 
-  // 原本「同一模式正在跑」的狀態
-  const isBusySame =
-    !!summarizingState &&
-    summarizingState.index === index &&
-    summarizingState.mode === mode.key;
+            // 原本「同一模式正在跑」的狀態
+            const isBusySame =
+              !!summarizingState &&
+              summarizingState.index === index &&
+              summarizingState.mode === mode.key;
 
-  const isLocked = isLockedByTranscribing || isBusySame;
+            const isLocked = isLockedByTranscribing || isBusySame;
 
-  // 顯示沙漏：正在轉文字 + 這個模式是 summary
-  const showHourglass = isLockedByTranscribing && mode.key === 'summary';
+            // 顯示沙漏：正在轉文字 + 這個模式是 summary
+            const showHourglass = isLockedByTranscribing && mode.key === 'summary';
 
-  return (
-    <TouchableOpacity
-      key={mode.key}
-      disabled={isLocked}
-      onPress={() => {
-        if (isLocked) return;
-        const isFree = mode.key === 'summary';
-        handleSummarize(index, mode.key, !isFree);
-        setSummaryMenuContext(null);
-      }}
-      style={{
-        paddingVertical: 8,
-        paddingHorizontal: 12,
-        backgroundColor:
-          summaryMode === mode.key
-            ? colors.primary + '50'
-            : currentItem.summaries?.[mode.key]
-              ? colors.primary + '10'
-              : 'transparent',
-        borderRadius: 4,
-        opacity: isLocked ? 0.35 : 1,
-      }}
-    >
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <Text
-          style={{
-            color: isLocked ? colors.text + '66' : colors.text,
-            fontWeight: summaries?.[mode.key] ? 'bold' : 'normal',
-          }}
-        >
-          {mode.label}
-        </Text>
+            return (
+              <TouchableOpacity
+                key={mode.key}
+                disabled={isLocked}
+                onPress={() => {
+                  if (isLocked) return;
+                  const isFree = mode.key === 'summary';
+                  handleSummarize(index, mode.key, !isFree);
+                  setSummaryMenuContext(null);
+                }}
+                style={{
+                  paddingVertical: 8,
+                  paddingHorizontal: 12,
+                  backgroundColor:
+                    summaryMode === mode.key
+                      ? colors.primary + '50'
+                      : currentItem.summaries?.[mode.key]
+                        ? colors.primary + '10'
+                        : 'transparent',
+                  borderRadius: 4,
+                  opacity: isLocked ? 0.35 : 1,
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text
+                    style={{
+                      color: isLocked ? colors.text + '66' : colors.text,
+                      fontWeight: summaries?.[mode.key] ? 'bold' : 'normal',
+                    }}
+                  >
+                    {mode.label}
+                  </Text>
 
-        {/* 已完成 ✓ */}
-        {summaries?.[mode.key] && (
-          <Text style={{ color: colors.text, fontSize: 14 }}>✓</Text>
-        )}
+                  {/* 已完成 ✓ */}
+                  {summaries?.[mode.key] && (
+                    <Text style={{ color: colors.text, fontSize: 14 }}>✓</Text>
+                  )}
 
-        {/* 顯示沙漏 */}
-        {(showHourglass || isBusySame) && (
-          <Text style={{ color: colors.primary, fontSize: 14 }}>⏳</Text>
-        )}
-      </View>
-    </TouchableOpacity>
-  );
-})}
+                  {/* 顯示沙漏 */}
+                  {(showHourglass || isBusySame) && (
+                    <Text style={{ color: colors.primary, fontSize: 14 }}>⏳</Text>
+                  )}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
 
 
         </View>

@@ -66,6 +66,8 @@ const GlobalRecorderState = {
   startTime: 0,
 };
 
+const TRANSCRIBE_PROMPT_KEY = 'VN_DISABLE_TRANSCRIBE_PROMPT';
+
 const RecorderPageVoiceNote = () => {
   const title = APP_TITLE;
   const { t } = useTranslation();
@@ -485,6 +487,41 @@ const RecorderPageVoiceNote = () => {
     }
   };
 
+// ✅ 放在元件內（如 stopRecording 之前），使用現有的 useTranslation() / navigation
+const PREF_KEY = 'VN_TRANSCRIBE_PROMPT_PREF';
+const maybePromptTranscribe = async (newIndex: number) => {
+  const goTranscribe = () => navigation.navigate('NoteDetail', {
+    index: newIndex, uri: undefined, type: 'transcript', shouldTranscribe: true,
+  });
+
+  const pref = await AsyncStorage.getItem(PREF_KEY);
+  if (pref === 'auto') { goTranscribe(); return; } // 直接轉
+  if (pref === 'off')  { return; }                // 什麼都不做（不提示）
+
+
+  Alert.alert(
+    t('transcribePromptTitle'),
+    t('transcribePromptMessage'), 
+    [
+      { text: t('transcribePromptLater'), style: 'cancel' },
+      {
+        text: t('transcribePromptNow'),
+        onPress: () => {
+          navigation.navigate('NoteDetail', {
+            index: newIndex,
+            uri: undefined,
+            type: 'transcript',
+            shouldTranscribe: true, // 進 NoteDetail 自動開跑轉寫
+          });
+        },
+      },
+    ],
+    { cancelable: true }
+  );
+};
+
+
+
   // 停止錄音
   let stopInProgress = false; // 👈 加在模組頂部最外層
 
@@ -572,6 +609,8 @@ const RecorderPageVoiceNote = () => {
         setSelectedPlayingIndex(0);
         setPlayingUri(normalizedUri);
         setLastVisitedRecording(null);
+
+        setTimeout(() => maybePromptTranscribe(0), 300);  /* ✅提示是否要馬上轉文字 */
       }
       else {
         Alert.alert(t('recordingFailed'), t('recordFileEmpty'));

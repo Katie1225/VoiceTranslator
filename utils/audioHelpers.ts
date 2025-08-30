@@ -529,7 +529,57 @@ export const summarizeModes = [
   },
 ];
 
-// 核心摘要函式
+// 1) 把一個錄音項目要用來做摘要的文字組起來：標題 + 筆記 + 逐字稿
+export function composeSummaryTextFromItem(
+  item: any,
+  opts?: { mergeSplitParts?: boolean; withLabels?: boolean }
+): string {
+  const { mergeSplitParts = false, withLabels = true } = opts || {};
+
+  const title = (item?.displayName || item?.name || '').trim();
+
+  // 逐字稿：主檔可選擇把子段合併；子檔就用自己的 transcript
+  let transcript = (item?.transcript || '').trim();
+  if (
+    mergeSplitParts &&
+    item?.derivedFiles?.splitParts?.length
+  ) {
+    transcript = item.derivedFiles.splitParts
+      .map((p: any) => {
+        const name = (p?.displayName || p?.name || 'Segment').trim();
+        const text = (p?.transcript || '').trim();
+        return text ? `【${name}】\n${text}` : '';
+      })
+      .filter(Boolean)
+      .join('\n\n')
+      .trim();
+  }
+
+  const notes = (item?.notes || '').trim();
+
+  const pieces = [
+    title && (withLabels ? `標題：${title}` : title),
+    notes && (withLabels ? `使用者補充筆記：\n${notes}` : notes),
+    transcript && (withLabels ? `錄音文字如下：\n${transcript}` : transcript),
+  ].filter(Boolean);
+
+  return pieces.join('\n\n').trim();
+}
+
+// 2) 直接「以錄音項目」呼叫摘要（內部自動組裝字串）
+export async function summarizeItemWithMode(
+  item: any,
+  mode: string,            // 例：'summary' | 'analysis' | ...
+  t: (k: string, p?: any) => string,
+  meta?: { startTime?: string; date?: string },
+  opts?: { mergeSplitParts?: boolean; withLabels?: boolean }
+): Promise<string> {
+  const text = composeSummaryTextFromItem(item, opts);
+  // 沿用你原本的 summarizeWithMode
+  return await summarizeWithMode(text, mode as any, t, meta);
+}
+
+// 核心摘要函式 
 export async function summarizeWithMode(
   transcript: string,
   modeKey: string,

@@ -43,9 +43,9 @@ const HamburgerMenu = ({ visible, onClose, onLoginPress, onLoginSuccess }: Props
   const { isLoggingIn, setIsLoggingIn } = useLoginContext();
 
   const { t } = useTranslation();
-const { setAppLocale } = useLanguage();
+  const { setAppLocale } = useLanguage();
 
-    const handleLogout = async () => {
+  const handleLogout = async () => {
     await GoogleSignin.signOut();
     await AsyncStorage.removeItem('user');
     setCurrentUser(null);
@@ -56,17 +56,49 @@ const { setAppLocale } = useLanguage();
     const result = await handleLogin(setIsLoggingIn, t);
     setIsLoggingIn(false);
 
-if (result) {
-  Alert.alert(`✅ ${t('loginSuccess')}`, result.message, [
-    {
-      text: t('continue'),
-      onPress: () => {
-        if (onLoginSuccess) onLoginSuccess();
-      }
+    if (result) {
+      Alert.alert(`✅ ${t('loginSuccess')}`, result.message, [
+        {
+          text: t('continue'),
+          onPress: () => {
+            if (onLoginSuccess) onLoginSuccess();
+          }
+        }
+      ]);
     }
-  ]);
-}
   };
+
+  const [lang, setLang] = useState<'zh'|'en'|'ja'>('zh');
+useEffect(() => {
+  AsyncStorage.getItem('appLocale').then(v => {
+    if (v === 'en' || v === 'ja' || v === 'zh') setLang(v as any);
+  });
+}, [visible]);
+
+const pickLang = async (code: 'zh'|'en'|'ja') => {
+  setLang(code);
+  await AsyncStorage.setItem('appLocale', code);
+  setAppLocale(code);
+  onClose();
+};
+
+
+const PREF_KEY = 'VN_TRANSCRIBE_PROMPT_PREF'; // 'ask' | 'off'
+const [promptPref, setPromptPref] = useState<'ask'|'off'>('ask');
+
+useEffect(() => {
+  AsyncStorage.getItem(PREF_KEY).then(v => {
+    if (v === 'off') setPromptPref('off'); else setPromptPref('ask');
+  });
+}, [visible]);
+
+const setPref = async (v: 'ask'|'off') => {
+  setPromptPref(v);
+  await AsyncStorage.setItem(PREF_KEY, v);
+  onClose(); // 選完就關閉選單（可移除）
+};
+
+
 
   if (!visible) return null;
 
@@ -123,9 +155,13 @@ if (result) {
       </TouchableOpacity>
 
       <Text style={styles.menuHeader}>{t('primaryColor')}</Text>
-      <View style={styles.colorOptionsContainer}>
+<View
+  style={[
+    styles.colorOptionsContainer,
+    { paddingHorizontal: 8, justifyContent: 'flex-start' } 
+  ]}
+>
         <TouchableOpacity
-
           onPress={() => { onClose(); setCustomPrimaryColor(null); }}
         />
         {Object.entries(additionalColors).map(([name, color]) => (
@@ -141,35 +177,56 @@ if (result) {
         ))}
       </View>
 <Text style={styles.menuHeader}>{t('chooseLanguage')}</Text>
-<View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 8 }}>
+<View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 8 }}>
   {[
-    { label: '中文', value: 'zh' },
-    { label: 'English', value: 'en' },
-    { label: '日本語', value: 'ja' },
-  ].map(({ label, value }) => (
-    <TouchableOpacity
-      key={value}
-      onPress={async () => {
-  await setAppLocale(value as any); // 儲存語言
-        onClose();                      // 關閉選單
-      }}
-      style={{
-        backgroundColor: colors.surface,
-        paddingVertical: 6,
-        paddingHorizontal: 12,
-        borderRadius: 20,
-        margin: 4,
-      }}
-    >
-      <Text style={[styles.menuItem, { fontSize: 13 }]}>{label}</Text>
-    </TouchableOpacity>
-  ))}
+    { code: 'zh', label: '中文' },
+    { code: 'en',    label: 'English' },
+    { code: 'ja',    label: '日本語' },
+  ].map(({ code, label }) => {
+    const selected = lang === code;
+    return (
+      <TouchableOpacity
+        key={code}
+        onPress={() => pickLang(code as any)}
+        style={{
+          paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20,
+          borderWidth: 2, borderColor: colors.primary,
+          backgroundColor: selected ? colors.primary : 'transparent',
+        }}
+      >
+        <Text style={{ fontSize: 13, color: selected ? 'white' : colors.text }}>
+          {label}
+        </Text>
+      </TouchableOpacity>
+    );
+  })}
+</View>
+<Text style={[styles.menuHeader, { marginTop: 20 }]}>{t('transcribePrefTitle')}</Text>
+<View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 8 }}>
+  {[
+    { key: 'ask',  label: t('transcribePrefAsk') },
+    { key: 'off',  label: t('transcribePrefDontAsk') },
+  ].map(({ key, label }) => {
+    const selected = promptPref === (key as any);
+    return (
+      <TouchableOpacity
+        key={key}
+        onPress={() => setPref(key as 'ask'|'off')}
+        style={{
+          paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20,
+          borderWidth: 2, borderColor: colors.primary,
+          backgroundColor: selected ? colors.primary : 'transparent',
+        }}
+      >
+        <Text style={{ fontSize: 13, color: selected ? 'white' : colors.text }}>
+          {label}
+        </Text>
+      </TouchableOpacity>
+    );
+  })}
 </View>
 
-
-
     </View>
-
   );
 };
 

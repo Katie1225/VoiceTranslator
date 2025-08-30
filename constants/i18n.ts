@@ -142,6 +142,14 @@ const translations = {
     notesPlaceholderLine1: "Please enter the content you want to record",
     notesPlaceholderLine2: "For speech-to-text, press \"Transcript\"",
     segmentTranscribingProgress: "({{current}}/{{total}}) Transcribing segment…",
+      transcribePromptTitle: 'Transcribe this recording to text now?',
+      transcribePromptMessage: 'If you don’t want to choose each time, change setting in the top-left (☰) menu.',
+
+  transcribePromptNow: 'Transcribe now',
+  transcribePromptLater: 'Not now',
+transcribePrefTitle: 'Prompt after recording',
+transcribePrefAsk: 'Ask every time',
+transcribePrefDontAsk: "Don't ask again",
   },
   zh: {
     record: '錄音',
@@ -281,7 +289,14 @@ const translations = {
     notesPlaceholderLine1: "請填入想紀錄的內容",
     notesPlaceholderLine2: "錄音轉文字請按 \"錄音文檔\"",
     segmentTranscribingProgress: "({{current}}/{{total}}) 正在轉換分段…",
-
+      transcribePromptTitle: '要把錄音直接轉成文字嗎？',
+            transcribePromptMessage: '如果不想每次都選擇，可以到左上的 (☰) 選單設定。',
+            
+  transcribePromptNow: '立即轉文字',
+  transcribePromptLater: '稍後',
+transcribePrefTitle: '錄音後是否提示轉文字',
+transcribePrefAsk: '每次詢問',
+transcribePrefDontAsk: '不再詢問',
   },
   ja: {
     record: '録音',
@@ -421,6 +436,13 @@ const translations = {
     notesPlaceholderLine1: "記録したい内容を入力してください",
     notesPlaceholderLine2: "音声を文字起こしするには「録音文書」を押してください",
     segmentTranscribingProgress: "({{current}}/{{total}}) 分割音声を変換中…",
+      transcribePromptTitle: '今すぐこの録音を文字起こししますか？',
+            transcribePromptMessage: '毎回選びたくない場合は、左上の（☰）メニューで設定できます。',
+  transcribePromptNow: '今すぐ文字起こし',
+  transcribePromptLater: 'あとで',
+transcribePrefTitle: '録音後の確認',
+transcribePrefAsk: '毎回確認',
+transcribePrefDontAsk: '今後は表示しない',
   }
 };
 

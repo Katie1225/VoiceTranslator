@@ -153,6 +153,12 @@ const RecorderLists: React.FC<Props> = ({
             debugLog(`⏱ 嘗試分段：start=${start}s, duration=${segmentLength}s`);
             const part = await splitAudioSegments(uri, start, segmentLength, t, found.displayName);
             if (part) {
+
+                    // ✅ 複製主音檔 notes 到小音檔（避免覆寫既有 notes）
+      if (!part.notes?.trim() && found.notes?.trim()) {
+        part.notes = found.notes;
+      }
+
               debugLog(`✅ 成功分段：${part.displayName}`);
               parts.push(part);
             } else {
@@ -456,19 +462,42 @@ const RecorderLists: React.FC<Props> = ({
 
 
   // 確保 saveEditing 函數正確處理
-  const saveEditing = () => {
-    try {
-      const updated = saveEditedRecording(recordings, editingState, summaryMode);
-      if (updated) {
-        setRecordings(updated);
-        saveRecordings(updated);
-        resetEditingState();
-      }
-    } catch (err) {
-      debugError('Failed to save editing:', err);
-      Alert.alert(t('saveFailed'), t('saveFailedMessage'));
+const saveEditing = () => {
+  if (editingState.type === 'name' && typeof editingState.index === 'number') {
+    const newName = editingState.text?.trim() || '';
+    if (!newName) return;
+
+    const updated = [...recordings];
+    const main = updated[editingState.index];
+    if (!main) return;
+
+    // 1) 改主音檔名稱
+    main.displayName = newName;
+
+    // 2) 同步所有 splitParts 的前綴
+    const parts = main.derivedFiles?.splitParts;
+    if (Array.isArray(parts)) {
+      parts.forEach((part) => {
+        // 取原本的後綴，例如 "00:00-00:30" 或你現在的 " | " 後半段
+        const suffix = part.displayName?.split('|')[1]?.trim();
+        part.displayName = suffix ? `${newName} | ${suffix}` : newName;
+      });
     }
-  };
+
+    setRecordings(updated);
+    saveRecordings(updated);
+    // 清編輯狀態
+    setEditingState({ type: null, index: null, text: '' });
+    return;
+  }
+
+  // ⬇️ 其他類型（transcript/summary/notes）走舊邏輯
+  const updated = saveEditedRecording(recordings, editingState, summaryMode);
+  setRecordings(updated);
+  saveRecordings(updated);
+  setEditingState({ type: null, index: null, text: '' });
+};
+
 
   return (
     <>
