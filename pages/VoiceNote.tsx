@@ -28,13 +28,12 @@ import { RootStackParamList } from '../App';
 import { useLoginContext } from '../constants/LoginContext';
 import PlaybackBar from '../components/PlaybackBar';
 import { useTranslation } from '../constants/i18n';
-
-
 import {
   RecordingItem, transcribeAudio, summarizeWithMode, summarizeModes, notifyAwsRecordingEvent,
   notitifyWhisperEvent, splitAudioSegments,
   parseDateTimeFromDisplayName, generateDisplayNameParts, generateRecordingMetadata,
-} from '../utils/audioHelpers';
+} from '../utils/audioHelpers';       
+
 import { useFileStorage } from '../utils/useFileStorage';
 import { useAudioPlayer } from '../utils/useAudioPlayer';
 import { ANDROID_AUDIO_ENCODERS, ANDROID_OUTPUT_FORMATS } from '../constants/AudioConstants';
@@ -336,7 +335,7 @@ const RecorderPageVoiceNote = () => {
           r.transcript?.toLowerCase().includes(query) ||
           (query === 'star' && r.isStarred);
 
-        const matchSplitParts = r.derivedFiles?.splitParts?.some(p =>
+        const matchSplitParts = r.derivedFiles?.splitParts?.some((p: { displayName: string; notes: string; transcript: string; }) =>
           p.displayName?.toLowerCase().includes(query) ||
           p.notes?.toLowerCase().includes(query) ||
           p.transcript?.toLowerCase().includes(query)

@@ -275,7 +275,7 @@ const RecorderLists: React.FC<Props> = ({
       // 展開小音檔對應的主音檔
       if (lastVisitedRecording.uri) {
         const parent = recordings[lastVisitedRecording.index];
-        if (parent && parent.derivedFiles?.splitParts?.some(p => p.uri === lastVisitedRecording.uri)) {
+        if (parent && parent.derivedFiles?.splitParts?.some((p: { uri: string | undefined; }) => p.uri === lastVisitedRecording.uri)) {
           setExpandedItems(prev => new Set([...prev, parent.uri]));
         }
       }
@@ -417,7 +417,7 @@ const RecorderLists: React.FC<Props> = ({
     if (!parent || !parent.derivedFiles?.splitParts) return;
 
     parent.derivedFiles.splitParts = parent.derivedFiles.splitParts.filter(
-      (p) => p.uri !== partUri
+      (p: { uri: string; }) => p.uri !== partUri
     );
 
     setRecordings(updated);
@@ -553,7 +553,7 @@ const saveEditing = () => {
                     const isLastVisitedMainOrChild =
                       lastVisitedRecording?.index === index && (
                         !lastVisitedRecording?.uri ||  // 主音檔
-                        recordings[index]?.derivedFiles?.splitParts?.some(p => p.uri === lastVisitedRecording?.uri)  // 子音檔
+                        recordings[index]?.derivedFiles?.splitParts?.some((p: { uri: string | undefined; }) => p.uri === lastVisitedRecording?.uri)  // 子音檔
                       );
                     const isPlayingThis = isPlaying && playingUri === item.uri;
                     const isCardPlaying =
@@ -709,7 +709,7 @@ const saveEditing = () => {
                                   if (i !== index) return rec;
 
                                   // 處理子音檔 displayName
-                                  const updatedParts = rec.derivedFiles?.splitParts?.map((part) => {
+                                  const updatedParts = rec.derivedFiles?.splitParts?.map((part: { displayName: string; }) => {
                                     const suffix = part.displayName?.split('|')[1]?.trim(); // 取出 "30 ~ 60 分鐘" 這段
                                     return {
                                       ...part,
@@ -1001,7 +1001,7 @@ const saveEditing = () => {
 
                                       if (!parent.derivedFiles?.splitParts) return;
 
-                                      const newParts = parent.derivedFiles.splitParts.map(p =>
+                                      const newParts = parent.derivedFiles.splitParts.map((p: { uri: string; }) =>
                                         p.uri === part.uri
                                           ? { ...p, displayName: newName }
                                           : p
@@ -1244,7 +1244,7 @@ const saveEditing = () => {
                   index={selectedSplitContext.parentIndex}
                   item={
                     recordings[selectedSplitContext.parentIndex]
-                      .derivedFiles?.splitParts?.find(p => p.uri === selectedSplitContext.partUri)!
+                      .derivedFiles?.splitParts?.find((p: { uri: string; }) => p.uri === selectedSplitContext.partUri)!
                   }
                   isDerived={true}
                   title={title}

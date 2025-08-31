@@ -8,8 +8,6 @@ import { nginxVersion } from '../constants/variant';
 import { debugLog, debugWarn, debugError } from './debugLog';
 import * as RNFS from 'react-native-fs';
 import { Alert, } from 'react-native';
-import { useTranslation } from '../constants/i18n';
-
 
 export type RecordingItem = {
   size?: number;
@@ -498,8 +496,10 @@ export const getSummarizeModes = (t: (key: string) => string) => [
   { key: 'ai_answer', label: t('aiAnswer') },
 ];
 
-const basePrompt =
-  '錄音文字是一段可能由多人或單人錄製, 由whisper所處理聲音轉文字的逐字稿, 參考使用者補充筆記校正逐字稿音譯選字, 尤其是姓名及專有名詞以使用者補充筆記為準. 當內容是生活類以生活方式回答, 當涉及工商領域時, 你是一位資深技術助理，使用者是專業人員, 你的回答將用於會議紀錄、內部報告與技術決策。回答需具備：1. 條列清楚 2. 有工程深度 3. 避免空泛或無效內容。 不要給廢話或像新手的解釋，要講重點，貼近實作與決策需要。';
+//const basePrompt =
+//'錄音文字是一段可能由多人或單人錄製, 由whisper所處理聲音轉文字的逐字稿, 參考使用者補充筆記校正逐字稿音譯選字, 尤其是姓名及專有名詞以使用者補充筆記為準. 當內容是生活類以生活方式回答, 當涉及工商領域時, 你是一位資深技術助理，使用者是專業人員, 你的回答將用於會議紀錄、內部報告與技術決策。回答需具備：1. 條列清楚 2. 有工程深度 3. 避免空泛或無效內容。 不要給廢話或像新手的解釋，要講重點，貼近實作與決策需要。';
+
+
 
 export const summarizeModes = [
   {
@@ -569,15 +569,27 @@ export function composeSummaryTextFromItem(
 // 2) 直接「以錄音項目」呼叫摘要（內部自動組裝字串）
 export async function summarizeItemWithMode(
   item: any,
-  mode: string,            // 例：'summary' | 'analysis' | ...
+  mode: string,            // 'summary' | 'analysis' | 'email' | 'news' | 'ai_answer'
   t: (k: string, p?: any) => string,
   meta?: { startTime?: string; date?: string },
   opts?: { mergeSplitParts?: boolean; withLabels?: boolean }
 ): Promise<string> {
-  const text = composeSummaryTextFromItem(item, opts);
-  // 沿用你原本的 summarizeWithMode
-  return await summarizeWithMode(text, mode as any, t, meta);
+  // 先取「已存在的 summary 文字」（優先順序：手動編輯 > 自動產生）
+  const existingSummary =
+    item?.summaryEdited ||
+    item?.summaries?.summary ||
+    item?.summaries?.['summary'];
+
+  // summary 模式：照舊（從標題/筆記/逐字稿組字）
+  // 非 summary 模式：優先用 summary 當輸入；沒有才退回組字
+  const inputText =
+    mode === 'summary'
+      ? composeSummaryTextFromItem(item, opts)
+      : (existingSummary || composeSummaryTextFromItem(item, opts));
+
+  return await summarizeWithMode(inputText, mode as any, t, meta);
 }
+
 
 // 核心摘要函式 
 export async function summarizeWithMode(
@@ -593,13 +605,15 @@ export async function summarizeWithMode(
       ? t('prompt.eventTime', { date: metadata.date, time: metadata.startTime })
       : '';
 
-  const basePrompt = t('prompt.base');
+const basePrompt = (modeKey === 'summary' ? t('prompt.base') : (t('prompt.baseFromSummary') || t('prompt.base')));
+
   const template = t(`prompt.${modeKey}`); // e.g. 'prompt.summary'
   const fullPrompt = template.replace('{{base}}', basePrompt);
 
   const finalPrompt = [fullPrompt, timeStr, t('prompt.respondInUserLanguage')].filter(Boolean).join('\n');
 
   debugLog('[🧠 summaryPrompt]', finalPrompt);
+  debugLog('[📝 summaryInput head]', (transcript || '').slice(0, 200));
 
   const BASE_URL = nginxVersion === 'blue'
     ? 'https://katielab.com/summarize/'
