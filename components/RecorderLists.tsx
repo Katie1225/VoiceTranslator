@@ -26,7 +26,7 @@ import { RootStackParamList } from '../App';
 import PlaybackBar from './PlaybackBar';
 import { NativeModules } from 'react-native';
 const { FFmpegWrapper } = NativeModules;
-import { APP_TITLE, debugValue, SEGMENT_DURATION } from '../constants/variant';
+import { APP_TITLE, debugValue, SEGMENT_DURATION, setSegmentDuration } from '../constants/variant';
 import { useTranslation } from '../constants/i18n';
 
 import {
@@ -154,10 +154,10 @@ const RecorderLists: React.FC<Props> = ({
             const part = await splitAudioSegments(uri, start, segmentLength, t, found.displayName);
             if (part) {
 
-                    // ✅ 複製主音檔 notes 到小音檔（避免覆寫既有 notes）
-      if (!part.notes?.trim() && found.notes?.trim()) {
-        part.notes = found.notes;
-      }
+              // ✅ 複製主音檔 notes 到小音檔（避免覆寫既有 notes）
+              if (!part.notes?.trim() && found.notes?.trim()) {
+                part.notes = found.notes;
+              }
 
               debugLog(`✅ 成功分段：${part.displayName}`);
               parts.push(part);
@@ -250,6 +250,12 @@ const RecorderLists: React.FC<Props> = ({
     stopPlayback,
   } = useAudioPlayer();
 
+  // 切分音檔
+  useEffect(() => {
+    AsyncStorage.getItem('VN_SEGMENT_DURATION').then(v => {
+      if (v) setSegmentDuration(Number(v));
+    });
+  }, []);
 
   useEffect(() => {
     if (GlobalRecorderState.isRecording) {
@@ -462,41 +468,41 @@ const RecorderLists: React.FC<Props> = ({
 
 
   // 確保 saveEditing 函數正確處理
-const saveEditing = () => {
-  if (editingState.type === 'name' && typeof editingState.index === 'number') {
-    const newName = editingState.text?.trim() || '';
-    if (!newName) return;
+  const saveEditing = () => {
+    if (editingState.type === 'name' && typeof editingState.index === 'number') {
+      const newName = editingState.text?.trim() || '';
+      if (!newName) return;
 
-    const updated = [...recordings];
-    const main = updated[editingState.index];
-    if (!main) return;
+      const updated = [...recordings];
+      const main = updated[editingState.index];
+      if (!main) return;
 
-    // 1) 改主音檔名稱
-    main.displayName = newName;
+      // 1) 改主音檔名稱
+      main.displayName = newName;
 
-    // 2) 同步所有 splitParts 的前綴
-    const parts = main.derivedFiles?.splitParts;
-    if (Array.isArray(parts)) {
-      parts.forEach((part) => {
-        // 取原本的後綴，例如 "00:00-00:30" 或你現在的 " | " 後半段
-        const suffix = part.displayName?.split('|')[1]?.trim();
-        part.displayName = suffix ? `${newName} | ${suffix}` : newName;
-      });
+      // 2) 同步所有 splitParts 的前綴
+      const parts = main.derivedFiles?.splitParts;
+      if (Array.isArray(parts)) {
+        parts.forEach((part) => {
+          // 取原本的後綴，例如 "00:00-00:30" 或你現在的 " | " 後半段
+          const suffix = part.displayName?.split('|')[1]?.trim();
+          part.displayName = suffix ? `${newName} | ${suffix}` : newName;
+        });
+      }
+
+      setRecordings(updated);
+      saveRecordings(updated);
+      // 清編輯狀態
+      setEditingState({ type: null, index: null, text: '' });
+      return;
     }
 
+    // ⬇️ 其他類型（transcript/summary/notes）走舊邏輯
+    const updated = saveEditedRecording(recordings, editingState, summaryMode);
     setRecordings(updated);
     saveRecordings(updated);
-    // 清編輯狀態
     setEditingState({ type: null, index: null, text: '' });
-    return;
-  }
-
-  // ⬇️ 其他類型（transcript/summary/notes）走舊邏輯
-  const updated = saveEditedRecording(recordings, editingState, summaryMode);
-  setRecordings(updated);
-  saveRecordings(updated);
-  setEditingState({ type: null, index: null, text: '' });
-};
+  };
 
 
   return (
@@ -564,17 +570,17 @@ const saveEditing = () => {
                     const isThisMainOrSubPlaying =
                       playingUri === item.uri ||
                       (item.derivedFiles?.splitParts?.some((p: RecordingItem) => p.uri === playingUri) ?? false)
-  const parts = item.derivedFiles?.splitParts || [];
-  const hasSplit = parts.length > 0;
-  const hasMainText = !!item.transcript?.trim()?.length;
+                    const parts = item.derivedFiles?.splitParts || [];
+                    const hasSplit = parts.length > 0;
+                    const hasMainText = !!item.transcript?.trim()?.length;
 
-  const shortMainReady = !hasSplit && hasMainText; // 短音檔：主音檔自己有文字
-  const longMainReady =
-    hasSplit &&
-    parts.length > 0 &&
-    parts.every((p: any) => (p?.transcript || '').trim().length > 0); // 長音檔：全部小音檔都有文字
+                    const shortMainReady = !hasSplit && hasMainText; // 短音檔：主音檔自己有文字
+                    const longMainReady =
+                      hasSplit &&
+                      parts.length > 0 &&
+                      parts.every((p: any) => (p?.transcript || '').trim().length > 0); // 長音檔：全部小音檔都有文字
 
-  const canUseToolboxMain = shortMainReady || longMainReady;
+                    const canUseToolboxMain = shortMainReady || longMainReady;
                     const isPrimarySelected =
                       isPlaying
                         ? isCardPlaying
@@ -709,13 +715,11 @@ const saveEditing = () => {
                                   if (i !== index) return rec;
 
                                   // 處理子音檔 displayName
-                                  const updatedParts = rec.derivedFiles?.splitParts?.map((part: { displayName: string; }) => {
-                                    const suffix = part.displayName?.split('|')[1]?.trim(); // 取出 "30 ~ 60 分鐘" 這段
-                                    return {
-                                      ...part,
-                                      displayName: suffix ? `${newName} | ${suffix}` : newName,
-                                    };
+                                  const updatedParts = rec.derivedFiles?.splitParts?.map((part /* : RecordingItem */) => {
+                                    const suffix = part.displayName?.split('|')[1]?.trim();
+                                    return { ...part, displayName: suffix ? `${newName} | ${suffix}` : newName };
                                   });
+
 
                                   return {
                                     ...rec,
@@ -952,8 +956,8 @@ const saveEditing = () => {
 
                             {expandedItems.has(item.uri) && item.derivedFiles?.splitParts?.map((part: RecordingItem, subIndex: number) => {
                               const isThisSplitPlaying = playingUri === part.uri;
-                                  const partHasText = !!(part?.transcript || '').trim().length;
-    const canUseToolboxPart = partHasText;
+                              const partHasText = !!(part?.transcript || '').trim().length;
+                              const canUseToolboxPart = partHasText;
 
                               return (
                                 <View
@@ -1001,10 +1005,8 @@ const saveEditing = () => {
 
                                       if (!parent.derivedFiles?.splitParts) return;
 
-                                      const newParts = parent.derivedFiles.splitParts.map((p: { uri: string; }) =>
-                                        p.uri === part.uri
-                                          ? { ...p, displayName: newName }
-                                          : p
+                                      const newParts = parent.derivedFiles.splitParts.map((p /* : RecordingItem */) =>
+                                        p.uri === part.uri ? { ...p, displayName: newName } : p
                                       );
 
                                       updated[index] = {

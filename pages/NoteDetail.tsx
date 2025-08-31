@@ -25,7 +25,7 @@ import { useRecordingContext } from '../constants/RecordingContext';
 import TopUpModal from '../components/TopUpModal';
 import LoginOverlay from '../components/LoginOverlay';
 import { useLoginContext } from '../constants/LoginContext';
-import { APP_TITLE, SEGMENT_DURATION } from '../constants/variant';
+import { APP_TITLE, SEGMENT_DURATION, setSegmentDuration } from '../constants/variant';
 import {
   renderFilename,
   renderNoteBlock
@@ -148,6 +148,13 @@ export default function NoteDetailPage() {
       s.release();
     };
   }, []);
+
+  // 切分音檔
+  useEffect(() => {
+  AsyncStorage.getItem('VN_SEGMENT_DURATION').then(v => {
+    if (v) setSegmentDuration(Number(v));
+  });
+}, []);
 
   useEffect(() => {
     if (isPlaying && sound) {
@@ -450,12 +457,11 @@ export default function NoteDetailPage() {
       } catch (err) {
         // 轉寫/摘要失敗 → 不扣
       }
-
     }
-
     // 清掉提示，用分段清單顯示結果
     setPartialTranscript('');
-    setViewType('transcript'); // 讓你的 renderSegmentedTranscript() 出來
+    setSummaryMode('summary');
+    setViewType('summary'); // ✅ 完成就跳到重點整理清單（顯示子段的摘要）
     return updated;
   };
 

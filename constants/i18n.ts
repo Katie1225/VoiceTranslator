@@ -150,6 +150,11 @@ const translations = {
     transcribePrefTitle: 'Prompt after recording',
     transcribePrefAsk: 'Ask every time',
     transcribePrefDontAsk: "Don't ask again",
+    segmentDuration: "Segment length",
+    segment1min: "1 minute",
+    segment5min: "5 minutes",
+    segment10min: "10 minutes",
+    segmentNoSplit: "No splitting",
   },
   zh: {
     record: '錄音',
@@ -299,6 +304,11 @@ const translations = {
     transcribePrefTitle: '錄音後是否提示轉文字',
     transcribePrefAsk: '每次詢問',
     transcribePrefDontAsk: '不再詢問',
+    segmentDuration: "分段長度",
+    segment1min: "1 分鐘",
+    segment5min: "5 分鐘",
+    segment10min: "10 分鐘",
+    segmentNoSplit: "不切斷",
   },
   ja: {
     record: '録音',
@@ -445,6 +455,11 @@ const translations = {
     transcribePrefTitle: '録音後の確認',
     transcribePrefAsk: '毎回確認',
     transcribePrefDontAsk: '今後は表示しない',
+    segmentDuration: "分割長さ",
+    segment1min: "1分",
+    segment5min: "5分",
+    segment10min: "10分",
+    segmentNoSplit: "分割しない",
   }
 };
 

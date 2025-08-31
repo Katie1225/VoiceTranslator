@@ -5,7 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { logCoinUsage, fetchUserInfo } from '../utils/googleSheetAPI';
 import { handleLogin } from '../utils/loginHelpers';
-import { version } from '../constants/variant';
+import { version, setSegmentDuration } from '../constants/variant';
 import { useTheme } from '../constants/ThemeContext';
 import { useLoginContext } from '../constants/LoginContext';
 import { useTranslation } from '../constants/i18n';
@@ -43,7 +43,7 @@ const HamburgerMenu = ({ visible, onClose, onLoginPress, onLoginSuccess }: Props
   const { isLoggingIn, setIsLoggingIn } = useLoginContext();
 
   const { t } = useTranslation();
-  const { setAppLocale } = useLanguage();
+const { locale, setAppLocale } = useLanguage();
 
   const handleLogout = async () => {
     await GoogleSignin.signOut();
@@ -68,17 +68,15 @@ const HamburgerMenu = ({ visible, onClose, onLoginPress, onLoginSuccess }: Props
     }
   };
 
-  const [lang, setLang] = useState<'zh' | 'en' | 'ja'>('en');
+const [lang, setLang] = useState<'zh' | 'en' | 'ja'>(locale);  // 用 context 的 locale 當初值
 useEffect(() => {
-  AsyncStorage.getItem('appLang').then(v => {
-    if (v === 'en' || v === 'ja' || v === 'zh') setLang(v as any);
-  });
-}, [visible]);
+  setLang(locale); // 每次打開選單或 locale 改變時，同步顯示
+}, [visible, locale]);
+
 
 const pickLang = async (code: 'zh' | 'en' | 'ja') => {
   setLang(code);
-  await AsyncStorage.setItem('appLang', code); // 改用 appLang
-  setAppLocale(code);
+  await setAppLocale(code); // 由 context 寫入 appLang
   onClose();
 };
 
@@ -98,7 +96,23 @@ const pickLang = async (code: 'zh' | 'en' | 'ja') => {
     onClose(); // 選完就關閉選單（可移除）
   };
 
+const [segmentPref, setSegmentPref] = useState<number>(600); // 預設 10 分鐘
+const SEGMENT_KEY = 'VN_SEGMENT_DURATION';
 
+useEffect(() => {
+  AsyncStorage.getItem(SEGMENT_KEY).then(v => {
+    const sec = v ? Number(v) : 600;
+    setSegmentPref(sec);
+    setSegmentDuration(sec); // ← 這行很關鍵：讓全域 SEGMENT_DURATION 一起恢復
+  });
+}, [visible]);
+
+const pickSegment = async (sec: number) => {
+  setSegmentPref(sec);
+  await AsyncStorage.setItem(SEGMENT_KEY, String(sec));
+  setSegmentDuration(sec);   // 更新全域常數
+  onClose();
+};
 
   if (!visible) return null;
 
@@ -164,17 +178,21 @@ const pickLang = async (code: 'zh' | 'en' | 'ja') => {
         <TouchableOpacity
           onPress={() => { onClose(); setCustomPrimaryColor(null); }}
         />
-        {Object.entries(additionalColors).map(([name, color]) => (
-          <TouchableOpacity
-            key={name}
-            style={[
-              styles.colorOption,
-              { backgroundColor: color },
-              customPrimaryColor === color && styles.selectedColor
-            ]}
-            onPress={() => { onClose(); setCustomPrimaryColor(color); }}
-          />
-        ))}
+{Object.entries(additionalColors).map(([name, color]) => (
+  <TouchableOpacity
+    key={name}
+    style={[
+      styles.colorOption,
+      { backgroundColor: color },
+      customPrimaryColor === color && {
+        borderWidth: 2,
+        borderColor: colors.text,   // 或 colors.primary，看你要哪一種
+      },
+    ]}
+    onPress={() => { onClose(); setCustomPrimaryColor(color); }}
+  />
+))}
+
       </View>
       <Text style={styles.menuHeader}>{t('chooseLanguage')}</Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 8 }}>
@@ -225,7 +243,33 @@ const pickLang = async (code: 'zh' | 'en' | 'ja') => {
           );
         })}
       </View>
-
+<Text style={[styles.menuHeader, { marginTop: 20 }]}>{t('segmentDuration')}</Text>
+<View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 8 }}>
+  {[
+    { sec: 60,   label: t('segment1min')  }, // 1 分鐘
+    { sec: 300,  label: t('segment5min')  }, // 5 分鐘
+    { sec: 600,  label: t('segment10min') }, // 10 分鐘
+    // 用超大數代表「不切斷」，讓「item.durationSec > SEGMENT_DURATION」幾乎永遠不成立 → 不顯示展開分段按鈕
+    { sec: 999999, label: t('segmentNoSplit') },
+  ].map(({ sec, label }) => {
+    const selected = segmentPref === sec;
+    return (
+      <TouchableOpacity
+        key={sec}
+        onPress={() => pickSegment(sec)}
+        style={{
+          paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20,
+          borderWidth: 2, borderColor: colors.primary,
+          backgroundColor: selected ? colors.primary : 'transparent',
+        }}
+      >
+        <Text style={{ fontSize: 13, color: selected ? 'white' : colors.text }}>
+          {label}
+        </Text>
+      </TouchableOpacity>
+    );
+  })}
+</View>
     </View>
   );
 };
