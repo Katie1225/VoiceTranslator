@@ -781,56 +781,72 @@ const RecorderLists: React.FC<Props> = ({
                                 ) : null
                               }
                             />
-                            {/* 兩行小字摘要 */}
-                            <View pointerEvents="box-none">
-                              {(item.notes || item.transcript) && (
-                                <TouchableOpacity
-                                  onPress={() => {
-                                    closeAllMenus();
-                                    stopPlayback();
-                                    setSelectedPlayingIndex(null);
+{/* 兩行小字摘要（主音檔） */}
+<View pointerEvents="box-none">
+  {/* 長音檔：只有 notes 才顯示；沒 notes 就空白 */}
+  {hasSplit ? (
+    item.notes?.trim() ? (
+      <TouchableOpacity
+        onPress={() => {
+          closeAllMenus();
+          stopPlayback();
+          setSelectedPlayingIndex(null);
+          navigation.navigate('NoteDetail', {
+            index,
+            type: 'notes',
+          });
+          setLastVisitedRecording({ index, type: 'notes' });
+        }}
+      >
+        <View style={styles.transcriptBlock}>
+          <Text
+            style={styles.transcriptBlockText}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            {String(item.notes).trim()}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    ) : null
+  ) : (
+    /* 短音檔：維持原本 (notes 優先，其次 transcript) */
+    (item.notes || item.transcript) && (
+      <TouchableOpacity
+        onPress={() => {
+          closeAllMenus();
+          stopPlayback();
+          setSelectedPlayingIndex(null);
+          const type = item.notes?.trim()
+            ? 'notes'
+            : item.transcript?.trim()
+              ? 'transcript'
+              : null;
 
-                                    const type = item.notes?.trim()
-                                      ? 'notes'
-                                      : item.transcript?.trim()
-                                        ? 'transcript'
-                                        : null;
+          if (type) {
+            navigation.navigate('NoteDetail', {
+              index,
+              type,
+              shouldTranscribe: type === 'transcript' && !item.transcript,
+            });
+            setLastVisitedRecording({ index, type: 'transcript' });
+          }
+        }}
+      >
+        <View style={styles.transcriptBlock}>
+          <Text
+            style={styles.transcriptBlockText}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            {String(item.notes || item.transcript).trim()}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    )
+  )}
+</View>
 
-                                    if (type) {
-                                      navigation.navigate('NoteDetail', {
-                                        index,
-                                        type,
-                                        shouldTranscribe: type === 'transcript' && !item.transcript,
-                                      });
-                                      setLastVisitedRecording({ index, type: 'transcript' });
-                                    }
-                                  }}
-                                >
-
-                                  {/* 小字摘要區塊 */}
-                                  <View style={styles.transcriptBlock}>
-                                    {item.notes?.trim() ? (
-                                      <Text
-                                        style={styles.transcriptBlockText}
-                                        numberOfLines={1}
-                                        ellipsizeMode="tail"
-                                      >
-                                        {String(item.notes).trim()}
-                                      </Text>
-                                    ) : item.transcript?.trim() ? (
-                                      <Text
-                                        style={styles.transcriptBlockText}
-                                        numberOfLines={1}
-                                        ellipsizeMode="tail"
-                                      >
-                                        {String(item.transcript).trim()}
-                                      </Text>
-                                    ) : null}
-                                  </View>
-
-                                </TouchableOpacity>
-                              )}
-                            </View>
 
                             {/* 轉文字 & 重點摘要按鈕*/}
                             {isCurrentPlaying && (
@@ -1052,44 +1068,36 @@ const RecorderLists: React.FC<Props> = ({
                                     saveRecordings={saveRecordings}
                                     variant="sub"
                                   />
-                                  {/* 一行小字摘要：針對小音檔 */}
-                                  <View pointerEvents="box-none">
-                                    {(part.notes || part.transcript) && (
-                                      <TouchableOpacity
-                                        onPress={async () => {
-                                          closeAllMenus();
-                                          stopPlayback();
-                                          setSelectedPlayingIndex(null);
-                                          const targetType = part.notes?.trim()
-                                            ? 'notes'
-                                            : part.transcript?.trim()
-                                              ? 'transcript'
-                                              : null;
+{/* 一行小字摘要：針對小音檔（只顯示 transcript） */}
+<View pointerEvents="box-none">
+  {part.transcript?.trim() ? (
+    <TouchableOpacity
+      onPress={async () => {
+        closeAllMenus();
+        stopPlayback();
+        setSelectedPlayingIndex(null);
+        navigation.navigate('NoteDetail', {
+          index,
+          uri: part.uri,
+          type: 'transcript',
+          shouldTranscribe: false, // 已有 transcript，就不觸發轉寫
+        });
+        setLastVisitedRecording({ index, uri: part.uri, type: 'transcript' });
+      }}
+    >
+      <View style={styles.transcriptBlock}>
+        <Text
+          style={styles.transcriptBlockText}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+        >
+          {String(part.transcript).trim()}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  ) : null}
+</View>
 
-                                          if (targetType) {
-                                            navigation.navigate('NoteDetail', {
-                                              index,
-                                              uri: part.uri, // ✅ 這是子音檔
-                                              type: targetType,
-                                              shouldTranscribe: targetType === 'transcript' && !part.transcript, // ✅ 沒轉過才跑
-                                            });
-                                            setLastVisitedRecording({ index, uri: part.uri, type: 'notes' });
-                                          }
-                                        }}
-                                      >
-
-                                        <View style={styles.transcriptBlock}>
-                                          <Text
-                                            style={styles.transcriptBlockText}
-                                            numberOfLines={1}
-                                            ellipsizeMode="tail"
-                                          >
-                                            {String(part.notes || part.transcript).trim()}
-                                          </Text>
-                                        </View>
-                                      </TouchableOpacity>
-                                    )}
-                                  </View>
                                   {/* 三顆按鈕：針對小音檔 */}
                                   {isThisSplitPlaying && (
                                     <View style={styles.actionButtons}>
