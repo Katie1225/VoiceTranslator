@@ -840,6 +840,10 @@ export default function NoteDetailPage() {
         setActiveTask(null);
         return;
       }
+
+      let storedAfter = await AsyncStorage.getItem('user');
+let userAfter = storedAfter ? JSON.parse(storedAfter) : null;
+
       if (isMainAudio && !alreadySplit && NEED_AUTO_SPLIT) {
         setPartialTranscript(t('splittingInProgress')); // 顯示「分段中…」
 
@@ -920,19 +924,21 @@ export default function NoteDetailPage() {
       }, userLang.includes('CN') ? 'cn' : 'tw', t);
 
 
-      // ✅ 紀錄金幣使用
-      const coinResult = await logCoinUsage({
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        action: 'transcript',
-        value: -coinsToDeduct,
-        note: `轉文字：${currentItem.displayName || currentItem.name || ''}，長度 ${durationSec}s，扣 ${coinsToDeduct} 金幣`
-      });
+      if (userAfter) {
+  const coinResult = await logCoinUsage({
+    id: userAfter.id,
+    email: userAfter.email,
+    name: userAfter.name,
+    action: 'transcript',
+    value: -coinsToDeduct,
+    note: `轉文字：${currentItem.displayName || currentItem.name || ''}，長度 ${durationSec}s，扣 ${coinsToDeduct} 金幣`
+  });
+  if (!coinResult.success) {
+    debugWarn("轉換成功，但扣金幣失敗", coinResult.message || "請稍後再試");
+  }
+}
 
-      if (!coinResult.success) {
-        debugWarn("轉換成功，但扣金幣失敗", coinResult.message || "請稍後再試");
-      }
+
 
       // 確認音檔是否有效
       const rawText = result?.transcript?.text?.trim() || '';
