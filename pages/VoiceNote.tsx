@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   TouchableWithoutFeedback,
   FlatList,
+  ScrollView,
   Dimensions
 } from 'react-native';
 import SoundLevel from 'react-native-sound-level';
@@ -32,7 +33,7 @@ import {
   RecordingItem, transcribeAudio, summarizeWithMode, summarizeModes, notifyAwsRecordingEvent,
   notitifyWhisperEvent, splitAudioSegments,
   parseDateTimeFromDisplayName, generateDisplayNameParts, generateRecordingMetadata,
-} from '../utils/audioHelpers';       
+} from '../utils/audioHelpers';
 
 import { useFileStorage } from '../utils/useFileStorage';
 import { useAudioPlayer } from '../utils/useAudioPlayer';
@@ -51,9 +52,11 @@ import LoginOverlay from '../components/LoginOverlay';
 import RecorderLists from '../components/RecorderLists';
 import SelectionToolbar from '../components/SelectionToolbar';
 import SearchToolbar from '../components/SearchToolbar';
-import { APP_TITLE, debugValue } from '../constants/variant';
+import { APP_TITLE, debugValue, SEGMENT_DURATION, setSegmentDuration } from '../constants/variant';
+
 
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
+
 GoogleSignin.configure({
   webClientId: '732781312395-blhdm11hejnni8c2k9orf7drjcorp1pp.apps.googleusercontent.com',
   offlineAccess: true, // 可選
@@ -82,6 +85,7 @@ const RecorderPageVoiceNote = () => {
   const { colors, styles, isDarkMode, toggleTheme, customPrimaryColor, setCustomPrimaryColor } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOption, setSortOption] = useState<'latest' | 'oldest' | 'size' | 'name-asc' | 'name-desc' | 'starred'>('latest');
+const notesScrollRef = useRef<ScrollView>(null);
 
   const audioRecorderPlayer = useRef(new AudioRecorderPlayer()).current;
   const [pendingTranscribe, setPendingTranscribe] = useState<{ index: number; durationSec: number } | null>(null);
@@ -149,6 +153,14 @@ const RecorderPageVoiceNote = () => {
     };
   }, []);
 
+  // 切分音檔
+  useEffect(() => {
+    AsyncStorage.getItem('VN_SEGMENT_DURATION').then(v => {
+      if (v) setSegmentDuration(Number(v));
+    });
+  }, []);
+
+
   // 購買畫面
   const [showTopUpModal, setShowTopUpModal] = useState(false);
 
@@ -165,6 +177,94 @@ const RecorderPageVoiceNote = () => {
   const [showTranscriptIndex, setShowTranscriptIndex] = useState<number | null>(null);
   const [showSummaryIndex, setShowSummaryIndex] = useState<number | null>(null);
 
+  // 在元件內加入「分段狀態」與小工具
+  type NoteSeg = {
+    startSec: number;
+    endSec: number;
+    label: string;
+    text: string; // ← 每段只有一個文字
+  };
+
+  const [noteSegs, setNoteSegs] = useState<NoteSeg[]>([]);
+  const lastSegIdxRef = useRef<number>(-1);
+  const [draftLine, setDraftLine] = useState(''); // 使用者正在打的一行
+
+  // 小工具：時間 → 00:00
+  const mmss = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+  const segLabel = (start: number, end: number) => `${mmss(start)}–${mmss(end)}`;
+
+  // 確保目前時間所在的段已經建立（灰色分隔條）
+  const ensureSegForTime = (sec: number, totalSec?: number) => {
+    const segIdx = Math.floor(sec / SEGMENT_DURATION);
+    if (segIdx > lastSegIdxRef.current) {
+      const start = segIdx * SEGMENT_DURATION;
+      const end = totalSec ? Math.min(start + SEGMENT_DURATION, totalSec) : start + SEGMENT_DURATION;
+      setNoteSegs(prev => [
+        ...prev,
+        { startSec: start, endSec: end, label: segLabel(start, end), text: '' }
+      ]);
+
+      lastSegIdxRef.current = segIdx;
+    }
+  };
+
+  // 按 Enter 時，把這一行收進「當下」那一段
+  const submitDraftLine = () => {
+    const text = draftLine.trim();
+    if (!text) return;
+
+    // 先確保當下時間的分段已經存在（會用 SEGMENT_DURATION 自動建立）
+    ensureSegForTime(recordingTimeRef.current);
+
+    // 把草稿字串追加到「當下那一段」的 text（換行後續寫起來比較舒服）
+    setNoteSegs(prev => {
+      const idx = Math.floor(recordingTimeRef.current / SEGMENT_DURATION);
+      const arr = [...prev];
+      const before = arr[idx]?.text || '';
+      arr[idx] = { ...arr[idx], text: before ? `${before}\n${text}` : text };
+      return arr;
+    });
+
+    setDraftLine('');
+  };
+
+
+  // 展平成純文字（相容你現有的 notes 儲存）
+  const flattenNoteSegs = (segs: NoteSeg[]) =>
+    segs
+      .map(s => (s.text.trim() ? `${s.label}\n${s.text.trim()}` : s.label))
+      .join('\n\n');
+
+
+
+  // 放在 RecorderPageVoiceNote 內 useEffect 區塊們之間
+  useEffect(() => {
+    if (!showNotesModal) return;
+    // 一打開就先放入第一個分隔條（0–SEGMENT_DURATION）
+    ensureSegForTime(Math.max(0, recordingTimeRef.current));
+
+    const id = setInterval(() => {
+      // 每 500ms 檢查是否跨到下一段，如果是就插入下一個灰條
+      ensureSegForTime(recordingTimeRef.current);
+    }, 500);
+
+    return () => clearInterval(id);
+  }, [showNotesModal]);
+
+  // 清掉上一段錄音筆記
+  const resetNotesDraft = () => {
+    setNoteSegs([]);
+    lastSegIdxRef.current = -1;
+    setDraftLine('');
+    setNoteTitleEditing('');
+    setNotesEditing('');
+  };
+
+
   // 所有的文字編輯宣告
   const [editingState, setEditingState] = useState<{
     type: 'transcript' | 'summary' | 'name' | 'notes' | null;
@@ -173,7 +273,7 @@ const RecorderPageVoiceNote = () => {
     mode?: string; // ✅ optional，未來加多摘要時會用到
   }>({ type: null, index: null, text: '' });
 
-  const { recordings, setRecordings,   setLastVisitedRecording } = useRecordingContext();
+  const { recordings, setRecordings, setLastVisitedRecording } = useRecordingContext();
 
   const {
     isLoading,
@@ -335,11 +435,12 @@ const RecorderPageVoiceNote = () => {
           r.transcript?.toLowerCase().includes(query) ||
           (query === 'star' && r.isStarred);
 
-        const matchSplitParts = r.derivedFiles?.splitParts?.some((p: { displayName: string; notes: string; transcript: string; }) =>
-          p.displayName?.toLowerCase().includes(query) ||
-          p.notes?.toLowerCase().includes(query) ||
-          p.transcript?.toLowerCase().includes(query)
+        const matchSplitParts = r.derivedFiles?.splitParts?.some((p /*: RecordingItem*/) =>
+          (p.displayName || '').toLowerCase().includes(query) ||
+          (p.notes || '').toLowerCase().includes(query) ||
+          (p.transcript || '').toLowerCase().includes(query)
         );
+
 
         return matchSelf || matchSplitParts; // ✅ 至少主音檔或其中一個子音檔有符合
       });
@@ -453,6 +554,7 @@ const RecorderPageVoiceNote = () => {
       setRecording(true);
 
       recordingTimeRef.current = 0;
+      resetNotesDraft(); // 確保新錄音筆記是空的
       setShowNotesModal(true);
 
       //錄音時間上限
@@ -486,38 +588,38 @@ const RecorderPageVoiceNote = () => {
     }
   };
 
-// ✅ 放在元件內（如 stopRecording 之前），使用現有的 useTranslation() / navigation
-const PREF_KEY = 'VN_TRANSCRIBE_PROMPT_PREF';
-const maybePromptTranscribe = async (newIndex: number) => {
-  const goTranscribe = () => navigation.navigate('NoteDetail', {
-    index: newIndex, uri: undefined, type: 'transcript', shouldTranscribe: true,
-  });
+  // ✅ 放在元件內（如 stopRecording 之前），使用現有的 useTranslation() / navigation
+  const PREF_KEY = 'VN_TRANSCRIBE_PROMPT_PREF';
+  const maybePromptTranscribe = async (newIndex: number) => {
+    const goTranscribe = () => navigation.navigate('NoteDetail', {
+      index: newIndex, uri: undefined, type: 'transcript', shouldTranscribe: true,
+    });
 
-  const pref = await AsyncStorage.getItem(PREF_KEY);
-  if (pref === 'auto') { goTranscribe(); return; } // 直接轉
-  if (pref === 'off')  { return; }                // 什麼都不做（不提示）
+    const pref = await AsyncStorage.getItem(PREF_KEY);
+    if (pref === 'auto') { goTranscribe(); return; } // 直接轉
+    if (pref === 'off') { return; }                // 什麼都不做（不提示）
 
 
-  Alert.alert(
-    t('transcribePromptTitle'),
-    t('transcribePromptMessage'), 
-    [
-      { text: t('transcribePromptLater'), style: 'cancel' },
-      {
-        text: t('transcribePromptNow'),
-        onPress: () => {
-          navigation.navigate('NoteDetail', {
-            index: newIndex,
-            uri: undefined,
-            type: 'transcript',
-            shouldTranscribe: true, // 進 NoteDetail 自動開跑轉寫
-          });
+    Alert.alert(
+      t('transcribePromptTitle'),
+      t('transcribePromptMessage'),
+      [
+        { text: t('transcribePromptLater'), style: 'cancel' },
+        {
+          text: t('transcribePromptNow'),
+          onPress: () => {
+            navigation.navigate('NoteDetail', {
+              index: newIndex,
+              uri: undefined,
+              type: 'transcript',
+              shouldTranscribe: true, // 進 NoteDetail 自動開跑轉寫
+            });
+          },
         },
-      },
-    ],
-    { cancelable: true }
-  );
-};
+      ],
+      { cancelable: true }
+    );
+  };
 
 
 
@@ -572,6 +674,7 @@ const maybePromptTranscribe = async (newIndex: number) => {
         const { label, metadataLine } = generateDisplayNameParts(noteTitleEditing, metadata.durationSec, t);
         const displayName = label;
         const displayDate = metadataLine;
+        const flatNotes = flattenNoteSegs(noteSegs); 
         const newItem: RecordingItem = {
           size: fileInfo.size,
           uri: normalizedUri,
@@ -580,10 +683,10 @@ const maybePromptTranscribe = async (newIndex: number) => {
           displayDate,
           derivedFiles: {},
           date: metadata.date,
-          notes: notesEditing || '',
+  notes: flatNotes || notesEditing || '', 
           durationSec: metadata.durationSec,
         };
-
+(newItem as any).tempNoteSegs = noteSegs;   
         debugLog('📌 建立新錄音項目', { name, displayName });
 
         setRecordings(prev => {
@@ -603,6 +706,7 @@ const maybePromptTranscribe = async (newIndex: number) => {
         setShowSummaryIndex(null);
         resetEditingState();
         setShowNotesModal(false);
+        resetNotesDraft();
         setNotesEditing('');
         setNoteTitleEditing('');
         setSelectedPlayingIndex(0);
@@ -837,13 +941,29 @@ const maybePromptTranscribe = async (newIndex: number) => {
                   currentDecibels={currentDecibels}
                   onToggleNotesModal={() => {
                     closeAllMenus();
-                    if (showNotesModal && notesEditing && showNotesIndex !== null) {
-                      const updated = [...recordings];
-                      updated[showNotesIndex].notes = notesEditing;
-                      setRecordings(updated);
-                      saveRecordings(updated);
+                    if (showNotesModal) {
+                      // 關閉之前：若草稿有字，先收進當下段
+                      if (draftLine.trim()) submitDraftLine();
+
+                      const flat = flattenNoteSegs(noteSegs);
+                      const merged = flat || notesEditing || '';
+
+                      if (merged && showNotesIndex !== null) {
+                        const updated = [...recordings];
+                        updated[showNotesIndex].notes = merged;  // 先走相容欄位 notes
+                        (updated[showNotesIndex] as any).tempNoteSegs = noteSegs;
+                        setRecordings(updated);
+                        saveRecordings(updated);
+                      }
+
+                      // 清空暫存（下次打開再長）
+                      resetNotesDraft();
+                      setNoteSegs([]);
+                      lastSegIdxRef.current = -1;
+                      setDraftLine('');
                     }
                     setShowNotesModal(prev => !prev);
+
                   }}
                 />
               </View>
@@ -894,25 +1014,68 @@ const maybePromptTranscribe = async (newIndex: number) => {
               />
 
               {/* 多行補充內容 */}
-              <TextInput
-                placeholder={t('enterDescription')}
-                placeholderTextColor="#888"
-                value={notesEditing}
-                onChangeText={setNotesEditing}
-                multiline
-                style={{
-                  minHeight: 60,
-                  maxHeight: 200,
-                  padding: 10,
-                  backgroundColor: colors.background,
-                  borderRadius: 8,
-                  borderWidth: 1,
-                  borderColor: colors.primary,
-                  color: colors.text,
-                  textAlignVertical: 'top'
-                }}
-              />
+              {/* 中間：分段清單 */}
+<ScrollView
+  ref={notesScrollRef}
+  style={{ maxHeight: 200, marginBottom: 8 }}
+  contentContainerStyle={{ paddingBottom: 4, gap: 8 }}
+  keyboardShouldPersistTaps="handled"
+  onContentSizeChange={() => {
+    // 內容高度一變（新增時間段或文字變高）就自動捲到底
+    notesScrollRef.current?.scrollToEnd({ animated: true });
+  }}
+>
+                {noteSegs.length === 0 ? (
+                  <Text style={{ color: '#888' }}>
+                    {t('notesPlaceholderLine1')}
+                  </Text>
+                ) : (
+                  noteSegs.map((seg, i) => (
+                    <View key={`${seg.startSec}-${i}`} style={{ gap: 6 }}>
+                      {/* 灰色時間條（不可編） */}
+                      <Text
+                        style={{
+                          color: '#888',
+                          fontSize: 13,
+                          backgroundColor: colors.background,
+                          paddingVertical: 4,
+                          paddingHorizontal: 8,
+                          borderRadius: 6,
+                          borderWidth: 1,
+                          borderColor: colors.primary + '55',
+                        }}
+                      >
+                        {seg.label}
+                      </Text>
 
+                      {/* 這一段的可編輯框框 */}
+                      <TextInput
+                        placeholder={t('enterDescription')}
+                        placeholderTextColor="#888"
+                        value={seg.text}
+                        onChangeText={(txt) => {
+                          setNoteSegs(prev => {
+                            const arr = [...prev];
+                            arr[i] = { ...arr[i], text: txt };
+                            return arr;
+                          });
+                        }}
+                        multiline
+                        style={{
+                          minHeight: 60,
+                          padding: 10,
+                          backgroundColor: colors.background,
+                          borderRadius: 8,
+                          borderWidth: 1,
+                          borderColor: colors.primary,
+                          color: colors.text,
+                          textAlignVertical: 'top',
+                        }}
+                      />
+                    </View>
+                  ))
+                )}
+              </ScrollView>
             </View>
           )}
           {/* 批量處理音檔 */}

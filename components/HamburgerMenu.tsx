@@ -1,6 +1,6 @@
 // components/HamburgerMenu.tsx
 import React, { useEffect, useState } from 'react';
-import { Linking, Alert, View, Text, TouchableOpacity, Image } from 'react-native';
+import { Linking, Alert, View, Text, TouchableOpacity, Image, Share } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { logCoinUsage, fetchUserInfo } from '../utils/googleSheetAPI';
@@ -163,6 +163,21 @@ const pickSegment = async (sec: number) => {
       >
         <Text style={styles.menuItem}>✉️ {t('contactKai')}</Text>
       </TouchableOpacity>
+      <TouchableOpacity
+  onPress={async () => {
+    try {
+      await Share.share({
+        message: t('shareMessage'),
+      });
+    } catch (error) {
+      console.error(error);
+    }
+  }}
+  style={styles.menuItemButton}
+>
+  <Text style={styles.menuItem}>📲 {t('shareApp')}</Text>
+</TouchableOpacity>
+
 
       <TouchableOpacity onPress={() => { onClose(); toggleTheme(); }} style={styles.menuItemButton}>
         <Text style={styles.menuItem}>{isDarkMode ? t('switchToLight') : t('switchToDark')}</Text>

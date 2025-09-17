@@ -36,6 +36,12 @@ import { shareRecordingNote, shareRecordingFile, saveEditedRecording, deleteText
 import { TouchableWithoutFeedback, Keyboard } from 'react-native';
 import { useTranslation } from '../constants/i18n';
 
+// ---- 全域：記錄正在跑轉寫的 uri，避免未完成又被重觸發 ----
+const __VN_RUNNING_SET: Set<string> =
+  (global as any).__VN_RUNNING_SET || new Set<string>();
+(global as any).__VN_RUNNING_SET = __VN_RUNNING_SET;
+
+
 export default function NoteDetailPage() {
   const navigation = useNavigation();
   const { styles, colors } = useTheme();
@@ -760,13 +766,27 @@ export default function NoteDetailPage() {
 
     if (isTranscribing) return; // ✅ 避免同時跑兩個
     // 已有主音檔逐字稿就不處理（避免誤卡狀態）
-    if (currentItem?.transcript?.trim()?.length) return;
+    if (currentItem?.transcript?.trim()?.length) return;  
     if (activeTask) { Alert.alert(t('pleaseWait'), t('anotherTaskInProgress')); return; }
     setActiveTask('transcribe');
     setIsTranscribing(true);
 
-    // Create a RecordingItem-compatible object if currentItem is SplitPart
+// 本次操作的唯一 key（分段用子檔 uri；母檔用母檔 uri）
+const transcribeKey = String(uri ?? recordings[index]?.uri ?? '');
 
+// ---- 防重複觸發（尚未完成）----
+try {
+  if (transcribeKey && __VN_RUNNING_SET.has(transcribeKey)) {
+    // 同一段還在跑，直接略過這次按鈕
+    setActiveTask(null);
+    setIsTranscribing(false);
+    return;
+  }
+  if (transcribeKey) __VN_RUNNING_SET.add(transcribeKey); // 開始：上鎖
+} catch {}
+
+
+    // Create a RecordingItem-compatible object if currentItem is SplitPart
     try {
       setIsTranscribing(true);
       setPartialTranscript(t('transcribingInProgress')); // 正在轉文字...
@@ -779,6 +799,11 @@ export default function NoteDetailPage() {
         const sound = new Sound(currentItem.uri, '', (error) => {
           if (error) {
             reject(new Error(t('errorLoadingAudio') + ': ' + error.message)); // 無法載入音訊
+            try {
+  const key = String(uri ?? recordings[index]?.uri ?? '');
+  if (key) __VN_RUNNING_SET.delete(key);
+} catch {}
+
             return;
           }
           const duration = sound.getDuration();
@@ -807,6 +832,11 @@ export default function NoteDetailPage() {
         if (part?.transcript && part.transcript.trim().length > 0) {
           setIsTranscribing(false);
           setActiveTask(null);
+          try {
+  const key = String(uri ?? recordings[index]?.uri ?? '');
+  if (key) __VN_RUNNING_SET.delete(key);
+} catch {}
+
           return;
         }
         remainingSec = SEGMENT_DURATION;
@@ -830,6 +860,11 @@ export default function NoteDetailPage() {
       if (coinsToDeduct === 0) {
         setIsTranscribing(false);
         setActiveTask(null);
+        try {
+  const key = String(uri ?? recordings[index]?.uri ?? '');
+  if (key) __VN_RUNNING_SET.delete(key);
+} catch {}
+
         return;
       }
 
@@ -838,6 +873,11 @@ export default function NoteDetailPage() {
       if (!ok) {
         setIsTranscribing(false);
         setActiveTask(null);
+        try {
+  const key = String(uri ?? recordings[index]?.uri ?? '');
+  if (key) __VN_RUNNING_SET.delete(key);
+} catch {}
+
         return;
       }
 
@@ -866,6 +906,12 @@ let userAfter = storedAfter ? JSON.parse(storedAfter) : null;
           try {
             const part = await splitAudioSegments(parent.uri, start, segmentLength, t, parent.displayName);
             if (!part) continue;
+
+// 取得母音檔暫存的分段筆記
+const temp = (parent as any).tempNoteSegs || [];
+// 把第 seg 段的文字下放到這個子段
+part.notes = (temp[seg]?.text || '').trim();
+
 
             // ✅ 複製主音檔 notes 到小音檔（避免重複才複製）
             if (!part.notes?.trim() && parent.notes?.trim()) {
@@ -964,6 +1010,11 @@ let userAfter = storedAfter ? JSON.parse(storedAfter) : null;
         setPartialTranscript('');
         setSummaries(autoSummaries); // ✅ 畫面立即顯示打勾
         setSummaryMode('summary');
+        try {
+  const key = String(uri ?? recordings[index]?.uri ?? '');
+  if (key) __VN_RUNNING_SET.delete(key);
+} catch {}
+
 
         return;
       }
@@ -989,6 +1040,7 @@ let userAfter = storedAfter ? JSON.parse(storedAfter) : null;
         setSummaries(autoSummaries);
         setSummaryMode('summary');
         resetEditingState();
+        
         return;
       }
 
@@ -1042,6 +1094,7 @@ let userAfter = storedAfter ? JSON.parse(storedAfter) : null;
       Alert.alert(t('error'), (err as Error).message || t('transcriptionFailedNoCharge'));
       //   Alert.alert("❌ 錯誤", (err as Error).message || "轉換失敗，這次不會扣金幣");
     } finally {
+      try { if (transcribeKey) __VN_RUNNING_SET.delete(transcribeKey); } catch {}
       setActiveTask(null);
       setIsTranscribing(false);
     }

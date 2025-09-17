@@ -169,6 +169,15 @@ const RecorderLists: React.FC<Props> = ({
           }
         }
 
+        // ⬇️ 在建立完 parts.push(...) 迴圈之後、const updated = ... 之前，加上：
+const temp = (found as any).tempNoteSegs || [];
+parts.forEach((p, i) => {
+  p.notes = (temp[i]?.text || '').trim();
+});
+// 可選：下放完就清掉母音檔上的暫存，避免重覆
+(found as any).tempNoteSegs = [];
+
+
         const updated = recordings.map(r =>
           r.uri === uri
             ? { ...r, derivedFiles: { ...r.derivedFiles, splitParts: parts } }

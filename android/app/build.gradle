@@ -97,7 +97,7 @@ android {
         applicationId 'com.katiehuang.audiorecordermvp'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 104
+        versionCode 107
         versionName "1.5.1"
     }
 signingConfigs {
@@ -159,10 +159,13 @@ buildTypes {
     }
 }
 
+// configurations.all { exclude group: 'com.arthenica' } // 擋掉舊的官方 AAR
+
 dependencies {
 
    // 如果使用本地 .aar 文件
-implementation(name: 'ffmpeg-kit-full-gpl-6.0-2.LTS', ext: 'aar')
+ //implementation(name: 'ffmpeg-kit-full-gpl-6.0-2.LTS', ext: 'aar') // 舊版4KB
+implementation(name: 'ffmpeg-kit-16kb-6.0.0', ext: 'aar')
 implementation(name: 'smart-exception-common-0.2.1', ext: 'jar')
 implementation(name: 'smart-exception-java-0.2.1', ext: 'jar')
 
