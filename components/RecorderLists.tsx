@@ -157,9 +157,11 @@ const RecorderLists: React.FC<Props> = ({
               // ✅ 複製主音檔 notes 到小音檔（避免覆寫既有 notes）
               if (!part.notes?.trim() && found.notes?.trim()) {
                 part.notes = found.notes;
-              }
-
+              }           
               debugLog(`✅ 成功分段：${part.displayName}`);
+
+
+              
               parts.push(part);
             } else {
               debugWarn(`⚠️ 分段失敗（null）：start=${start}`);
@@ -176,6 +178,7 @@ parts.forEach((p, i) => {
 });
 // 可選：下放完就清掉母音檔上的暫存，避免重覆
 (found as any).tempNoteSegs = [];
+
 
 
         const updated = recordings.map(r =>

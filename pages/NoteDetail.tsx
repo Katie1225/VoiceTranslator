@@ -439,12 +439,28 @@ export default function NoteDetailPage() {
         }
 
         // ⑤ ✅ 扣這一段的錢（純靜音不會走到這裡；太短和正常都會扣）
-        const segmentDurationSec = Math.min(
-          SEGMENT_DURATION,
-          Math.ceil(part?.durationSec ?? SEGMENT_DURATION)
-        );
-        const coinsForThisPart =
-          Math.ceil(segmentDurationSec / (COIN_UNIT_MINUTES * 60)) * COIN_COST_PER_UNIT;
+// ✅ 先量測該子檔實際長度；失敗才回退 part.durationSec / SEGMENT_DURATION
+let measuredSec = 0;
+try {
+  measuredSec = await new Promise<number>((resolve, reject) => {
+    const s = new Sound(part.uri, '', (err) => {
+      if (err) return resolve(0); // 量不到就回 0，後面會有 fallback
+      const d = Math.ceil(s.getDuration());
+      s.release();
+      resolve(isFinite(d) && d > 0 ? d : 0);
+    });
+  });
+} catch { /* ignore */ }
+
+const segmentDurationSec =
+  measuredSec > 0
+    ? measuredSec
+    : Math.ceil(part?.durationSec ?? SEGMENT_DURATION);
+
+const coinsForThisPart =
+  Math.ceil(segmentDurationSec / (COIN_UNIT_MINUTES * 60)) * COIN_COST_PER_UNIT;
+
+
 
         if (coinsForThisPart > 0) {
           const stored = await AsyncStorage.getItem('user');
@@ -693,9 +709,9 @@ export default function NoteDetailPage() {
         const done = !!(p?.transcript && p.transcript.trim().length > 0);
         // 純靜音也會寫入 placeholder => 視為「已處理，不再計價」
         if (!done) {
-          const sec = Math.ceil(p?.durationSec ?? SEGMENT_DURATION);
-          // 最後一段可能不足 SEGMENT_DURATION，沿用實際秒數
-          remain += Math.min(sec, SEGMENT_DURATION);
+const sec = Math.ceil(p?.durationSec ?? SEGMENT_DURATION);
+// ✅ 不再取 min，上限去掉，直接累計該段實際秒數
+remain += sec;
         }
       }
       return remain;
@@ -839,7 +855,8 @@ try {
 
           return;
         }
-        remainingSec = SEGMENT_DURATION;
+// ✅ 小音檔估價用實際長度
+remainingSec = durationSec;
 
       } else {
         // 主音檔
@@ -906,6 +923,8 @@ let userAfter = storedAfter ? JSON.parse(storedAfter) : null;
           try {
             const part = await splitAudioSegments(parent.uri, start, segmentLength, t, parent.displayName);
             if (!part) continue;
+
+            
 
 // 取得母音檔暫存的分段筆記
 const temp = (parent as any).tempNoteSegs || [];
