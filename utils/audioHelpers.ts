@@ -6,8 +6,7 @@ import * as FileSystem from 'expo-file-system';
 import Sound from 'react-native-sound';
 import { nginxVersion } from '../constants/variant';
 import { debugLog, debugWarn, debugError } from './debugLog';
-import * as RNFS from 'react-native-fs';
-import { Alert, } from 'react-native';
+import { Alert } from 'react-native';
 
 export type RecordingItem = {
   size?: number;
@@ -33,10 +32,10 @@ export type RecordingItem = {
       name: string;
       displayName?: string;
     };
-splitParts?: RecordingItem[];
+    splitParts?: RecordingItem[];
   };
   durationSec?: number;
-   start?: number;          
+  start?: number;          
   end?: number;            
   createdAt?: string;       
   isSplitPart?: boolean;    
@@ -110,7 +109,6 @@ export const notitifyWhisperEvent = async (
   }
 };
 
-
 // 靜音剪輯處理
 export const trimSilence = async (uri: string, name: string): Promise<RecordingItem> => {
   const baseName = name.replace(/\.(m4a|wav)$/, '');
@@ -128,15 +126,17 @@ export const trimSilence = async (uri: string, name: string): Promise<RecordingI
   const command = `-i "${uri}" -af silenceremove=start_periods=1:start_silence=0.3:start_threshold=-40dB:stop_periods=-1:stop_silence=0.3:stop_threshold=-40dB -y "${outputPath}"`;
 
   await FFmpegWrapper.run(command);
-  const exists = await RNFS.exists(outputPath);
-  if (!exists) debugError('靜音剪輯失敗');
+  
+  // ✅ 使用 expo-file-system 檢查檔案
+  const fileInfo = await FileSystem.getInfoAsync(outputPath);
+  if (!fileInfo.exists) debugError('靜音剪輯失敗');
 
   return {
     uri: outputPath,
     name: outputName,
     originalUri: uri,
     isTrimmed: true,
-    size: (await RNFS.stat(outputPath)).size
+    size: fileInfo.exists ? (fileInfo as any).size || 0 : 0 
   };
 };
 
@@ -151,8 +151,10 @@ export async function speedUpAudio(uri: string, speed: number, outputName?: stri
   const cmd = `-i "${uri}" -filter:a "atempo=${speed}" -ar 16000 -ac 1 -f wav "${outputUri}"`;
 
   await FFmpegWrapper.run(cmd);
-  const exists = await RNFS.exists(outputUri);
-  if (!exists) debugError('加速音訊失敗');
+  
+  // ✅ 使用 expo-file-system 檢查檔案
+  const fileInfo = await FileSystem.getInfoAsync(outputUri);
+  if (!fileInfo.exists) debugError('加速音訊失敗');
 
   return outputUri;
 }
@@ -177,6 +179,7 @@ export async function processTrimmedAudio(
   uri: string,
   counterRef: { count: number }
 ): Promise<string | null> {
+  // ✅ 使用 expo-file-system 檢查檔案
   const info = await FileSystem.getInfoAsync(uri);
   if (!info.exists || info.size === 0) return null;
 
@@ -193,53 +196,49 @@ export async function processTrimmedAudio(
 }
 
 // 切斷工具 for 自動存檔
-
-/**
- * 從主錄音中擷取一段片段（不重新編碼）
- * 用於錄音過程中每30分鐘自動存檔
- * @param inputUri 主錄音路徑（m4a）
- * @param startSec 開始秒數
- * @param durationSec 片段長度（例如1800秒）
- * @returns 分段檔案資訊
- */
 export const splitAudioSegments = async (
   inputUri: string,
   startSec: number,
   durationSec: number,
   t: (key: string, params?: Record<string, string | number>) => string = (k) => k,
-  parentDisplayName?: string  // ✅ 新增參數，傳入主音檔的 displayName
+  parentDisplayName?: string
 ): Promise<RecordingItem | null> => {
   try {
+    // ✅ 使用 expo-file-system 處理路徑
     const inputPath = inputUri.replace(/^file:\/\//, '');
-    const normalizedInputPath = inputPath.startsWith('/') ? inputPath : `/${inputPath}`;
-
-    const folder = `${RNFS.ExternalDirectoryPath}/segments/`;
-    await RNFS.mkdir(folder);
+    
+    // 創建 segments 目錄
+    const segmentsDir = `${FileSystem.documentDirectory}segments/`;
+    const dirInfo = await FileSystem.getInfoAsync(segmentsDir);
+    if (!dirInfo.exists) {
+      await FileSystem.makeDirectoryAsync(segmentsDir, { intermediates: true });
+    }
 
     const baseName = inputPath.split('/').pop()?.replace(/\.[^/.]+$/, '') ?? `rec_${Date.now()}`;
     const outputName = `${baseName}_segment_${startSec}_${startSec + durationSec}.m4a`;
-    const outputPath = `${folder}${outputName}`;
+    const outputPath = `${segmentsDir}${outputName}`;
 
     try {
-      await RNFS.unlink(outputPath);
+      await FileSystem.deleteAsync(outputPath, { idempotent: true });
     } catch (e) {
       debugLog('無舊檔案可刪除');
     }
 
     const adjustedStart = startSec === 0 ? 0.01 : startSec;
-    const command = `-i "${normalizedInputPath}" -ss ${adjustedStart} -t ${durationSec} -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
+    const command = `-i "${inputPath}" -ss ${adjustedStart} -t ${durationSec} -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
     debugLog(`執行 FFmpeg 命令: ${command}`);
     await FFmpegWrapper.run(command);
 
-    const exists = await RNFS.exists(outputPath);
-    if (!exists) {
+    // ✅ 使用 expo-file-system 檢查檔案
+    const fileInfo = await FileSystem.getInfoAsync(outputPath);
+    if (!fileInfo.exists) {
       debugError('分割檔案未建立');
+      return null;
     }
 
-    const stat = await RNFS.stat(outputPath);
-    if (stat.size < 1000) {
-      debugWarn(`分段檔案過小（${stat.size} bytes），將自動移除`);
-      await RNFS.unlink(outputPath);
+    if (fileInfo.size < 1000) {
+      debugWarn(`分段檔案過小（${fileInfo.size} bytes），將自動移除`);
+      await FileSystem.deleteAsync(outputPath, { idempotent: true });
       return null;
     }
 
@@ -249,12 +248,12 @@ export const splitAudioSegments = async (
     });
 
     return {
-      uri: `file://${outputPath}`,
+      uri: outputPath,
       name: outputName,
       start: startSec,
       end: startSec + durationSec,
       durationSec,
-      displayName: parentDisplayName ? `${parentDisplayName} | ${rangeText}` : rangeText,  // ✅ 主音檔名稱連動
+      displayName: parentDisplayName ? `${parentDisplayName} | ${rangeText}` : rangeText,
       createdAt: new Date().toISOString(),
       isSplitPart: true,
     };
@@ -280,27 +279,33 @@ export const splitAudioIntoSegments = async (
 ): Promise<string[]> => {
   const outputPattern = `${FileSystem.cacheDirectory}segment_%03d.wav`;
 
-  // 清理舊檔案（排除壓縮過的）
-  const allFilesBefore = await FileSystem.readDirectoryAsync(FileSystem.cacheDirectory!);
-  await Promise.all(
-    allFilesBefore
-      .filter(f => f.startsWith('segment_') && f.endsWith('.wav') && !f.includes('_small'))
-      .map(f => FileSystem.deleteAsync(`${FileSystem.cacheDirectory}${f}`))
-  );
+  // ✅ 使用 expo-file-system 清理舊檔案
+  try {
+    const allFilesBefore = await FileSystem.readDirectoryAsync(FileSystem.cacheDirectory!);
+    await Promise.all(
+      allFilesBefore
+        .filter(f => f.startsWith('segment_') && f.endsWith('.wav') && !f.includes('_small'))
+        .map(f => FileSystem.deleteAsync(`${FileSystem.cacheDirectory}${f}`, { idempotent: true }))
+    );
+  } catch (error) {
+    debugWarn('清理舊檔案失敗:', error);
+  }
 
   // 強制關鍵幀切割
   const command = `-i "${uri}" -f segment -segment_time ${seconds} -ar 16000 -ac 1 -c:a pcm_s16le "${outputPattern}"`;
 
   await FFmpegWrapper.run(command);
-  const exists = await FileSystem.readDirectoryAsync(FileSystem.cacheDirectory!);
-  if (!exists.length) debugError('切割音檔失敗');
-
-  // 讀取並排序分段檔案
+  
+  // ✅ 使用 expo-file-system 讀取檔案
   const allFiles = await FileSystem.readDirectoryAsync(FileSystem.cacheDirectory!);
-  return allFiles
+  const segmentFiles = allFiles
     .filter(f => f.startsWith('segment_') && f.endsWith('.wav') && !f.includes('_small'))
-    .sort((a, b) => a.localeCompare(b)) // 確保順序正確
+    .sort((a, b) => a.localeCompare(b))
     .map(f => `${FileSystem.cacheDirectory}${f}`);
+
+  if (!segmentFiles.length) debugError('切割音檔失敗');
+
+  return segmentFiles;
 };
 
 export const sendToWhisper = async (
@@ -316,8 +321,10 @@ export const sendToWhisper = async (
     } else if (nginxVersion === 'green') {
       apiUrl = 'https://katielab.com/v1/transcribe/';
     } else {
-throw new Error(t('serverError'));
+      throw new Error(t('serverError'));
     }
+    
+    // ✅ 使用 expo-file-system 檢查檔案
     const fileStat = await FileSystem.getInfoAsync(wavUri);
     if (!fileStat.exists) {
       debugError(`音檔不存在: ${wavUri}`);
@@ -329,10 +336,10 @@ throw new Error(t('serverError'));
       uri: wavUri,
       name: 'audio.wav',
       type: 'audio/wav',
-    } as any); // ⚠️ React Native 環境下需加 `as any` 避開 TS 檢查
+    } as any);
 
     formData.append('lang', lang);
-    formData.append('temperature', '0');         // ✅ 禁止自由發揮
+    formData.append('temperature', '0');
 
     const response = await fetch(apiUrl, {
       method: 'POST',
@@ -349,6 +356,7 @@ throw new Error(t('serverError'));
     }
     const data = await response.json();
     let text = data?.text || data?.transcript || '';
+    
     // 定義可疑語句
     const suspiciousPhrases = [
       '社群提供',
@@ -374,15 +382,15 @@ throw new Error(t('serverError'));
       '本日もご覧いただきありがとうございます',
       '良い一日を',
       '見てくれてありがとう',
-'오늘도 시청해 주셔서 감사합니다.',
-'MBC 뉴스 이덕영입니다.',
+      '오늘도 시청해 주셔서 감사합니다.',
+      'MBC 뉴스 이덕영입니다.',
     ];
 
     // ✅ 清洗句子內容
     const sentences: string[] = text.split(/(?<=[。！？!?\n])/);
-    const filtered = sentences.filter(s => !suspiciousPhrases.some(p => s.includes(p))); // 移除廣告句
+    const filtered = sentences.filter(s => !suspiciousPhrases.some(p => s.includes(p)));
     debugLog(filtered);
-    const cleaned = filtered.join('').trim(); // 合併為單段文字
+    const cleaned = filtered.join('').trim();
 
     return cleaned;
   } catch (err) {
@@ -412,14 +420,13 @@ export const transcribeAudio = async (
   const baseName = item.displayName.replace(/\.[^/.]+$/, '');
   const silentCounter = { count: 0 };
 
-  //onPartial?.('⏳ 開始處理音檔...', 0, 0);
-onPartial?.(t('transcriptionStart'), 0, 0);
+  onPartial?.(t('transcriptionStart'), 0, 0);
 
   // 2. Process each segment sequentially
   for (let index = 0; index < segmentUris.length; index++) {
     try {
       const segmentUri = segmentUris[index];
-      let audioToSend = segmentUri;  // 預設使用原始段
+      let audioToSend = segmentUri;
       let trimmed: RecordingItem | null = null;
       let spedUp: string | null = null;
 
@@ -459,8 +466,7 @@ onPartial?.(t('transcriptionStart'), 0, 0);
 
       // 回傳進度
       if (index < segmentUris.length - 1) {
-       // onPartial?.(`⏳ 處理音檔中...\n${accumulatedText.trim()}`, index + 1, segmentUris.length);
-onPartial?.(`${t('transcriptionStart')}\n${accumulatedText.trim()}`, index + 1, segmentUris.length);
+        onPartial?.(`${t('transcriptionStart')}\n${accumulatedText.trim()}`, index + 1, segmentUris.length);
       } else onPartial?.(accumulatedText.trim(), index + 1, segmentUris.length);
 
       // 🧹 清理檔案
@@ -470,16 +476,11 @@ onPartial?.(`${t('transcriptionStart')}\n${accumulatedText.trim()}`, index + 1, 
 
       debugLog(`✅ 第 ${index + 1} 段處理完成`);
 
-
     } catch (err) {
       debugError(`❌ 第 ${index + 1} 段處理失敗：`, err);
-      // Continue with next segment even if one fails
-     // accumulatedText += `[第 ${index + 1} 段處理失敗]\n`;
-      // onPartial?.(accumulatedText.trim(), index + 1, segmentUris.length);
     }
   }
   const estimatedSeconds = silentCounter.count * 30;
-  //Alert.alert('靜音剪輯結果', `共略過 ${silentCounter.count} 段（約 ${estimatedSeconds} 秒靜音）`);
 
   return {
     transcript: { text: accumulatedText.trim() },
@@ -496,36 +497,26 @@ export const getSummarizeModes = (t: (key: string) => string) => [
   { key: 'ai_answer', label: t('aiAnswer') },
 ];
 
-//const basePrompt =
-//'錄音文字是一段可能由多人或單人錄製, 由whisper所處理聲音轉文字的逐字稿, 參考使用者補充筆記校正逐字稿音譯選字, 尤其是姓名及專有名詞以使用者補充筆記為準. 當內容是生活類以生活方式回答, 當涉及工商領域時, 你是一位資深技術助理，使用者是專業人員, 你的回答將用於會議紀錄、內部報告與技術決策。回答需具備：1. 條列清楚 2. 有工程深度 3. 避免空泛或無效內容。 不要給廢話或像新手的解釋，要講重點，貼近實作與決策需要。';
-
-
-
 export const summarizeModes = [
   {
     key: 'summary',
     label: '重點整理',
-   // prompt: `${basePrompt}將這段文字整理成清楚條列式的重點摘要。`,
   },
   {
     key: 'analysis',
     label: '會議記錄',
-  //  prompt: `${basePrompt}將這段文字整理成會議記錄, 包含參與者(如果有提及), 會議時間(使用音檔時間), 討論項目, 下一步行動(依照日期排列)。`,
   },
   {
     key: 'email',
     label: '信件撰寫',
-  //  prompt: `${basePrompt}把這段文字整理成一封正式的商業郵件，語氣禮貌。`,
   },
   {
     key: 'news',
     label: '新聞稿',
- //   prompt: `${basePrompt}將這段文字改寫成新聞稿格式，具體且吸引人。`,
   },
   {
     key: 'ai_answer',
     label: 'AI給答案',
-  //  prompt: `${basePrompt} 將這段文字整理分析內容並回答文字中的問題。`,
   },
 ];
 
@@ -569,7 +560,7 @@ export function composeSummaryTextFromItem(
 // 2) 直接「以錄音項目」呼叫摘要（內部自動組裝字串）
 export async function summarizeItemWithMode(
   item: any,
-  mode: string,            // 'summary' | 'analysis' | 'email' | 'news' | 'ai_answer'
+  mode: string,
   t: (k: string, p?: any) => string,
   meta?: { startTime?: string; date?: string },
   opts?: { mergeSplitParts?: boolean; withLabels?: boolean }
@@ -590,7 +581,6 @@ export async function summarizeItemWithMode(
   return await summarizeWithMode(inputText, mode as any, t, meta);
 }
 
-
 // 核心摘要函式 
 export async function summarizeWithMode(
   transcript: string,
@@ -605,9 +595,9 @@ export async function summarizeWithMode(
       ? t('prompt.eventTime', { date: metadata.date, time: metadata.startTime })
       : '';
 
-const basePrompt = (modeKey === 'summary' ? t('prompt.base') : (t('prompt.baseFromSummary') || t('prompt.base')));
+  const basePrompt = (modeKey === 'summary' ? t('prompt.base') : (t('prompt.baseFromSummary') || t('prompt.base')));
 
-  const template = t(`prompt.${modeKey}`); // e.g. 'prompt.summary'
+  const template = t(`prompt.${modeKey}`);
   const fullPrompt = template.replace('{{base}}', basePrompt);
 
   const finalPrompt = [fullPrompt, timeStr, t('prompt.respondInUserLanguage')].filter(Boolean).join('\n');
@@ -635,7 +625,6 @@ const basePrompt = (modeKey === 'summary' ? t('prompt.base') : (t('prompt.baseFr
   return data.result.trim();
 }
 
-
 // 取得檔名時解開
 export function parseDateTimeFromDisplayName(displayName: string): { startTime?: string; date?: string } {
   const timeMatch = displayName.match(/(\d{1,2}:\d{2}:\d{2})/);
@@ -645,7 +634,7 @@ export function parseDateTimeFromDisplayName(displayName: string): { startTime?:
 
   const time = timeMatch[1];
   const [month, day] = [dateMatch[1], dateMatch[2]];
-  const year = new Date().getFullYear(); // 預設當年度
+  const year = new Date().getFullYear();
 
   return {
     startTime: time,
@@ -660,15 +649,10 @@ export function generateDisplayNameParts(userTitle: string = '',
   label: string;
   metadataLine: string;
 } {
-     const now = new Date();
+  const now = new Date();
   const h = Math.floor(durationSec / 3600);
   const m = Math.floor((durationSec % 3600) / 60);
   const s = durationSec % 60;
-
-/*  const durationText =
-    h > 0 ? `${h}小${m}分${s}秒` :
-      m > 0 ? `${m}分${s}秒` :
-        `${s}秒`; */
 
   let durationText = '';
   if (h > 0) {
@@ -679,15 +663,15 @@ export function generateDisplayNameParts(userTitle: string = '',
     durationText = t('duration.s', { s });
   }
 
-  const time = now.toTimeString().split(' ')[0]; // "HH:MM:SS"
+  const time = now.toTimeString().split(' ')[0];
   const dateStr = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
 
- // const label = userTitle.trim() || '錄音';
-   const label = userTitle.trim() || t('record');
+  const label = userTitle.trim() || t('record');
   const metadataLine = `${durationText} ${time} ${dateStr}`;
 
   return { label, metadataLine };
 }
+
 export async function getAudioDuration(uri: string): Promise<{ duration: number }> {
   return new Promise((resolve, reject) => {
     const sound = new Sound(uri, '', (error) => {
@@ -717,9 +701,14 @@ export async function generateRecordingMetadata(uri: string): Promise<{
     durationSec = Math.round(duration);
 
     try {
-      const stat = await RNFS.stat(uri);
-      const fileEnd = new Date(stat.mtime);
-      startDate = new Date(fileEnd.getTime() - durationSec * 1000);
+      // ✅ 使用 expo-file-system 獲取檔案資訊
+      const fileInfo = await FileSystem.getInfoAsync(uri);
+      if (fileInfo.exists) {
+        // 注意：expo-file-system 的 getInfoAsync 不提供 mtime
+        // 我們使用當前時間減去音檔時長來估算開始時間
+        const now = new Date();
+        startDate = new Date(now.getTime() - durationSec * 1000);
+      }
     } catch {
       const now = new Date();
       startDate = new Date(now.getTime() - durationSec * 1000);
@@ -728,15 +717,16 @@ export async function generateRecordingMetadata(uri: string): Promise<{
     debugError('獲取音檔時長失敗:', error);
   }
 
-  const stat = await RNFS.stat(uri);
+  // ✅ 使用 expo-file-system 獲取檔案大小
+  const fileInfo = await FileSystem.getInfoAsync(uri);
   return {
     date: startDate.toISOString(),
     durationSec,
-    size: stat.size ?? 0,
+    size: fileInfo.exists ? (fileInfo as any).size || 0 : 0 
   };
 }
 
-//存儲文字
+// 存儲文字
 export function updateRecordingFields(
   recordings: RecordingItem[],
   index: number,
@@ -765,5 +755,3 @@ export function updateRecordingFields(
 
   return updated;
 }
-
-

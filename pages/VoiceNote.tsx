@@ -14,7 +14,7 @@ import {
   Dimensions
 } from 'react-native';
 import SoundLevel from 'react-native-sound-level';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system'; // ✅ 統一使用 expo-file-system
 import { useKeepAwake } from 'expo-keep-awake';
 import { 
   useAudioRecorder,
@@ -24,7 +24,6 @@ import {
   RecordingPresets
 } from 'expo-audio';
 import BackgroundService from 'react-native-background-actions';
-import RNFS from 'react-native-fs';
 import { Linking } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -269,7 +268,9 @@ const RecorderPageVoiceNote = () => {
     loadRecordings,
     saveRecordings,
     safeDeleteFile,
-    updateRecordingAtIndex
+    updateRecordingAtIndex,
+    saveAudioFile, // ✅ 添加這一行
+    getRecordingsDirectory // ✅ 添加這一行
   } = useFileStorage(setRecordings);
 
   const {
@@ -339,53 +340,53 @@ const RecorderPageVoiceNote = () => {
     }
   }, [recordings]);
 
-  // ✅ 背景錄音任務 - 使用 react-native-background-actions 但錄音用 expo-audio
-const task = async (args: any) => {
-  const path = args?.path;
-  const startTime = args?.startTime || Date.now(); // 🚨 取得開始時間
-  
-  if (!path) {
-    debugError("❌ 無錄音路徑");
-    return;
-  }
+  // ✅ 背景錄音任務 - 使用 expo-file-system
+  const task = async (args: any) => {
+    const path = args?.path;
+    const startTime = args?.startTime || Date.now();
+    
+    if (!path) {
+      debugError("❌ 無錄音路徑");
+      return;
+    }
 
-  debugLog("🎤 開始背景錄音任務:", path);
+    debugLog("🎤 開始背景錄音任務:", path);
 
-  try {
-    // ✅ 設定音訊模式
-    await setAudioModeAsync({
-      allowsRecording: true,
-      playsInSilentMode: true,
-      shouldPlayInBackground: true,
-    });
+    try {
+      // ✅ 設定音訊模式
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
+        shouldPlayInBackground: true,
+      });
 
-    // ✅ 使用 expo-audio 開始錄音
-    await recorder.prepareToRecordAsync();
-    recorder.record();
+      // ✅ 使用 expo-audio 開始錄音
+      await recorder.prepareToRecordAsync();
+      recorder.record();
 
-    debugLog("✅ expo-audio 背景錄音啟動完成");
+      debugLog("✅ expo-audio 背景錄音啟動完成");
 
-    // ✅ 保持背景任務運行並手動計算時間
-    await new Promise(async (resolve) => {
-      while (BackgroundService.isRunning()) {
-        // 🚨 基於開始時間計算經過的秒數
-        const elapsedSec = Math.floor((Date.now() - startTime) / 1000);
-        recordingTimeRef.current = elapsedSec;
-        
-        await new Promise(res => setTimeout(res, 1000));
-      }
-      resolve(true);
-    });
+      // ✅ 保持背景任務運行並手動計算時間
+      await new Promise(async (resolve) => {
+        while (BackgroundService.isRunning()) {
+          // 🚨 基於開始時間計算經過的秒數
+          const elapsedSec = Math.floor((Date.now() - startTime) / 1000);
+          recordingTimeRef.current = elapsedSec;
+          
+          await new Promise(res => setTimeout(res, 1000));
+        }
+        resolve(true);
+      });
 
-    debugLog("🛑 背景任務結束");
+      debugLog("🛑 背景任務結束");
 
-  } catch (err) {
-    debugError("❌ 背景錄音任務錯誤：", err);
-    GlobalRecorderState.isRecording = false;
-  }
-};
+    } catch (err) {
+      debugError("❌ 背景錄音任務錯誤：", err);
+      GlobalRecorderState.isRecording = false;
+    }
+  };
 
-  // 篩選排序 (保持不變)
+  // 篩選排序
   const getFilteredSortedRecordings = () => {
     const query = searchQuery.trim().toLowerCase();
     let filtered: RecordingItem[];
@@ -411,7 +412,7 @@ const task = async (args: any) => {
       });
     }
 
-    // 排序邏輯保持不變
+    // 排序邏輯
     switch (sortOption) {
       case 'oldest':
         filtered.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
@@ -448,7 +449,7 @@ const task = async (args: any) => {
     return filtered;
   };
 
-  // 批次處理 (保持不變)
+  // 批次處理
   const handleDeleteSelected = async () => {
     const updated = recordings.filter(r => !selectedItems.has(r.uri));
 
@@ -466,7 +467,7 @@ const task = async (args: any) => {
     setSelectedItems(new Set());
   };
 
-  // ✅ 開始錄音 - 使用 expo-audio + react-native-background-actions
+  // ✅ 開始錄音 - 使用 expo-file-system
   const autoSplitTimer = useRef<NodeJS.Timeout | null>(null);
   const startRecording = async () => {
     closeAllMenus();
@@ -490,14 +491,17 @@ const task = async (args: any) => {
     try {
       const now = new Date();
       const filename = `rec_${now.getTime()}.m4a`;
-      const filePath = `${RNFS.ExternalDirectoryPath}/${filename}`;
+      
+      // ✅ 使用 expo-file-system 的目錄
+      const recordingsDir = await getRecordingsDirectory();
+      const filePath = `${recordingsDir}${filename}`;
 
       debugLog("📁 錄音儲存路徑:", filePath);
 
-          // 🚨 記錄開始時間
-    const recordingStartTime = Date.now();
-    GlobalRecorderState.startTime = recordingStartTime;
-    recordingTimeRef.current = 0; // 重置為0
+      // 🚨 記錄開始時間
+      const recordingStartTime = Date.now();
+      GlobalRecorderState.startTime = recordingStartTime;
+      recordingTimeRef.current = 0; // 重置為0
 
       // ✅ 先設定音訊模式
       await setAudioModeAsync({
@@ -515,10 +519,10 @@ const task = async (args: any) => {
           name: 'ic_launcher',
           type: 'mipmap',
         },
-      parameters: { 
-        path: filePath,
-        startTime: recordingStartTime // 🚨 傳遞開始時間
-      },
+        parameters: { 
+          path: filePath,
+          startTime: recordingStartTime
+        },
         allowWhileIdle: true,
         foregroundServiceType: 'microphone',
       } as any);
@@ -562,7 +566,7 @@ const task = async (args: any) => {
     }
   };
 
-  // ✅ 停止錄音
+  // ✅ 停止錄音 - 使用 expo-file-system
   let stopInProgress = false;
   const stopRecording = async () => {
     if (stopInProgress) {
@@ -591,33 +595,28 @@ const task = async (args: any) => {
         return;
       }
 
-      // 轉換路徑格式
-      let filePath = uri;
-      if (uri.startsWith('file://')) {
-        filePath = uri.replace('file://', '');
-      }
-
-      // 使用 RNFS 檢查檔案
-      const fileExists = await RNFS.exists(filePath);
-      if (!fileExists) {
+      // 使用 expo-file-system 檢查檔案
+      const fileInfo = await FileSystem.getInfoAsync(uri);
+      if (!fileInfo.exists) {
         Alert.alert(t('recordingFailed'), t('recordFileMissing'));
         return;
       }
 
-      const fileInfo = await RNFS.stat(filePath);
+      debugLog("📄 錄音檔案資訊:", fileInfo);
 
       // ✅ 加強判斷：如果檔案太小，就刪除！
       if (fileInfo.size < 1000) {
-        await RNFS.unlink(filePath);
+        await FileSystem.deleteAsync(uri);
         return;
       }
 
-      debugLog("📄 錄音檔案資訊:", fileInfo);
-      const name = filePath.split('/').pop() || `rec_${Date.now()}.m4a`;
-      const normalizedUri = `file://${filePath}`;
+      const name = `rec_${Date.now()}.m4a`;
+      
+      // ✅ 使用 saveAudioFile 將檔案保存到永久位置
+      const permanentUri = await saveAudioFile(uri, name);
 
       if (fileInfo.size > 0) {
-        const metadata = await generateRecordingMetadata(normalizedUri);
+        const metadata = await generateRecordingMetadata(permanentUri);
         const { label, metadataLine } = generateDisplayNameParts(noteTitleEditing, metadata.durationSec, t);
         const displayName = label;
         const displayDate = metadataLine;
@@ -625,7 +624,7 @@ const task = async (args: any) => {
         
         const newItem: RecordingItem = {
           size: fileInfo.size,
-          uri: normalizedUri,
+          uri: permanentUri, // ✅ 使用永久路徑
           name,
           displayName,
           displayDate,
@@ -636,7 +635,7 @@ const task = async (args: any) => {
         };
         (newItem as any).tempNoteSegs = noteSegs;
 
-        debugLog('📌 建立新錄音項目', { name, displayName });
+        debugLog('📌 建立新錄音項目', { name, displayName, uri: permanentUri });
 
         setRecordings(prev => {
           const now = Date.now();
@@ -659,13 +658,13 @@ const task = async (args: any) => {
         setNotesEditing('');
         setNoteTitleEditing('');
         setSelectedPlayingIndex(0);
-        setPlayingUri(normalizedUri);
+        setPlayingUri(permanentUri); // ✅ 使用永久路徑
         setLastVisitedRecording(null);
 
         setTimeout(() => maybePromptTranscribe(0), 300);
       } else {
         Alert.alert(t('recordingFailed'), t('recordFileEmpty'));
-        await RNFS.unlink(filePath);
+        await FileSystem.deleteAsync(permanentUri);
       }
 
       GlobalRecorderState.filePath = '';
@@ -723,7 +722,7 @@ const task = async (args: any) => {
       .padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  // 取得音檔
+  // ✅ 取得音檔 - 使用 expo-file-system
   const pickAudio = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -734,29 +733,34 @@ const task = async (args: any) => {
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
-        const { uri, name } = asset;
+        const { uri, name: originalName } = asset;
 
-        const normalizedUri = uri.replace('file://', '');
-        const metadata = await generateRecordingMetadata(normalizedUri);
+        // ✅ 使用 saveAudioFile 保存到永久位置
+        const fileName = `import_${Date.now()}_${originalName}`;
+        const permanentUri = await saveAudioFile(uri, fileName);
+
+        const metadata = await generateRecordingMetadata(permanentUri);
         const { label, metadataLine } = generateDisplayNameParts(noteTitleEditing, metadata.durationSec, t);
         const displayName = label;
         const displayDate = metadataLine;
+        
         debugLog('📥 匯入錄音 metadata:', {
-          name,
+          name: fileName,
           displayName,
           date: metadata.date,
           durationSec: metadata.durationSec,
         });
 
         const newItem: RecordingItem = {
-          uri: normalizedUri,
-          name,
+          uri: permanentUri, // ✅ 使用永久路徑
+          name: fileName,
           displayName,
           displayDate,
           derivedFiles: {},
           date: metadata.date,
           notes: '',
           size: metadata.size ?? 0,
+          durationSec: metadata.durationSec,
         };
 
         setRecordings(prev => [newItem, ...prev]);
@@ -786,8 +790,7 @@ const task = async (args: any) => {
     }
   };
 
-  // 其餘 UI 代碼保持不變...
-  // ... (保持原有的 render 部分)
+  // ... (其餘 UI 代碼保持不變)
 
   return (
     <>
