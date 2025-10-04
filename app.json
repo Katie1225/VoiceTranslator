@@ -22,8 +22,8 @@
         "RECORD_AUDIO",
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_MICROPHONE",
-        "WRITE_EXTERNAL_STORAGE",
-        "WAKE_LOCK"
+        "WAKE_LOCK",
+        "POST_NOTIFICATIONS"
       ],
       "versionCode": 6,
       "adaptiveIcon": {
@@ -48,8 +48,13 @@
           "backgroundColor": "#ffffff"
         }
       ],
-
-      "expo-localization"
+      "expo-localization",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow Voice Note to access the microphone to record audio."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

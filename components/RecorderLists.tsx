@@ -16,7 +16,6 @@ import {
 } from 'react-native';
 import SoundLevel from 'react-native-sound-level';
 import { useKeepAwake } from 'expo-keep-awake';
-import AudioRecorderPlayer from 'react-native-audio-recorder-player';
 import RNFS from 'react-native-fs';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Localization from 'expo-localization';

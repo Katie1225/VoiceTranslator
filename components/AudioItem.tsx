@@ -4,8 +4,6 @@ import { View, Text, TouchableOpacity, TextInput, ScrollView, Alert } from 'reac
 import { APP_VARIANT } from '../constants/variant';
 import { useTranslation } from '../constants/i18n';
 
-
-
 // 音檔檔名顯示
 export const renderFilename = (
   uri: string,

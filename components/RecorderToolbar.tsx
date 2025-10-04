@@ -5,7 +5,6 @@ import HamburgerMenu from './HamburgerMenu';
 import { handleLogin } from '../utils/loginHelpers';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../constants/ThemeContext';
-import AudioRecorderPlayer from 'react-native-audio-recorder-player';
 import { Platform } from 'react-native';
 import { useTranslation } from '../constants/i18n';
 

@@ -16,7 +16,6 @@
     "preset": "jest-expo"
   },
   "dependencies": {
-    "@config-plugins/ffmpeg-kit-react-native": "^9.0.0",
     "@expo/vector-icons": "^14.0.2",
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@react-native-async-storage/async-storage": "1.23.1",
@@ -26,6 +25,7 @@
     "@react-navigation/native": "^7.0.14",
     "axios": "^1.8.4",
     "expo": "^53.0.17",
+    "expo-audio": "~0.4.9",
     "expo-blur": "~14.0.3",
     "expo-clipboard": "~7.0.1",
     "expo-constants": "~17.0.8",
@@ -46,7 +46,6 @@
     "react": "^18.3.1",
     "react-dom": "18.3.1",
     "react-native": "0.76.9",
-    "react-native-audio-recorder-player": "^3.6.12",
     "react-native-background-actions": "^4.0.1",
     "react-native-fs": "^2.20.0",
     "react-native-iap": "^12.16.2",
