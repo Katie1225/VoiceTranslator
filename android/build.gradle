@@ -24,20 +24,36 @@ buildscript {
 apply plugin: "com.facebook.react.rootproject"
 
 allprojects {
-    repositories {
-        maven {
-            // All of React Native (JS, Obj-C sources, Android binaries) is installed from npm
-            url(new File(['node', '--print', "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim(), '../android'))
-        }
-        maven {
-            // Android JSC is installed from npm
-            url(new File(['node', '--print', "require.resolve('jsc-android/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim(), '../dist'))
-        }
+  repositories {
+    // 先放標準倉庫
+    google()
+    mavenCentral()
+    maven { url 'https://www.jitpack.io' }
 
-        google()
-        mavenCentral()
-        maven { url 'https://www.jitpack.io' }
-                maven { url "https://repo.arthenica.com/releases" }
-
+    // ⚠️ 只讓 Arthenica 倉庫供應自家 group，避免攔截 SoLoader / Fresco / FBJNI
+    exclusiveContent {
+      forRepository {
+      //  maven { url "https://repo.arthenica.com/releases" }
+      }
+      filter {
+     //   includeGroupByRegex "com\\.arthenica(\\..*)?"   // 只允許 com.arthenica* 的套件
+      }
     }
+  }
+
+  configurations.all {
+    resolutionStrategy {
+      // Fresco 建議 3.3.0（或更高，例如 3.6.0 也在 Maven Central，有需要再升）
+      force "com.facebook.fresco:fresco:3.3.0"
+      force "com.facebook.fresco:imagepipeline-native:3.3.0"
+      force "com.facebook.fresco:nativeimagefilters:3.3.0"
+      force "com.facebook.fresco:nativeimagetranscoder:3.3.0"
+
+      // ✅ SoLoader 改成 0.12.1（目前中央倉庫的最新）
+      force "com.facebook.soloader:soloader:0.12.1"
+
+      // ✅ FBJNI 保持 0.7.0
+      force "com.facebook.fbjni:fbjni:0.7.0"
+    }
+  }
 }

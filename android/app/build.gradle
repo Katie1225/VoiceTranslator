@@ -97,8 +97,8 @@ android {
         applicationId 'com.katiehuang.audiorecordermvp'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 107
-        versionName "1.5.1"
+        versionCode 112
+        versionName "1.5.2"
     }
 signingConfigs {
     debug {
@@ -130,7 +130,7 @@ buildTypes {
     packagingOptions {
         jniLibs {
             // useLegacyPackaging (findProperty('expo.useLegacyPackaging')?.toBoolean() ?: false)
-                  useLegacyPackaging = true
+                  useLegacyPackaging = false
         }
     }
     androidResources {
