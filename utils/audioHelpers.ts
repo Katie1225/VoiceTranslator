@@ -122,8 +122,7 @@ export const trimSilence = async (uri: string, name: string): Promise<RecordingI
   }
 
   debugLog(`✂️ 開始剪輯音檔 ${name}`);
-
-  const command = `-i "${uri}" -af silenceremove=start_periods=1:start_silence=0.3:start_threshold=-40dB:stop_periods=-1:stop_silence=0.3:stop_threshold=-40dB -y "${outputPath}"`;
+const command = `-i "${uri}" -af "silenceremove=start_periods=1:start_threshold=-40dB:stop_periods=1:stop_threshold=-40dB" -c:a copy -y "${outputPath}"`;
 
   await FFmpegWrapper.run(command);
   
@@ -140,19 +139,18 @@ export const trimSilence = async (uri: string, name: string): Promise<RecordingI
   };
 };
 
-// 音檔加速
+// 音檔加速 - 確保使用正確的格式
 export async function speedUpAudio(uri: string, speed: number, outputName?: string) {
   const fileName = outputName
-    ? `sped_up_${outputName}_x${speed}.wav`
-    : `sped_up_${Date.now()}_x${speed}.wav`;
-
+    ? `sped_up_${outputName}_x${speed}.m4a`
+    : `sped_up_${Date.now()}_x${speed}.m4a`;
   const outputUri = `${FileSystem.cacheDirectory}${fileName}`;
 
-  const cmd = `-i "${uri}" -filter:a "atempo=${speed}" -ar 16000 -ac 1 -f wav "${outputUri}"`;
+  // ✅ 確保輸出格式與編碼器匹配
+  const cmd = `-i "${uri}" -filter:a "atempo=${speed}" -ar 16000 -ac 1 -c:a aac -f mp4 "${outputUri}"`;
 
   await FFmpegWrapper.run(cmd);
   
-  // ✅ 使用 expo-file-system 檢查檔案
   const fileInfo = await FileSystem.getInfoAsync(outputUri);
   if (!fileInfo.exists) debugError('加速音訊失敗');
 
@@ -272,34 +270,34 @@ export const splitAudioSegments = async (
   }
 };
 
-// 切段工具 for whisper
+// 切段工具 for whisper - 修正版本
 export const splitAudioIntoSegments = async (
   uri: string,
   seconds = 30,
 ): Promise<string[]> => {
-  const outputPattern = `${FileSystem.cacheDirectory}segment_%03d.wav`;
+  const outputPattern = `${FileSystem.cacheDirectory}segment_%03d.m4a`;
 
   // ✅ 使用 expo-file-system 清理舊檔案
   try {
     const allFilesBefore = await FileSystem.readDirectoryAsync(FileSystem.cacheDirectory!);
     await Promise.all(
       allFilesBefore
-        .filter(f => f.startsWith('segment_') && f.endsWith('.wav') && !f.includes('_small'))
+        .filter(f => f.startsWith('segment_') && f.endsWith('.m4a') && !f.includes('_small'))
         .map(f => FileSystem.deleteAsync(`${FileSystem.cacheDirectory}${f}`, { idempotent: true }))
     );
   } catch (error) {
     debugWarn('清理舊檔案失敗:', error);
   }
 
-  // 強制關鍵幀切割
-  const command = `-i "${uri}" -f segment -segment_time ${seconds} -ar 16000 -ac 1 -c:a pcm_s16le "${outputPattern}"`;
+  // ✅ 修正：使用正確的 AAC 編碼器
+  const command = `-i "${uri}" -f segment -segment_time ${seconds} -ar 16000 -ac 1 -c:a aac "${outputPattern}"`;
 
   await FFmpegWrapper.run(command);
   
   // ✅ 使用 expo-file-system 讀取檔案
   const allFiles = await FileSystem.readDirectoryAsync(FileSystem.cacheDirectory!);
   const segmentFiles = allFiles
-    .filter(f => f.startsWith('segment_') && f.endsWith('.wav') && !f.includes('_small'))
+    .filter(f => f.startsWith('segment_') && f.endsWith('.m4a') && !f.includes('_small'))
     .sort((a, b) => a.localeCompare(b))
     .map(f => `${FileSystem.cacheDirectory}${f}`);
 
@@ -309,11 +307,10 @@ export const splitAudioIntoSegments = async (
 };
 
 export const sendToWhisper = async (
-  wavUri: string,
+  audioUri: string, // ✅ 重命名參數，更準確
   lang: 'tw' | 'cn' = 'tw',
   t: (key: string, params?: Record<string, string | number>) => string = (k) => k
 ): Promise<string> => {
-   
   try {
     let apiUrl: string;
     if (nginxVersion === 'blue') {
@@ -325,17 +322,28 @@ export const sendToWhisper = async (
     }
     
     // ✅ 使用 expo-file-system 檢查檔案
-    const fileStat = await FileSystem.getInfoAsync(wavUri);
+    const fileStat = await FileSystem.getInfoAsync(audioUri);
     if (!fileStat.exists) {
-      debugError(`音檔不存在: ${wavUri}`);
+      debugError(`音檔不存在: ${audioUri}`);
       return '';
+    }
+
+    // ✅ 動態設定檔案類型和 MIME 類型
+    const fileExtension = audioUri.split('.').pop()?.toLowerCase() || 'm4a';
+    let mimeType = 'audio/mp4'; // M4A 的預設 MIME 類型
+    
+    // 根據副檔名設定正確的 MIME 類型
+    if (fileExtension === 'wav') {
+      mimeType = 'audio/wav';
+    } else if (fileExtension === 'mp3') {
+      mimeType = 'audio/mpeg';
     }
 
     const formData = new FormData();
     formData.append('audio', {
-      uri: wavUri,
-      name: 'audio.wav',
-      type: 'audio/wav',
+      uri: audioUri,
+      name: `audio.${fileExtension}`,
+      type: mimeType,
     } as any);
 
     formData.append('lang', lang);
@@ -357,7 +365,7 @@ export const sendToWhisper = async (
     const data = await response.json();
     let text = data?.text || data?.transcript || '';
     
-    // 定義可疑語句
+    // ✅ 清洗句子內容（保持不變）
     const suspiciousPhrases = [
       '社群提供',
       '社區提供',
@@ -386,7 +394,6 @@ export const sendToWhisper = async (
       'MBC 뉴스 이덕영입니다.',
     ];
 
-    // ✅ 清洗句子內容
     const sentences: string[] = text.split(/(?<=[。！？!?\n])/);
     const filtered = sentences.filter(s => !suspiciousPhrases.some(p => s.includes(p)));
     debugLog(filtered);
@@ -409,12 +416,11 @@ export const transcribeAudio = async (
   skippedSilentSegments: number,
   text: string
 }> => {
-   
   if (!item.uri || !item.displayName) {
     throw new Error('音檔資訊不完整（uri 或 name 為 null）');
   }
 
-  // 1. Split into segments
+  // 1. Split into segments - 現在會輸出 M4A 格式
   const segmentUris = await splitAudioIntoSegments(item.uri, 30);
   let accumulatedText = '';
   const baseName = item.displayName.replace(/\.[^/.]+$/, '');
@@ -426,18 +432,22 @@ export const transcribeAudio = async (
   for (let index = 0; index < segmentUris.length; index++) {
     try {
       const segmentUri = segmentUris[index];
-      let audioToSend = segmentUri;
+      let audioToSend = segmentUri; // ✅ 現在是 M4A 格式
       let trimmed: RecordingItem | null = null;
       let spedUp: string | null = null;
 
       try {
-        // ✂️ 嘗試剪輯
-        trimmed = await trimSilence(segmentUri, `${baseName}_seg${index}`);
+        // ✂️ 嘗試剪輯 - 保持 M4A 格式
+       trimmed = await trimSilence(segmentUri, `${baseName}_seg${index}`);
         audioToSend = trimmed.uri;
 
-        // ⏩ 嘗試加速
+   /*  // 暫時跳過靜音剪輯
+trimmed = { uri: segmentUri } as RecordingItem;
+audioToSend = segmentUri; */
+
+        // ⏩ 嘗試加速 - 保持 M4A 格式
         try {
-          spedUp = await speedUpAudio(trimmed.uri, 1.5, `${baseName}_seg${index}`);
+          spedUp = await speedUpAudio(trimmed.uri, 1.2, `${baseName}_seg${index}`);
           audioToSend = spedUp;
         } catch (e) {
           debugError(`⚠️ 加速失敗，使用剪輯檔`, e);
@@ -448,16 +458,17 @@ export const transcribeAudio = async (
         audioToSend = segmentUri;
       }
 
-      // ✅ 檢查音檔有效性（大小、靜音）
+      // ✅ 檢查音檔有效性
       const validAudio = await processTrimmedAudio(audioToSend, silentCounter);
       if (!validAudio) {
         debugLog(`🛑 第 ${index + 1} 段被視為無效或靜音，跳過`);
         continue;
       }
 
-      // 📤 上傳到 Whisper
-      debugLog(`📤 上傳第 ${index + 1} 段至 Whisper`);
-      const text = await sendToWhisper(audioToSend, targetLang, t);
+      // 📤 上傳到 Whisper - 現在上傳 M4A 格式
+      debugLog(`📤 上傳第 ${index + 1} 段至 Whisper (格式: M4A)`);
+    //  const text = await sendToWhisper(item.uri, targetLang, t);
+            const text = await sendToWhisper(audioToSend, targetLang, t);
 
       // 累積結果
       if (text.trim()) {
@@ -480,7 +491,6 @@ export const transcribeAudio = async (
       debugError(`❌ 第 ${index + 1} 段處理失敗：`, err);
     }
   }
-  const estimatedSeconds = silentCounter.count * 30;
 
   return {
     transcript: { text: accumulatedText.trim() },

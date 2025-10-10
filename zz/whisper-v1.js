@@ -3,7 +3,7 @@ const multer = require('multer');
 const axios = require('axios');
 const fs = require('fs');
 const FormData = require('form-data');
-const ffmpeg = require('fluent-ffmpeg');
+//const ffmpeg = require('fluent-ffmpeg');
 const OpenCC = require('opencc-js');
 
 const router = express.Router();
@@ -16,22 +16,22 @@ router.post('/', upload.single('audio'), async (req, res) => {
     return res.status(400).json({ error: '沒有收到音檔' });
   }
 
-  const wavPath = audioFile.path + '.wav';
+ // const wavPath = audioFile.path + '.wav';
 
   try {
     // 轉成 wav 格式
-    await new Promise((resolve, reject) => {
+  /*  await new Promise((resolve, reject) => {
       ffmpeg(audioFile.path)
         .toFormat('wav')
         .on('end', resolve)
         .on('error', reject)
         .save(wavPath);
-    });
+    }); */
 
     // 上傳到 4o
     const formData = new FormData();
-    formData.append('file', fs.createReadStream(wavPath));
-    formData.append('model', 'whisper-1');
+    formData.append('file', fs.createReadStream(audioPath));
+    formData.append('model', 'gpt-4o-mini-transcribe');
     formData.append('response_format', 'json');
 
     const response = await axios.post(
@@ -48,7 +48,7 @@ router.post('/', upload.single('audio'), async (req, res) => {
 
     // 清除暫存音檔
     fs.unlinkSync(audioFile.path);
-    fs.unlinkSync(wavPath);
+ //   fs.unlinkSync(wavPath);
 
 // 加上讀取語言設定
 const { targetLang = 'tw' } = req.body;
@@ -62,7 +62,7 @@ res.json({ text: convertedText.trim() });
 
   } catch (error) {
     fs.unlinkSync(audioFile.path);
-    if (fs.existsSync(wavPath)) fs.unlinkSync(wavPath);
+   // if (fs.existsSync(wavPath)) fs.unlinkSync(wavPath);
 
     console.error('Whisper 錯誤:', error.toJSON ? error.toJSON() : error);
 
@@ -85,7 +85,7 @@ router.post('/welcome', async (req, res) => {
   try {
     const formData = new FormData();
     formData.append('file', fs.createReadStream(filePath));
-    formData.append('model', 'whisper-1');
+    formData.append('model', 'gpt-4o-mini-transcribe');
     formData.append('response_format', 'json');
     formData.append('temperature', '0');
 
