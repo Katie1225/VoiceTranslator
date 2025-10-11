@@ -55,6 +55,10 @@ def enableProguardInReleaseBuilds = (findProperty('android.enableProguardInRelea
 def jscFlavor = 'org.webkit:android-jsc:+'
 
 android {
+
+        compileSdkVersion 35
+    buildToolsVersion "35.0.0"
+
     repositories {
         flatDir {
             dirs 'libs' 
@@ -66,9 +70,9 @@ android {
     namespace 'com.katiehuang.audiorecordermvp'
     defaultConfig {
         applicationId 'com.katiehuang.audiorecordermvp'
-        minSdkVersion rootProject.ext.minSdkVersion
-        targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 126
+        minSdkVersion 24
+        targetSdkVersion 35
+        versionCode 127
         versionName "1.5.6"
         ndk { 
             abiFilters "arm64-v8a" 
