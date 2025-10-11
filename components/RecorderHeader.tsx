@@ -47,7 +47,7 @@ starred: t('sortByFavoriteStar'),
     setSortOption = noop,
     searchQuery = defaultStr,
     setSearchQuery = noop,
-    rightSlot = noop,
+    rightSlot,
     setIsLoggingIn = noop,
   } = props;
   const { colors } = useTheme();
@@ -105,9 +105,11 @@ starred: t('sortByFavoriteStar'),
           </Text>
         </View>
 
-        {/* 右側操作按鈕 */}
-{props.rightSlot ? (
-  <View>{props.rightSlot}</View>
+
+{rightSlot != null ? (
+  React.isValidElement(rightSlot)
+    ? <View>{rightSlot}</View>
+    : <Text>{String(rightSlot)}</Text>   // 傳字串/數字時，用 <Text> 包
 ) : (
   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
     <TouchableOpacity onPress={toggleSearch}>
@@ -119,7 +121,6 @@ starred: t('sortByFavoriteStar'),
         <TouchableOpacity onPress={toggleSort}>
           <Icon name="sort" size={30} color={colors.primary} />
         </TouchableOpacity>
-
         <TouchableOpacity onPress={onPickAudio}>
           <Icon name="folder" size={30} color={colors.primary} />
         </TouchableOpacity>
@@ -127,7 +128,6 @@ starred: t('sortByFavoriteStar'),
     )}
   </View>
 )}
-
 
         {mode !== 'detail' && (
           <HamburgerMenu

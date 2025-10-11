@@ -1,8 +1,6 @@
 // components/RecorderControls.tsx
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, Alert } from 'react-native';
-import HamburgerMenu from './HamburgerMenu';
-import { handleLogin } from '../utils/loginHelpers';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../constants/ThemeContext';
 import { Platform } from 'react-native';
@@ -35,27 +33,26 @@ const RecorderControls: React.FC<RecorderControlsProps> = ({
     const [displayTime, setDisplayTime] = useState(0);
     const [menuVisible, setMenuVisible] = useState(false);
     const [decibelHistory, setDecibelHistory] = useState<number[]>([]);
-const { t } = useTranslation();
-    useEffect(() => {
-        let timer: NodeJS.Timeout;
+    const { t } = useTranslation();
+// 錄音顯示時間
+useEffect(() => {
+  const timer: ReturnType<typeof setInterval> | null =
+    recording
+      ? setInterval(() => {
+          const currentTime = recordingTimeRef.current || 0;
+          setDisplayTime(currentTime);
+        }, 1000)
+      : null;
 
-        if (recording) {
-            // 每次開始錄音時重置時間
-            setDisplayTime(0);
+  if (!recording) {
+    setDisplayTime(0);
+  }
 
-            timer = setInterval(() => {
-                // 直接使用 recordingTimeRef.current 但確保從0開始
-                const currentTime = recordingTimeRef.current || 0;
-                setDisplayTime(currentTime);
-            }, 1000);
-        } else {
-            setDisplayTime(0);
-        }
+  return () => {
+    if (timer) clearInterval(timer);
+  };
+}, [recording]);
 
-        return () => {
-            if (timer) clearInterval(timer);
-        };
-    }, [recording]); // 只依賴 recording 狀態
 
     useEffect(() => {
         setDecibelHistory((prev) => {
@@ -122,7 +119,7 @@ const { t } = useTranslation();
                                         />
                                     );
                                 })
-}
+                                }
                             </View>
                         </>
                     ) : (
@@ -141,7 +138,7 @@ const { t } = useTranslation();
                             }}
                         >
                             {/*現在開始記錄*/}
-                              {t('startRecording')}
+                            {t('startRecording')}
                         </Text>
                     )}
                 </View>

@@ -299,19 +299,22 @@ parts.forEach((p, i) => {
   }, [lastVisitedRecording]);
 
   // 進度條更新
-  useEffect(() => {
-    let timer: NodeJS.Timeout;
-    if (isPlaying && currentSound) {
-      timer = setInterval(() => {
-        currentSound.getCurrentTime((seconds) => {
-          setPlaybackPosition(seconds * 1000); // 單位：毫秒
-        });
-      }, 300); // 每 300 毫秒更新一次
-    }
-    return () => {
-      if (timer) clearInterval(timer);
-    };
-  }, [isPlaying, currentSound, playingUri]);
+useEffect(() => {
+  let timer: ReturnType<typeof setInterval> | null = null;
+  
+  if (isPlaying && currentSound) {
+    timer = setInterval(() => {
+      currentSound.getCurrentTime((seconds) => {
+        setPlaybackPosition(seconds * 1000);
+      });
+    }, 300);
+  }
+  
+  return () => {
+    if (timer) clearInterval(timer);
+  };
+}, [isPlaying, currentSound, playingUri]);
+
 
   useEffect(() => {
     return () => {
@@ -462,7 +465,6 @@ parts.forEach((p, i) => {
     }
   };
 
-
   // 確保 saveEditing 函數正確處理
   const saveEditing = () => {
     if (editingState.type === 'name' && typeof editingState.index === 'number') {
@@ -500,858 +502,810 @@ parts.forEach((p, i) => {
     setEditingState({ type: null, index: null, text: '' });
   };
 
+return (
+  <>
+    <StatusBar
+      backgroundColor={colors.container}
+      barStyle={isDarkMode ? 'light-content' : 'dark-content'}
+    />
+    <TouchableWithoutFeedback onPress={() => closeAllMenus({ preserveEditing: false })}>
+      <SafeAreaView style={[styles.container, { marginTop: 0, paddingTop: 0 }]}>
+        {isLoading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.loadingText}>
+              {Platform.OS === 'android'
+                ? t('checkingPermissions')
+                : t('loadingRecordings')}
+            </Text>
+          </View>
+        ) : (
+          <>
+            {/* 錄音列表 */}
+            {recordings.length === 0 ? (
+              <View style={styles.emptyListContainer}>
+                <Text style={styles.emptyListText}>{t('noRecordings')}</Text>
+              </View>
+            ) : (
+              <FlatList
+                ref={flatListRef}
+                onScroll={() => {
+                  closeAllMenus({ preserveEditing: true });
+                  setSummaryMenuContext(null);
+                }}
+                scrollEnabled={!editingState.type}
+                keyboardShouldPersistTaps="handled"
+                style={[styles.listContainer, {
+                  marginTop: 40,
+                  marginBottom: 90,
+                }]}
+                data={items}
+                keyExtractor={(item) => item.uri}
+                contentContainerStyle={{
+                  paddingTop: 10,
+                  paddingBottom: 20,
+                }}
+                initialNumToRender={10}
+                maxToRenderPerBatch={10}
+                windowSize={5}
+                removeClippedSubviews={true}
+                renderItem={({ item, index }) => {
+                  const isThisPlaying = isPlaying && playingUri === item.uri;
+                  const durationMs = (item?.durationSec ?? 0) * 1000;
+                  const rateForThis = (playbackRates?.[item.uri] ?? (isThisPlaying ? currentPlaybackRate : 1.0)) || 1.0;
 
-  return (
-    <>
-      <StatusBar
-        backgroundColor={colors.container}
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-      />
-      <TouchableWithoutFeedback onPress={() => closeAllMenus({ preserveEditing: false })}>
-        <SafeAreaView style={[styles.container, { marginTop: 0, paddingTop: 0 }]}>
-          {isLoading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={colors.primary} />
-              <Text style={styles.loadingText}>
-                {Platform.OS === 'android'
-                  ? t('checkingPermissions')
-                  : t('loadingRecordings')}
-              </Text>
-            </View>
-          ) : (
-            <>
-              {/* 錄音列表 */}
-              {recordings.length === 0 ? (
-                <View style={styles.emptyListContainer}>
-                  <Text style={styles.emptyListText}>{t('noRecordings')}</Text>
-                </View>
-              ) : (
+                  const parts = item.derivedFiles?.splitParts || [];
+                  const hasSplit = parts.length > 0;
+                  const isExpanded = expandedItems.has(item.uri);
 
-                <FlatList
-                  ref={flatListRef}
-                  onScroll={() => {
-                    closeAllMenus({ preserveEditing: true });
-                    setSummaryMenuContext(null);
-                  }}
-                  scrollEnabled={!editingState.type}
-                  keyboardShouldPersistTaps="handled"
-                  style={[styles.listContainer, {
-                    marginTop: 40,
-                    marginBottom: 90, // 給 Controls 留出空間
-                  }]}
-                  data={items}  // 使用從父組件傳入的已排序項目
-                  keyExtractor={(item) => item.uri}
-                  contentContainerStyle={{
-                    paddingTop: 10,
-                    paddingBottom: 20, // 額外的底部 padding
-                  }}
-                  initialNumToRender={10}
-                  maxToRenderPerBatch={10}
-                  windowSize={5}
-                  removeClippedSubviews={true}
-                  renderItem={({ item, index }) => {
-                    const summaries = item.summaries || {};
-                    const availableKeys = Object.keys(summaries).filter(k => summaries[k]);
-                    const isLastVisitedMainOrChild =
-                      lastVisitedRecording?.index === index && (
-                        !lastVisitedRecording?.uri ||  // 主音檔
-                        recordings[index]?.derivedFiles?.splitParts?.some((p: { uri: string | undefined; }) => p.uri === lastVisitedRecording?.uri)  // 子音檔
-                      );
-                    const isPlayingThis = isPlaying && playingUri === item.uri;
-                    const isCardPlaying =
-                      playingUri === item.uri ||
-                      (item.derivedFiles?.splitParts?.some((p: RecordingItem) => {
-                        return typeof p.uri === 'string' && p.uri === playingUri;
-                      }) ?? false);
-                    const isThisMainOrSubPlaying =
-                      playingUri === item.uri ||
-                      (item.derivedFiles?.splitParts?.some((p: RecordingItem) => p.uri === playingUri) ?? false)
-                    const parts = item.derivedFiles?.splitParts || [];
-                    const hasSplit = parts.length > 0;
-                    const hasMainText = !!item.transcript?.trim()?.length;
-
-                    const shortMainReady = !hasSplit && hasMainText; // 短音檔：主音檔自己有文字
-                    const longMainReady =
-                      hasSplit &&
-                      parts.length > 0 &&
-                      parts.every((p: any) => (p?.transcript || '').trim().length > 0); // 長音檔：全部小音檔都有文字
-
-                    const canUseToolboxMain = shortMainReady || longMainReady;
-                    const isPrimarySelected =
-                      isPlaying
-                        ? isCardPlaying
-                        : selectedPlayingIndex === index || isLastVisitedMainOrChild;
-                    let modeToShow = summaryMode; // 預設是全局 summaryMode                    
-                    if (showSummaryIndex !== index) {
-                      // 只有當這個錄音不是正在看的時候，才自動選一個已有內容的 mode
-                      if (availableKeys.length > 0) {
-                        const preferredOrder = ['summary', 'analysis', 'email', 'news', 'ai_answer'];
-                        const selected = preferredOrder.find(key => availableKeys.includes(key));
-                        modeToShow = selected || availableKeys[0]; // 找不到就拿第一個有的
-                      }
-                    }
-
-                    const isCurrentPlaying = selectedPlayingIndex === index;
-                    const hasDerivedFiles = item.derivedFiles && (item.derivedFiles.enhanced || item.derivedFiles.trimmed);
-                    const isTranscriptView = showTranscriptIndex === index;
-                    const isSummaryView = showSummaryIndex === index;
-                    const shouldHideDefaultUI = isTranscriptView || isSummaryView;
-
-                    const hasAnyContent = item.transcript || item.summaries?.[summaryMode] || '';
-                    const isVisible = showTranscriptIndex === index || showSummaryIndex === index;
-                    const canHide = hasAnyContent && isVisible;
-
-                    const visibleMiniType =
-                      showNotesIndex === index ? 'notes' :
-                        showTranscriptIndex === index ? 'transcript' :
-                          showSummaryIndex === index ? 'summary' : null;
-
-                    return (
-                      <View
-                        key={index}
-                        onLayout={(e) => {
-                          const { y } = e.nativeEvent.layout;
-                          setItemOffsets(prev => ({ ...prev, [index]: y }));
-                        }}
-                        style={{
-                          position: 'relative',
-                          zIndex: selectedContext?.index === index ? 999 : 0,
-                        }}
-                      >
-                        <TouchableOpacity
-                          activeOpacity={0.8}
-                          onPress={() => {
-                            if (isSelectionMode) {
-                              setSelectedItems(prev => {
-                                const newSet = new Set(prev);
-                                if (newSet.has(item.uri)) {
-                                  newSet.delete(item.uri);
-                                } else {
-                                  newSet.add(item.uri);
-                                }
-                                return newSet;
-                              });
-                            } else {
-                              setLastVisitedRecording(null);
-                              setSelectedPlayingIndex(index);
-                              setPlayingUri(item.uri);       // ✅ 標示這張卡片被選中
-                              setExpandedItems(prev => new Set([...prev, item.uri])); // ✅ 自動展開
-                            }
-                          }}
-                          onLongPress={() => {
-                            setIsSelectionMode(true);
-                            setSelectedItems(new Set([item.uri]));
-                          }}
-                        >
-
-                          {/* 單個錄音項目的完整 UI */}
-                          <View
-                            style={[
-                              styles.recordingItem,
-                              isSelectionMode && selectedItems.has(item.uri) && {
-                                borderWidth: 2,
-                                borderColor: colors.primary,
-                                backgroundColor: colors.primary + '10',
-                                borderRadius: 12,
-                              },
-                              (isPrimarySelected) && {
-                                borderWidth: 3,
-                                borderColor: colors.primary,
-                                borderRadius: 12,
-                              }
-                            ]}
-                          >
-                            {/* 勾選框 */}
-                            {isSelectionMode && (
-                              <View style={{ position: 'absolute', top: 5, right: 10, zIndex: 20 }}>
-                                <View style={{
-                                  width: 40,
-                                  height: 40,
-                                  borderRadius: 12,
-                                  borderWidth: 2,
-                                  borderColor: selectedItems.has(item.uri) ? colors.primary : '#999',
-                                  backgroundColor: selectedItems.has(item.uri) ? colors.primary : colors.container,
-                                  alignItems: 'center',
-                                  justifyContent: 'center'
-                                }}>
-                                  {selectedItems.has(item.uri) && (
-                                    <Text style={{ color: 'white', fontSize: 14, fontWeight: 'bold' }}>✓</Text>
-                                  )}
-                                </View>
-                              </View>
-                            )}
-                            {/* 大音檔 */}
-                            <PlaybackBar
-                              item={item}
-                              isPlaying={isPlaying && playingUri === item.uri}
-                              isVisible={playingUri === item.uri}
-                              playbackPosition={playingUri === item.uri ? playbackPosition : 0}
-                              playbackDuration={playbackDuration}
-                              playbackRate={playingUri === item.uri ? currentPlaybackRate : 1.0}  // ✅ 真正正在播放才顯示當前速度
-                              editableName={true}
-                              onPlayPause={async () => {
-                                closeAllMenus();
-
-                                const rate = playbackRates[item.uri] ?? 1.0; // ✅ 從表裡抓
-                                if (currentSound) {
-                                  currentSound.setSpeed(rate); // ✅ 撥放前套用速度
-                                }
-
-                                await togglePlayback(item.uri, index);
-                                setSelectedPlayingIndex(index);
-                              }}
-                              onSeek={(positionMs) => {
-                                if (currentSound) {
-                                  currentSound.setCurrentTime(positionMs / 1000);
-                                  setPlaybackPosition(positionMs);
-                                }
-                              }}
-                              onEditRename={(newName) => {
-                                const updated = recordings.map((rec, i) => {
-                                  if (i !== index) return rec;
-
-                                  // 處理子音檔 displayName
-                                  const updatedParts = rec.derivedFiles?.splitParts?.map((part /* : RecordingItem */) => {
-                                    const suffix = part.displayName?.split('|')[1]?.trim();
-                                    return { ...part, displayName: suffix ? `${newName} | ${suffix}` : newName };
-                                  });
-
-
-                                  return {
-                                    ...rec,
-                                    displayName: newName,
-                                    derivedFiles: {
-                                      ...rec.derivedFiles,
-                                      splitParts: updatedParts ?? rec.derivedFiles?.splitParts,
-                                    },
-                                  };
-                                });
-
-                                setRecordings(updated);
-                                saveRecordings(updated);
-                              }}
-
-
-
-                              onMorePress={(e) => {
-                                e.stopPropagation();
-                                if (selectedContext?.index === index && selectedContext?.type === 'main') {
-                                  setSelectedContext(null);
-                                  return;
-                                }
-                                e.target.measureInWindow((x: number, y: number, width: number, height: number) => {
-                                  setSelectedContext({
-                                    type: 'main',
-                                    index,
-                                    position: { x, y: y + height }
-                                  });
-                                });
-
-                              }}
-                              onSpeedPress={(e) => {
-                                e.stopPropagation();
-                                e.target.measureInWindow((x: number, y: number, width: number, height: number) => {
-                                  setSpeedMenuIndex(index);
-                                  setSpeedMenuPosition({ x, y: y + height });
-                                });
-                              }}
-                              styles={styles}
-                              colors={colors}
-                              showSpeedControl={true}
-                              editingState={editingState}
-                              setEditingState={setEditingState}
-                              itemIndex={index}
-
-                              setRecordings={setRecordings}
-                              saveRecordings={saveRecordings}
-                              renderRightButtons={
-                                editingState.type === 'name' && editingState.index === index ? (
-                                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                                    <TouchableOpacity onPress={saveEditing}>
-                                      <Text style={[styles.transcriptActionButton, { color: colors.primary }]}>💾</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity onPress={resetEditingState}>
-                                      <Text style={styles.transcriptActionButton}>✖️</Text>
-                                    </TouchableOpacity>
-                                  </View>
-                                ) : null
-                              }
-                            />
-{/* 兩行小字摘要（主音檔） */}
-<View pointerEvents="box-none">
-  {/* 長音檔：只有 notes 才顯示；沒 notes 就空白 */}
-  {hasSplit ? (
-    item.notes?.trim() ? (
-      <TouchableOpacity
-        onPress={() => {
-          closeAllMenus();
-          stopPlayback();
-          setSelectedPlayingIndex(null);
-          navigation.navigate('NoteDetail', {
-            index,
-            type: 'notes',
-          });
-          setLastVisitedRecording({ index, type: 'notes' });
-        }}
-      >
-        <View style={styles.transcriptBlock}>
-          <Text
-            style={styles.transcriptBlockText}
-            numberOfLines={1}
-            ellipsizeMode="tail"
-          >
-            {String(item.notes).trim()}
-          </Text>
-        </View>
-      </TouchableOpacity>
-    ) : null
-  ) : (
-    /* 短音檔：維持原本 (notes 優先，其次 transcript) */
-    (item.notes || item.transcript) && (
-      <TouchableOpacity
-        onPress={() => {
-          closeAllMenus();
-          stopPlayback();
-          setSelectedPlayingIndex(null);
-          const type = item.notes?.trim()
-            ? 'notes'
-            : item.transcript?.trim()
-              ? 'transcript'
-              : null;
-
-          if (type) {
-            navigation.navigate('NoteDetail', {
-              index,
-              type,
-              shouldTranscribe: type === 'transcript' && !item.transcript,
-            });
-            setLastVisitedRecording({ index, type: 'transcript' });
-          }
-        }}
-      >
-        <View style={styles.transcriptBlock}>
-          <Text
-            style={styles.transcriptBlockText}
-            numberOfLines={1}
-            ellipsizeMode="tail"
-          >
-            {String(item.notes || item.transcript).trim()}
-          </Text>
-        </View>
-      </TouchableOpacity>
-    )
-  )}
-</View>
-
-
-                            {/* 轉文字 & 重點摘要按鈕*/}
-                            {isCurrentPlaying && (
-                              <View style={styles.actionButtons}>
-                                <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 }}>
-                                  {/* 談話筆記 */}
-                                  <TouchableOpacity
-                                    style={{
-                                      paddingVertical: 5,
-                                      paddingHorizontal: 8,
-                                      backgroundColor: visibleMiniType === 'notes' ? colors.primary : colors.primary + '80',
-                                      borderRadius: 8,
-                                      opacity: isAnyProcessing ? 0.4 : 1,
-                                    }}
-                                    disabled={isAnyProcessing || (editingState.type === 'notes' && editingState.index !== null)}
-                                    onPress={() => {
-                                      closeAllMenus();
-                                      stopPlayback();
-                                      setSelectedPlayingIndex(null);
-                                      navigation.navigate('NoteDetail', {
-                                        index,
-                                        type: 'notes',
-                                      });
-                                      setLastVisitedRecording({ index, type: 'notes' });
-                                    }}
-                                  >
-                                    <Text
-                                      style={{
-                                        color: visibleMiniType === 'notes' ? colors.text : colors.subtext,
-                                        fontSize: 13,
-                                        textAlign: 'center',
-                                      }}
-                                    >
-                                      {t('notes')}
-                                    </Text>
-                                  </TouchableOpacity>
-
-                                  {/* 錄音文檔 */}
-                                  <TouchableOpacity
-                                    style={{
-                                      paddingVertical: 5,
-                                      paddingHorizontal: 8,
-                                      backgroundColor: visibleMiniType === 'transcript' ? colors.primary : colors.primary + '80',
-                                      borderRadius: 8,
-                                      opacity: isAnyProcessing ? 0.4 : 1,
-                                    }}
-                                    disabled={isAnyProcessing}
-                                    onPress={async () => {
-                                      closeAllMenus();
-                                      stopPlayback();
-                                      setSelectedPlayingIndex(null);
-                                      navigation.navigate('NoteDetail', {
-                                        index,
-                                        type: 'transcript',
-                                        shouldTranscribe: !recordings[index].transcript,
-                                      });
-                                      setLastVisitedRecording({ index, type: 'transcript' });
-                                    }}
-                                  >
-                                    <Text
-                                      style={{
-                                        color: visibleMiniType === 'transcript' ? colors.text : colors.subtext,
-                                        fontSize: 13,
-                                        textAlign: 'center',
-                                      }}
-                                    >
-                                      {t('transcript')}
-                                    </Text>
-                                  </TouchableOpacity>
-
-                                  {/* AI工具箱 */}
-                                  <TouchableOpacity
-                                    style={{
-                                      paddingVertical: 5,
-                                      paddingHorizontal: 8,
-                                      backgroundColor: visibleMiniType === 'summary' ? colors.primary : colors.primary + '80',
-                                      borderRadius: 8,
-                                      opacity: canUseToolboxMain && !isAnyProcessing ? 1 : 0.4,
-                                    }}
-                                    disabled={!canUseToolboxMain || isAnyProcessing}
-                                    onPress={() => {
-                                      closeAllMenus();
-                                      stopPlayback();
-                                      setSelectedPlayingIndex(null);
-                                      navigation.navigate('NoteDetail', {
-                                        index,
-                                        type: 'summary',
-                                        summaryMode,
-                                      });
-                                      setLastVisitedRecording({ index, type: 'summary' });
-                                    }}
-                                  >
-                                    <Text
-                                      style={{
-                                        color: visibleMiniType === 'summary' ? colors.text : colors.subtext,
-                                        fontSize: 13,
-                                        textAlign: 'center',
-                                      }}
-                                    >
-                                      {t('toolbox')}
-                                    </Text>
-                                  </TouchableOpacity>
-                                </View>
-                              </View>
-                            )}
-
-                            {item.durationSec > SEGMENT_DURATION && (
-                              <TouchableOpacity
-                                onPress={() => toggleExpand(item.uri)}
-                                disabled={splittingUri === item.uri}
-                                style={{ paddingLeft: 16, paddingTop: 4 }}
-                              >
-                                <Text style={{ fontSize: 12, color: colors.primary }}>
-                                  {splittingUri === item.uri
-                                    ? t('splittingInProgress') // ⏳ 分段中...
-                                    : expandedItems.has(item.uri)
-                                      ? t('collapseSegments')  // ▾ 收合分段
-                                      : t('expandSegments') // ▸ 展開分段
-                                  }
-                                </Text>
-                              </TouchableOpacity>
-                            )}
-
-                            {expandedItems.has(item.uri) && item.derivedFiles?.splitParts?.map((part: RecordingItem, subIndex: number) => {
-                              const isThisSplitPlaying = playingUri === part.uri;
-                              const partHasText = !!(part?.transcript || '').trim().length;
-                              const canUseToolboxPart = partHasText;
-
-                              return (
-                                <View
-                                  key={part.uri}
-                                  style={{
-                                    marginLeft: 16,
-                                    paddingLeft: 8,
-                                    borderLeftWidth: 2,
-                                    borderLeftColor: colors.primary + '40',
-                                  }}
-                                >
-                                  <PlaybackBar
-                                    item={part}
-                                    isPlaying={isPlaying && playingUri === part.uri}
-                                    isVisible={playingUri === part.uri}
-                                    playbackPosition={playbackPosition}
-                                    playbackDuration={(part.durationSec ?? 0) * 1000}
-                                    playbackRate={currentPlaybackRate}
-                                    styles={styles}
-                                    colors={colors}
-                                    showSpeedControl={true}
-                                    onPlayPause={async () => {
-                                      closeAllMenus();
-                                      const rate = playbackRates[part.uri] ?? 1.0;
-                                      if (currentSound) {
-                                        currentSound.setSpeed(rate);
-                                      }
-
-                                      debugLog('▶️ 點擊 splitPart 播放:', {
-                                        uri: part.uri,
-                                      });
-
-                                      await togglePlayback(part.uri, index);
-                                      setSelectedPlayingIndex(-1);
-                                    }}
-                                    onSeek={(positionMs) => {
-                                      if (currentSound) {
-                                        currentSound.setCurrentTime(positionMs / 1000);
-                                        setPlaybackPosition(positionMs);
-                                      }
-                                    }}
-                                    onEditRename={(newName) => {
-                                      const updated = [...recordings];
-                                      const parent = updated[index];
-
-                                      if (!parent.derivedFiles?.splitParts) return;
-
-                                      const newParts = parent.derivedFiles.splitParts.map((p /* : RecordingItem */) =>
-                                        p.uri === part.uri ? { ...p, displayName: newName } : p
-                                      );
-
-                                      updated[index] = {
-                                        ...parent,
-                                        derivedFiles: {
-                                          ...parent.derivedFiles,
-                                          splitParts: newParts,
-                                        },
-                                      };
-
-                                      setRecordings(updated);
-                                      saveRecordings(updated);
-                                    }}
-
-                                    onMorePress={(e) => {
-                                      e.stopPropagation();
-
-                                      if (
-                                        selectedSplitContext &&
-                                        selectedSplitContext.parentIndex === index &&
-                                        selectedSplitContext.partUri === part.uri
-                                      ) {
-                                        // 如果點的是同一個 → 關閉選單
-                                        setSelectedSplitContext(null);
-                                        return;
-                                      }
-                                      e.target.measureInWindow((x: number, y: number, width: number, height: number) => {
-                                        setSelectedSplitContext({
-                                          parentIndex: index,
-                                          partUri: part.uri,
-                                          position: { x, y: y + height },
-                                        });
-                                      });
-                                    }}
-                                    onSpeedPress={(e) => {
-                                      e.stopPropagation();
-                                      e.target.measureInWindow((x: any, y: any, width: any, height: any) => {
-                                        setSpeedMenuIndex(index);
-                                        setSpeedMenuPosition({ x, y: y + height });
-                                      });
-                                    }}
-                                    setRecordings={setRecordings}
-                                    saveRecordings={saveRecordings}
-                                    variant="sub"
-                                  />
-{/* 一行小字摘要：針對小音檔（只顯示 transcript） */}
-<View pointerEvents="box-none">
-  {part.transcript?.trim() ? (
-    <TouchableOpacity
-      onPress={async () => {
-        closeAllMenus();
-        stopPlayback();
-        setSelectedPlayingIndex(null);
-        navigation.navigate('NoteDetail', {
-          index,
-          uri: part.uri,
-          type: 'transcript',
-          shouldTranscribe: false, // 已有 transcript，就不觸發轉寫
-        });
-        setLastVisitedRecording({ index, uri: part.uri, type: 'transcript' });
-      }}
-    >
-      <View style={styles.transcriptBlock}>
-        <Text
-          style={styles.transcriptBlockText}
-          numberOfLines={1}
-          ellipsizeMode="tail"
-        >
-          {String(part.transcript).trim()}
-        </Text>
-      </View>
-    </TouchableOpacity>
-  ) : null}
-</View>
-
-                                  {/* 三顆按鈕：針對小音檔 */}
-                                  {isThisSplitPlaying && (
-                                    <View style={styles.actionButtons}>
-                                      <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 }}>
-                                        {/* 談話筆記 */}
-                                        <TouchableOpacity
-                                          style={{
-                                            paddingVertical: 5,
-                                            paddingHorizontal: 8,
-                                            backgroundColor: visibleMiniType === 'notes' ? colors.primary : colors.primary + '80',
-                                            borderRadius: 8,
-                                            opacity: isAnyProcessing ? 0.4 : 1,
-                                          }}
-                                          disabled={isAnyProcessing}
-                                          onPress={() => {
-                                            closeAllMenus();
-                                            stopPlayback();
-                                            setSelectedPlayingIndex(null);
-                                            navigation.navigate('NoteDetail', {
-                                              index,
-                                              uri: part.uri, // ✅ 指定是這段小音檔
-                                              type: 'notes',
-                                            });
-                                            setLastVisitedRecording({ index, uri: part.uri, type: 'notes' });
-                                          }}
-                                        >
-                                          <Text style={{
-                                            color: visibleMiniType === 'notes' ? colors.text : colors.subtext,
-                                            fontSize: 13,
-                                            textAlign: 'center',
-                                          }}>
-                                            {t('notes')}
-                                          </Text>
-                                        </TouchableOpacity>
-
-                                        {/* 錄音文檔 */}
-                                        <TouchableOpacity
-                                          style={{
-                                            paddingVertical: 5,
-                                            paddingHorizontal: 8,
-                                            backgroundColor: visibleMiniType === 'transcript' ? colors.primary : colors.primary + '80',
-                                            borderRadius: 8,
-                                            opacity: isAnyProcessing ? 0.4 : 1,
-                                          }}
-                                          disabled={isAnyProcessing}
-                                          onPress={() => {
-                                            closeAllMenus();
-                                            stopPlayback();
-                                            setSelectedPlayingIndex(null);
-                                            navigation.navigate('NoteDetail', {
-                                              index,
-                                              uri: part.uri,
-                                              type: 'transcript',
-                                              shouldTranscribe: !part.transcript, // ✅ 對應小音檔的 transcript
-                                            });
-                                            setLastVisitedRecording({ index, uri: part.uri, type: 'transcript' });
-
-                                          }}
-                                        >
-                                          <Text style={{
-                                            color: visibleMiniType === 'transcript' ? colors.text : colors.subtext,
-                                            fontSize: 13,
-                                            textAlign: 'center',
-                                          }}>
-                                            {t('transcript')}
-                                          </Text>
-                                        </TouchableOpacity>
-
-                                        {/* AI工具箱 */}
-                                        <TouchableOpacity
-                                          style={{
-                                            paddingVertical: 5,
-                                            paddingHorizontal: 8,
-                                            backgroundColor: visibleMiniType === 'summary' ? colors.primary : colors.primary + '80',
-                                            borderRadius: 8,
-                                            opacity: canUseToolboxPart && !isAnyProcessing ? 1 : 0.4,
-                                          }}
-                                          disabled={!canUseToolboxPart || isAnyProcessing}
-                                          onPress={() => {
-                                            closeAllMenus();
-                                            stopPlayback();
-                                            setSelectedPlayingIndex(null);
-                                            navigation.navigate('NoteDetail', {
-                                              index,
-                                              uri: part.uri,        // ✅ 傳入小音檔 uri
-                                              type: 'summary',
-                                              summaryMode,
-                                            });
-                                            setLastVisitedRecording({ index, uri: part.uri, type: 'summary' });
-                                          }}
-                                        >
-                                          <Text style={{
-                                            color: visibleMiniType === 'summary' ? colors.text : colors.subtext,
-                                            fontSize: 13,
-                                            textAlign: 'center',
-                                          }}>
-                                            {t('toolbox')}
-                                          </Text>
-                                        </TouchableOpacity>
-                                      </View>
-                                    </View>
-                                  )}
-                                </View>
-                              );
-                            })}
-                          </View>
-
-                        </TouchableOpacity>
-                      </View>
+                  // 從舊檔案複製的狀態計算
+                  const isLastVisitedMainOrChild =
+                    lastVisitedRecording?.index === index && (
+                      !lastVisitedRecording?.uri ||  // 主音檔
+                      recordings[index]?.derivedFiles?.splitParts?.some((p: { uri: string | undefined; }) => p.uri === lastVisitedRecording?.uri)  // 子音檔
                     );
-                  }}
-                />
+                  const isCardPlaying =
+                    playingUri === item.uri ||
+                    (item.derivedFiles?.splitParts?.some((p: RecordingItem) => {
+                      return typeof p.uri === 'string' && p.uri === playingUri;
+                    }) ?? false);
+                  const isPrimarySelected =
+                    isPlaying
+                      ? isCardPlaying
+                      : selectedPlayingIndex === index || isLastVisitedMainOrChild;
 
-              )}
+                  const visibleMiniType =
+                    showNotesIndex === index ? 'notes' :
+                      showTranscriptIndex === index ? 'transcript' :
+                        showSummaryIndex === index ? 'summary' : null;
 
-              {/* 三點選單浮動層（全域定位） */}
-              {selectedContext && (
-                <MoreMenu
-                  index={selectedContext.index}
-                  item={
-                    selectedContext.type === 'main'
-                      ? recordings[selectedContext.index]
-                      : recordings[selectedContext.index].derivedFiles?.[selectedContext.type]!
-                  }
-                  isDerived={selectedContext.type !== 'main'}
-                  title={title}
-                  position={selectedContext.position}
-                  styles={styles}
-                  closeAllMenus={() => setSelectedContext(null)}
-                  onRename={(index) => {
-                    setSelectedSplitContext(null);
-                    setTimeout(() => {
-                      startEditing(index, 'name');
-                    }, 0);
-                  }}
-
-                  onShare={(uri) => {
-                    shareRecordingFile(uri, () => setSelectedIndex(null));
-                  }}
-                  onDelete={(index) => {
-                    deleteRecording(index); // 一次刪整包
-                    setShowTranscriptIndex(null);
-                    setShowSummaryIndex(null);
-                    setShowNotesIndex(null);
-                    resetEditingState();
-                    setSelectedContext(null);
-                  }}
-                  showDelete={true}
-                />
-              )}
-
-              {selectedSplitContext && (
-                <MoreMenu
-                  index={selectedSplitContext.parentIndex}
-                  item={
-                    recordings[selectedSplitContext.parentIndex]
-                      .derivedFiles?.splitParts?.find((p: { uri: string; }) => p.uri === selectedSplitContext.partUri)!
-                  }
-                  isDerived={true}
-                  title={title}
-                  position={selectedSplitContext.position}
-                  styles={styles}
-                  closeAllMenus={() => setSelectedSplitContext(null)}
-                  onRename={(index) => {
-                    setSelectedSplitContext(null);
-                    const partUri = selectedSplitContext?.partUri;
-                    setTimeout(() => {
-                      startEditing(index, 'name', partUri); // ✅ 把子音檔 uri 傳入
-                    }, 0);
-                  }}
-                  onShare={(uri) => {
-                    shareRecordingFile(uri, () => setSelectedIndex(null));
-                  }}
-                  onDelete={() => {
-                    deleteSplitPart(
-                      selectedSplitContext.parentIndex,
-                      selectedSplitContext.partUri
-                    );
-                    setSelectedSplitContext(null);
-                  }}
-                  showDelete={true}
-                />
-              )}
-
-              {/* 放在這裡！不要放在 map 循環內部 */}
-              {/* 加速器 */}
-              {speedMenuIndex !== null && speedMenuPosition && (
-                <View style={{
-                  position: 'absolute',
-                  left: speedMenuPosition.x - 60,
-                  top: speedMenuPosition.y + 5,
-                  backgroundColor: colors.container,
-                  borderRadius: 8,
-                  padding: 8,
-                  zIndex: 9999,
-                  elevation: 10,
-                }}>
-                  {[0.75, 1.0, 1.25, 1.5, 2.0].map((rate) => (
-                    <TouchableOpacity
-                      key={rate}
-                      style={[
-                        styles.optionButton,
-                        currentPlaybackRate === rate && { backgroundColor: colors.primary + '20' },
-                      ]}
-                      onPress={async () => {
-                        closeAllMenus();
-
-                        const uri = playingUri;
-                        if (!uri) return;
-                        setPlaybackRates(prev => ({ ...prev, [uri]: rate })); // ✅ 記住這筆的速度
-
-                        if (isPlaying && playingUri === uri) {
-                          await setPlaybackRate(rate); // ✅ 當下正在播放才立即套用
-                        }
-
-                        setSpeedMenuIndex(null);
+                  return (
+                    <View
+                      key={item.uri}
+                      style={{
+                        position: 'relative',
+                        zIndex: selectedContext?.index === index ? 999 : 0,
+                        marginBottom: 12
                       }}
                     >
-                      <Text
-                        style={[
-                          styles.optionText,
-                          currentPlaybackRate === rate && { fontWeight: 'bold' },
-                        ]}
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={() => {
+                          if (isSelectionMode) {
+                            setSelectedItems(prev => {
+                              const newSet = new Set(prev);
+                              if (newSet.has(item.uri)) {
+                                newSet.delete(item.uri);
+                              } else {
+                                newSet.add(item.uri);
+                              }
+                              return newSet;
+                            });
+                          } else {
+                            setLastVisitedRecording(null);
+                            setSelectedPlayingIndex(index);
+                            setPlayingUri(item.uri);
+                            setExpandedItems(prev => new Set([...prev, item.uri]));
+                          }
+                        }}
+                        onLongPress={() => {
+                          setIsSelectionMode(true);
+                          setSelectedItems(new Set([item.uri]));
+                        }}
                       >
-                        {rate}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
+                        {/* 錄音項目的完整 UI */}
+                        <View
+                          style={[
+                            styles.recordingItem,
+                            isSelectionMode && selectedItems.has(item.uri) && {
+                              borderWidth: 2,
+                              borderColor: colors.primary,
+                              backgroundColor: colors.primary + '10',
+                              borderRadius: 12,
+                            },
+                            (isPrimarySelected) && {
+                              borderWidth: 3,
+                              borderColor: colors.primary,
+                              borderRadius: 12,
+                            }
+                          ]}
+                        >
+                          {/* 勾選框 */}
+                          {isSelectionMode && (
+                            <View style={{ position: 'absolute', top: 5, right: 10, zIndex: 20 }}>
+                              <View style={{
+                                width: 40,
+                                height: 40,
+                                borderRadius: 12,
+                                borderWidth: 2,
+                                borderColor: selectedItems.has(item.uri) ? colors.primary : '#999',
+                                backgroundColor: selectedItems.has(item.uri) ? colors.primary : colors.container,
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}>
+                                {selectedItems.has(item.uri) && (
+                                  <Text style={{ color: 'white', fontSize: 14, fontWeight: 'bold' }}>✓</Text>
+                                )}
+                              </View>
+                            </View>
+                          )}
 
-            </>
-          )}
-          {/* 回頂端的球 */}
-          {recordings.length > 10 && editingState.index === null && (
-            <TouchableOpacity
-              onPress={() => flatListRef.current?.scrollToOffset({ animated: true, offset: 0 })}
-              style={{
+                          {/* 主音檔播放條 */}
+                          <PlaybackBar
+                            item={item}
+                            isPlaying={isThisPlaying}
+                            isVisible={playingUri === item.uri}
+                            playbackPosition={playingUri === item.uri ? playbackPosition : 0}
+                            playbackDuration={durationMs}
+                            playbackRate={rateForThis}
+                            editableName={true}
+                            showSpeedControl={true}
+                            onPlayPause={async () => {
+                              closeAllMenus();
+                              
+                              const rate = playbackRates[item.uri] ?? 1.0;
+                              if (currentSound) {
+                                currentSound.setSpeed(rate);
+                              }
+
+                              await togglePlayback(item.uri, index);
+                              setSelectedPlayingIndex(index);
+                            }}
+                            onSeek={(positionMs) => {
+                              if (currentSound) {
+                                currentSound.setCurrentTime(positionMs / 1000);
+                                setPlaybackPosition(positionMs);
+                              }
+                            }}
+                            onEditRename={(newName) => {
+                              const updated = recordings.map((rec, i) => {
+                                if (i !== index) return rec;
+
+                                const updatedParts = rec.derivedFiles?.splitParts?.map((part: RecordingItem) => {
+                                  const suffix = part.displayName?.split('|')[1]?.trim();
+                                  return { ...part, displayName: suffix ? `${newName} | ${suffix}` : newName };
+                                });
+
+                                return {
+                                  ...rec,
+                                  displayName: newName,
+                                  derivedFiles: {
+                                    ...rec.derivedFiles,
+                                    splitParts: updatedParts ?? rec.derivedFiles?.splitParts,
+                                  },
+                                };
+                              });
+
+                              setRecordings(updated);
+                              saveRecordings(updated);
+                            }}
+                            onMorePress={(e) => {
+                              e.stopPropagation();
+                              if (selectedContext?.index === index && selectedContext?.type === 'main') {
+                                setSelectedContext(null);
+                                return;
+                              }
+                              e.target.measureInWindow((x: number, y: number, width: number, height: number) => {
+                                setSelectedContext({
+                                  type: 'main',
+                                  index,
+                                  position: { x, y: y + height }
+                                });
+                              });
+                            }}
+                            onSpeedPress={(e) => {
+                              e.stopPropagation();
+                              e.target.measureInWindow((x: number, y: number, width: number, height: number) => {
+                                setSpeedMenuIndex(index);
+                                setSpeedMenuPosition({ x, y: y + height });
+                              });
+                            }}
+                            styles={styles}
+                            colors={colors}
+                            editingState={editingState}
+                            setEditingState={setEditingState}
+                            itemIndex={index}
+                            setRecordings={setRecordings}
+                            saveRecordings={saveRecordings}
+                            renderRightButtons={
+                              editingState.type === 'name' && editingState.index === index ? (
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                  <TouchableOpacity onPress={saveEditing}>
+                                    <Text style={[styles.transcriptActionButton, { color: colors.primary }]}>💾</Text>
+                                  </TouchableOpacity>
+                                  <TouchableOpacity onPress={resetEditingState}>
+                                    <Text style={styles.transcriptActionButton}>✖️</Text>
+                                  </TouchableOpacity>
+                                </View>
+                              ) : null
+                            }
+                          />
+
+                          {/* 文字摘要顯示區塊 - 主音檔 */}
+                          <View pointerEvents="box-none">
+                            {hasSplit ? (
+                              item.notes?.trim() ? (
+                                <TouchableOpacity
+                                  onPress={() => {
+                                    closeAllMenus();
+                                    stopPlayback();
+                                    setSelectedPlayingIndex(null);
+                                    navigation.navigate('NoteDetail', {
+                                      index,
+                                      type: 'notes',
+                                    });
+                                    setLastVisitedRecording({ index, type: 'notes' });
+                                  }}
+                                >
+                                  <View style={styles.transcriptBlock}>
+                                    <Text
+                                      style={styles.transcriptBlockText}
+                                      numberOfLines={1}
+                                      ellipsizeMode="tail"
+                                    >
+                                      {String(item.notes).trim()}
+                                    </Text>
+                                  </View>
+                                </TouchableOpacity>
+                              ) : null
+                            ) : (
+                              (item.notes || item.transcript) && (
+                                <TouchableOpacity
+                                  onPress={() => {
+                                    closeAllMenus();
+                                    stopPlayback();
+                                    setSelectedPlayingIndex(null);
+                                    const type = item.notes?.trim()
+                                      ? 'notes'
+                                      : item.transcript?.trim()
+                                        ? 'transcript'
+                                        : null;
+
+                                    if (type) {
+                                      navigation.navigate('NoteDetail', {
+                                        index,
+                                        type,
+                                        shouldTranscribe: type === 'transcript' && !item.transcript,
+                                      });
+                                      setLastVisitedRecording({ index, type: 'transcript' });
+                                    }
+                                  }}
+                                >
+                                  <View style={styles.transcriptBlock}>
+                                    <Text
+                                      style={styles.transcriptBlockText}
+                                      numberOfLines={1}
+                                      ellipsizeMode="tail"
+                                    >
+                                      {String(item.notes || item.transcript).trim()}
+                                    </Text>
+                                  </View>
+                                </TouchableOpacity>
+                              )
+                            )}
+                          </View>
+
+                          {/* 三個按鈕 - 主音檔 */}
+                          {isThisPlaying && (
+                            <View style={styles.actionButtons}>
+                              <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 }}>
+                                {/* 談話筆記 */}
+                                <TouchableOpacity
+                                  style={{
+                                    paddingVertical: 5,
+                                    paddingHorizontal: 8,
+                                    backgroundColor: visibleMiniType === 'notes' ? colors.primary : colors.primary + '80',
+                                    borderRadius: 8,
+                                    opacity: isAnyProcessing ? 0.4 : 1,
+                                  }}
+                                  disabled={isAnyProcessing || (editingState.type === 'notes' && editingState.index !== null)}
+                                  onPress={() => {
+                                    closeAllMenus();
+                                    stopPlayback();
+                                    setSelectedPlayingIndex(null);
+                                    navigation.navigate('NoteDetail', {
+                                      index,
+                                      type: 'notes',
+                                    });
+                                    setLastVisitedRecording({ index, type: 'notes' });
+                                  }}
+                                >
+                                  <Text
+                                    style={{
+                                      color: visibleMiniType === 'notes' ? colors.text : colors.subtext,
+                                      fontSize: 13,
+                                      textAlign: 'center',
+                                    }}
+                                  >
+                                    {t('notes')}
+                                  </Text>
+                                </TouchableOpacity>
+
+                                {/* 錄音文檔 */}
+                                <TouchableOpacity
+                                  style={{
+                                    paddingVertical: 5,
+                                    paddingHorizontal: 8,
+                                    backgroundColor: visibleMiniType === 'transcript' ? colors.primary : colors.primary + '80',
+                                    borderRadius: 8,
+                                    opacity: isAnyProcessing ? 0.4 : 1,
+                                  }}
+                                  disabled={isAnyProcessing}
+                                  onPress={async () => {
+                                    closeAllMenus();
+                                    stopPlayback();
+                                    setSelectedPlayingIndex(null);
+                                    navigation.navigate('NoteDetail', {
+                                      index,
+                                      type: 'transcript',
+                                      shouldTranscribe: !recordings[index].transcript,
+                                    });
+                                    setLastVisitedRecording({ index, type: 'transcript' });
+                                  }}
+                                >
+                                  <Text
+                                    style={{
+                                      color: visibleMiniType === 'transcript' ? colors.text : colors.subtext,
+                                      fontSize: 13,
+                                      textAlign: 'center',
+                                    }}
+                                  >
+                                    {t('transcript')}
+                                  </Text>
+                                </TouchableOpacity>
+
+                                {/* AI工具箱 */}
+                                <TouchableOpacity
+                                  style={{
+                                    paddingVertical: 5,
+                                    paddingHorizontal: 8,
+                                    backgroundColor: visibleMiniType === 'summary' ? colors.primary : colors.primary + '80',
+                                    borderRadius: 8,
+                                    opacity: 1,
+                                  }}
+                                  disabled={isAnyProcessing}
+                                  onPress={() => {
+                                    closeAllMenus();
+                                    stopPlayback();
+                                    setSelectedPlayingIndex(null);
+                                    navigation.navigate('NoteDetail', {
+                                      index,
+                                      type: 'summary',
+                                      summaryMode,
+                                    });
+                                    setLastVisitedRecording({ index, type: 'summary' });
+                                  }}
+                                >
+                                  <Text
+                                    style={{
+                                      color: visibleMiniType === 'summary' ? colors.text : colors.subtext,
+                                      fontSize: 13,
+                                      textAlign: 'center',
+                                    }}
+                                  >
+                                    {t('toolbox')}
+                                  </Text>
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+                          )}
+
+                          {/* 長音檔切分展開/收合按鈕 */}
+                          {item.durationSec > SEGMENT_DURATION && (
+                            <TouchableOpacity
+                              onPress={() => toggleExpand(item.uri)}
+                              disabled={splittingUri === item.uri}
+                              style={{ paddingLeft: 16, paddingTop: 4 }}
+                            >
+                              <Text style={{ fontSize: 12, color: colors.primary }}>
+                                {splittingUri === item.uri
+                                  ? t('splittingInProgress')
+                                  : isExpanded
+                                    ? t('collapseSegments')
+                                    : t('expandSegments')
+                                }
+                              </Text>
+                            </TouchableOpacity>
+                          )}
+
+                          {/* 子音檔列表 */}
+                          {isExpanded && item.derivedFiles?.splitParts?.map((part: RecordingItem, subIndex: number) => {
+                            const isThisSplitPlaying = isPlaying && playingUri === part.uri;
+                            const partDurationMs = (part.durationSec ?? 0) * 1000;
+                            const partRate = playbackRates[part.uri] ?? 1.0;
+
+                            return (
+                              <View
+                                key={part.uri}
+                                style={{
+                                  marginLeft: 16,
+                                  paddingLeft: 8,
+                                  borderLeftWidth: 2,
+                                  borderLeftColor: colors.primary + '40',
+                                }}
+                              >
+                                <PlaybackBar
+                                  item={part}
+                                  isPlaying={isThisSplitPlaying}
+                                  isVisible={playingUri === part.uri}
+                                  playbackPosition={playingUri === part.uri ? playbackPosition : 0}
+                                  playbackDuration={partDurationMs}
+                                  playbackRate={partRate}
+                                  styles={styles}
+                                  colors={colors}
+                                  showSpeedControl={true}
+                                  onPlayPause={async () => {
+                                    closeAllMenus();
+                                    const rate = playbackRates[part.uri] ?? 1.0;
+                                    if (currentSound) {
+                                      currentSound.setSpeed(rate);
+                                    }
+
+                                    await togglePlayback(part.uri, index);
+                                    setSelectedPlayingIndex(-1);
+                                  }}
+                                  onSeek={(positionMs) => {
+                                    if (currentSound) {
+                                      currentSound.setCurrentTime(positionMs / 1000);
+                                      setPlaybackPosition(positionMs);
+                                    }
+                                  }}
+                                  onEditRename={(newName) => {
+                                    const updated = [...recordings];
+                                    const parent = updated[index];
+
+                                    if (!parent.derivedFiles?.splitParts) return;
+
+                                    const newParts = parent.derivedFiles.splitParts.map((p: RecordingItem) =>
+                                      p.uri === part.uri ? { ...p, displayName: newName } : p
+                                    );
+
+                                    updated[index] = {
+                                      ...parent,
+                                      derivedFiles: {
+                                        ...parent.derivedFiles,
+                                        splitParts: newParts,
+                                      },
+                                    };
+
+                                    setRecordings(updated);
+                                    saveRecordings(updated);
+                                  }}
+                                  onMorePress={(e) => {
+                                    e.stopPropagation();
+                                    if (
+                                      selectedSplitContext &&
+                                      selectedSplitContext.parentIndex === index &&
+                                      selectedSplitContext.partUri === part.uri
+                                    ) {
+                                      setSelectedSplitContext(null);
+                                      return;
+                                    }
+                                    e.target.measureInWindow((x: number, y: number, width: number, height: number) => {
+                                      setSelectedSplitContext({
+                                        parentIndex: index,
+                                        partUri: part.uri,
+                                        position: { x, y: y + height },
+                                      });
+                                    });
+                                  }}
+                                  onSpeedPress={(e) => {
+                                    e.stopPropagation();
+                                    e.target.measureInWindow((x: number, y: number, width: number, height: number) => {
+                                      setSpeedMenuIndex(index);
+                                      setSpeedMenuPosition({ x, y: y + height });
+                                    });
+                                  }}
+                                  setRecordings={setRecordings}
+                                  saveRecordings={saveRecordings}
+                                  variant="sub"
+                                />
+
+                                {/* 文字摘要顯示區塊 - 子音檔 */}
+                                <View pointerEvents="box-none">
+                                  {part.transcript?.trim() ? (
+                                    <TouchableOpacity
+                                      onPress={async () => {
+                                        closeAllMenus();
+                                        stopPlayback();
+                                        setSelectedPlayingIndex(null);
+                                        navigation.navigate('NoteDetail', {
+                                          index,
+                                          uri: part.uri,
+                                          type: 'transcript',
+                                          shouldTranscribe: false,
+                                        });
+                                        setLastVisitedRecording({ index, uri: part.uri, type: 'transcript' });
+                                      }}
+                                    >
+                                      <View style={styles.transcriptBlock}>
+                                        <Text
+                                          style={styles.transcriptBlockText}
+                                          numberOfLines={1}
+                                          ellipsizeMode="tail"
+                                        >
+                                          {String(part.transcript).trim()}
+                                        </Text>
+                                      </View>
+                                    </TouchableOpacity>
+                                  ) : null}
+                                </View>
+
+                                {/* 三個按鈕 - 子音檔 */}
+                                {isThisSplitPlaying && (
+                                  <View style={styles.actionButtons}>
+                                    <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 }}>
+                                      {/* 談話筆記 */}
+                                      <TouchableOpacity
+                                        style={{
+                                          paddingVertical: 5,
+                                          paddingHorizontal: 8,
+                                          backgroundColor: visibleMiniType === 'notes' ? colors.primary : colors.primary + '80',
+                                          borderRadius: 8,
+                                          opacity: isAnyProcessing ? 0.4 : 1,
+                                        }}
+                                        disabled={isAnyProcessing}
+                                        onPress={() => {
+                                          closeAllMenus();
+                                          stopPlayback();
+                                          setSelectedPlayingIndex(null);
+                                          navigation.navigate('NoteDetail', {
+                                            index,
+                                            uri: part.uri,
+                                            type: 'notes',
+                                          });
+                                          setLastVisitedRecording({ index, uri: part.uri, type: 'notes' });
+                                        }}
+                                      >
+                                        <Text style={{
+                                          color: visibleMiniType === 'notes' ? colors.text : colors.subtext,
+                                          fontSize: 13,
+                                          textAlign: 'center',
+                                        }}>
+                                          {t('notes')}
+                                        </Text>
+                                      </TouchableOpacity>
+
+                                      {/* 錄音文檔 */}
+                                      <TouchableOpacity
+                                        style={{
+                                          paddingVertical: 5,
+                                          paddingHorizontal: 8,
+                                          backgroundColor: visibleMiniType === 'transcript' ? colors.primary : colors.primary + '80',
+                                          borderRadius: 8,
+                                          opacity: isAnyProcessing ? 0.4 : 1,
+                                        }}
+                                        disabled={isAnyProcessing}
+                                        onPress={() => {
+                                          closeAllMenus();
+                                          stopPlayback();
+                                          setSelectedPlayingIndex(null);
+                                          navigation.navigate('NoteDetail', {
+                                            index,
+                                            uri: part.uri,
+                                            type: 'transcript',
+                                            shouldTranscribe: !part.transcript,
+                                          });
+                                          setLastVisitedRecording({ index, uri: part.uri, type: 'transcript' });
+                                        }}
+                                      >
+                                        <Text style={{
+                                          color: visibleMiniType === 'transcript' ? colors.text : colors.subtext,
+                                          fontSize: 13,
+                                          textAlign: 'center',
+                                        }}>
+                                          {t('transcript')}
+                                        </Text>
+                                      </TouchableOpacity>
+
+                                      {/* AI工具箱 */}
+                                      <TouchableOpacity
+                                        style={{
+                                          paddingVertical: 5,
+                                          paddingHorizontal: 8,
+                                          backgroundColor: visibleMiniType === 'summary' ? colors.primary : colors.primary + '80',
+                                          borderRadius: 8,
+                                          opacity: 1,
+                                        }}
+                                        disabled={isAnyProcessing}
+                                        onPress={() => {
+                                          closeAllMenus();
+                                          stopPlayback();
+                                          setSelectedPlayingIndex(null);
+                                          navigation.navigate('NoteDetail', {
+                                            index,
+                                            uri: part.uri,
+                                            type: 'summary',
+                                            summaryMode,
+                                          });
+                                          setLastVisitedRecording({ index, uri: part.uri, type: 'summary' });
+                                        }}
+                                      >
+                                        <Text style={{
+                                          color: visibleMiniType === 'summary' ? colors.text : colors.subtext,
+                                          fontSize: 13,
+                                          textAlign: 'center',
+                                        }}>
+                                          {t('toolbox')}
+                                        </Text>
+                                      </TouchableOpacity>
+                                    </View>
+                                  </View>
+                                )}
+                              </View>
+                            );
+                          })}
+                        </View>
+                      </TouchableOpacity>
+                    </View>
+                  );
+                }}
+              />
+            )}
+            {/* 三點選單浮動層 */}
+            {selectedContext && (
+              <MoreMenu
+                index={selectedContext.index}
+                item={
+                  selectedContext.type === 'main'
+                    ? recordings[selectedContext.index]
+                    : recordings[selectedContext.index].derivedFiles?.[selectedContext.type]!
+                }
+                isDerived={selectedContext.type !== 'main'}
+                title={title}
+                position={selectedContext.position}
+                styles={styles}
+                closeAllMenus={() => setSelectedContext(null)}
+                onRename={(index) => {
+                  setSelectedSplitContext(null);
+                  setTimeout(() => {
+                    startEditing(index, 'name');
+                  }, 0);
+                }}
+                onShare={(uri) => {
+                  shareRecordingFile(uri, () => setSelectedIndex(null));
+                }}
+                onDelete={(index) => {
+                  deleteRecording(index);
+                  setShowTranscriptIndex(null);
+                  setShowSummaryIndex(null);
+                  setShowNotesIndex(null);
+                  resetEditingState();
+                  setSelectedContext(null);
+                }}
+                showDelete={true}
+              />
+            )}
+
+            {/* 子音檔三點選單 */}
+            {selectedSplitContext && (
+              <MoreMenu
+                index={selectedSplitContext.parentIndex}
+                item={
+                  recordings[selectedSplitContext.parentIndex]
+                    .derivedFiles?.splitParts?.find((p: { uri: string }) => p.uri === selectedSplitContext.partUri)!
+                }
+                isDerived={true}
+                title={title}
+                position={selectedSplitContext.position}
+                styles={styles}
+                closeAllMenus={() => setSelectedSplitContext(null)}
+                onRename={(index) => {
+                  setSelectedSplitContext(null);
+                  const partUri = selectedSplitContext?.partUri;
+                  setTimeout(() => {
+                    startEditing(index, 'name', partUri);
+                  }, 0);
+                }}
+                onShare={(uri) => {
+                  shareRecordingFile(uri, () => setSelectedIndex(null));
+                }}
+                onDelete={() => {
+                  deleteSplitPart(
+                    selectedSplitContext.parentIndex,
+                    selectedSplitContext.partUri
+                  );
+                  setSelectedSplitContext(null);
+                }}
+                showDelete={true}
+              />
+            )}
+
+            {/* 速度選單 */}
+            {speedMenuIndex !== null && speedMenuPosition && (
+              <View style={{
                 position: 'absolute',
-                bottom: 90,
-                right: 20,
-                backgroundColor: colors.primary + '80',
-                paddingVertical: 10,
-                paddingHorizontal: 16,
-                borderRadius: 30,
-                shadowColor: '#000',
-                shadowOpacity: 0.2,
-                shadowOffset: { width: 0, height: 2 },
-                shadowRadius: 4,
-                elevation: 5,
-              }}
-            >
-              <Text style={{ color: 'white', fontSize: 18 }}>↑</Text>
-            </TouchableOpacity>
-          )}
-        </SafeAreaView>
-      </TouchableWithoutFeedback>  </>
-  );
+                left: speedMenuPosition.x - 60,
+                top: speedMenuPosition.y + 5,
+                backgroundColor: colors.container,
+                borderRadius: 8,
+                padding: 8,
+                zIndex: 9999,
+                elevation: 10,
+              }}>
+                {[0.75, 1.0, 1.25, 1.5, 2.0].map((rate) => (
+                  <TouchableOpacity
+                    key={rate}
+                    style={[
+                      styles.optionButton,
+                      currentPlaybackRate === rate && { backgroundColor: colors.primary + '20' },
+                    ]}
+                    onPress={async () => {
+                      closeAllMenus();
+
+                      const uri = playingUri;
+                      if (!uri) return;
+                      setPlaybackRates(prev => ({ ...prev, [uri]: rate }));
+
+                      if (isPlaying && playingUri === uri) {
+                        await setPlaybackRate(rate);
+                      }
+
+                      setSpeedMenuIndex(null);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.optionText,
+                        currentPlaybackRate === rate && { fontWeight: 'bold' },
+                      ]}
+                    >
+                      {rate}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            {/* 回頂端按鈕 */}
+            {recordings.length > 10 && editingState.index === null && (
+              <TouchableOpacity
+                onPress={() => flatListRef.current?.scrollToOffset({ animated: true, offset: 0 })}
+                style={{
+                  position: 'absolute',
+                  bottom: 90,
+                  right: 20,
+                  backgroundColor: colors.primary + '80',
+                  paddingVertical: 10,
+                  paddingHorizontal: 16,
+                  borderRadius: 30,
+                  shadowColor: '#000',
+                  shadowOpacity: 0.2,
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowRadius: 4,
+                  elevation: 5,
+                }}
+              >
+                <Text style={{ color: 'white', fontSize: 18 }}>↑</Text>
+              </TouchableOpacity>
+            )}
+          </>
+        )}
+      </SafeAreaView>
+    </TouchableWithoutFeedback>
+  </>
+);
+
 };
 
 export default RecorderLists;

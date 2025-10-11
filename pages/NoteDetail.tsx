@@ -1,3 +1,6 @@
+// NoteDetail.tsx
+// 問題是繼續使用 import Sound from 'react-native-sound'; 
+// 其實不需要改 import expo-audio 應該跟 recorderlist 一樣去引用 useAudioPlayer 但改了幾次改不掉先放著
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, TextInput, Alert, Share } from 'react-native';
 import { RouteProp, useRoute, useNavigation, useFocusEffect, } from '@react-navigation/native';

@@ -54,7 +54,9 @@
         {
           "microphonePermission": "Allow Voice Note to access the microphone to record audio."
         }
-      ]
+      ],
+      "expo-font",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true

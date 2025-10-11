@@ -3,8 +3,8 @@ export const APP_VARIANT: string = 'notedebug'; // 可切換為 'note'、'clamp'
 export const nginxVersion: string = 'green'; // 可切換為 'green(V1)'、'blue' 等  blue 的 whisper 還是 wav 要 copy green
 export const APP_TITLE = 'Voice Note';
 
-export const version : string = '1.5.5';
-export const debugValue: string  = '0';  // 可切換 1 debug, 0 release
+export const version : string = '1.5.6';
+export const debugValue: string  = '1';  // 可切換 1 debug, 0 release
 
 export let SEGMENT_DURATION = 600; // default: 10 分鐘 設定在漢堡選單
 

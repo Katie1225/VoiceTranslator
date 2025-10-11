@@ -3,10 +3,12 @@ import { NativeModules } from 'react-native';
 const { FFmpegWrapper } = NativeModules;
 
 import * as FileSystem from 'expo-file-system';
-import Sound from 'react-native-sound';
+import { createAudioPlayer } from 'expo-audio';
 import { nginxVersion } from '../constants/variant';
 import { debugLog, debugWarn, debugError } from './debugLog';
 import { Alert } from 'react-native';
+
+const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
 
 export type RecordingItem = {
   size?: number;
@@ -157,21 +159,6 @@ export async function speedUpAudio(uri: string, speed: number, outputName?: stri
   return outputUri;
 }
 
-export async function getAudioDurationInSeconds(uri: string): Promise<number> {
-  return new Promise((resolve) => {
-    const sound = new Sound(uri, '', (error) => {
-      if (error) {
-        debugError('❌ 無法讀取音訊:', error);
-        resolve(0);
-        return;
-      }
-      const duration = sound.getDuration();
-      sound.release();
-      resolve(duration);
-    });
-  });
-}
-
 // 累計靜音時間
 export async function processTrimmedAudio(
   uri: string,
@@ -289,9 +276,8 @@ export const splitAudioIntoSegments = async (
     debugWarn('清理舊檔案失敗:', error);
   }
 
-  // ✅ 修正：使用正確的 AAC 編碼器
-  const command = `-i "${uri}" -f segment -segment_time ${seconds} -ar 16000 -ac 1 -c:a aac "${outputPattern}"`;
-
+  // ✅ 使用更快的編碼參數
+  const command = `-i "${uri}" -f segment -segment_time ${seconds} -c:a copy "${outputPattern}"`;
   await FFmpegWrapper.run(command);
   
   // ✅ 使用 expo-file-system 讀取檔案
@@ -440,10 +426,6 @@ export const transcribeAudio = async (
         // ✂️ 嘗試剪輯 - 保持 M4A 格式
        trimmed = await trimSilence(segmentUri, `${baseName}_seg${index}`);
         audioToSend = trimmed.uri;
-
-   /*  // 暫時跳過靜音剪輯
-trimmed = { uri: segmentUri } as RecordingItem;
-audioToSend = segmentUri; */
 
         // ⏩ 嘗試加速 - 保持 M4A 格式
         try {
@@ -682,19 +664,32 @@ export function generateDisplayNameParts(userTitle: string = '',
   return { label, metadataLine };
 }
 
-export async function getAudioDuration(uri: string): Promise<{ duration: number }> {
-  return new Promise((resolve, reject) => {
-    const sound = new Sound(uri, '', (error) => {
-      if (error) {
-        reject(debugError('音訊載入失敗'));
-        return;
-      }
+// 3) 取得秒數（number）
+export async function getAudioDurationInSeconds(uri: string): Promise<number> {
+  try {
+    // 你的 ensureUri(...) 若有就用；沒有就直接丟 uri
+    const player = createAudioPlayer({ uri });
 
-      const duration = sound.getDuration();
-      sound.release();
-      resolve({ duration });
-    });
-  });
+    // 等到載入出現 duration（expo-audio: duration 單位＝秒；剛建立時可能是 0）
+    const deadline = Date.now() + 2000; // 最多等 2 秒
+    while (player.duration === 0 && Date.now() < deadline) {
+      await sleep(50);
+    }
+
+    const sec = player.duration || 0;   // seconds
+    player.remove();                    // ✅ 正確的釋放函式
+    return sec;
+  } catch (e) {
+    // 你專案裡有 debugError 就呼叫它；否則 console.error
+    // debugError?.('❌ 無法讀取音訊:', e);
+    return 0;
+  }
+}
+
+// 4) 取得物件封裝（跟你原本簽名一致）
+export async function getAudioDuration(uri: string): Promise<{ duration: number }> {
+  const duration = await getAudioDurationInSeconds(uri);
+  return { duration };
 }
 
 // 存檔時封裝

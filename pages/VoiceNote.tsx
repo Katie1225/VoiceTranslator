@@ -130,11 +130,6 @@ const RecorderPageVoiceNote = () => {
   const [currentDecibels, setCurrentDecibels] = useState(-160);
   const recordingTimeRef = useRef(0);
 
-  // 播放速度
-  const pendingPlaybackRateRef = useRef<number>(1.0);
-  const resumeAfterTopUp = useRef<null | { type: 'transcribe'; index: number } | { type: 'summary'; index: number; mode: string }>(null);
-  const onTopUpProcessingChangeRef = useRef<(isProcessing: boolean) => void>();
-
   // 在組件掛載時初始化 IAP
   useEffect(() => {
     const initIAP = async () => {
