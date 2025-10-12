@@ -24,7 +24,18 @@ export const LanguageProvider = ({ children }: { children: React.ReactNode }) =>
   useEffect(() => {
     const init = async () => {
       const saved = await AsyncStorage.getItem('appLang');
-      const deviceLang = Localization.locale.split('-')[0];
+      
+      // ✅ 新版本 API
+      const deviceLocales = Localization.getLocales();
+      const primaryLocale = deviceLocales[0];
+      const deviceLang = primaryLocale?.languageCode || 'en';
+      
+      console.log('🌍 裝置語言資訊:', {
+        locales: deviceLocales,
+        primaryLanguage: deviceLang,
+        region: primaryLocale?.regionCode
+      });
+
       if (saved && (saved === 'en' || saved === 'zh' || saved === 'ja')) {
         setLocale(saved as LanguageCode);
       } else if (deviceLang === 'zh' || deviceLang === 'ja') {

@@ -15,9 +15,9 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-    classpath 'com.android.tools.build:gradle:8.5.1'
+        classpath("com.android.tools.build:gradle:8.5.2")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")
         classpath('com.facebook.react:react-native-gradle-plugin')
-        classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
     }
 }
 
@@ -44,10 +44,10 @@ allprojects {
   configurations.all {
     resolutionStrategy {
       // Fresco 建議 3.3.0（或更高，例如 3.6.0 也在 Maven Central，有需要再升）
-      force "com.facebook.fresco:fresco:3.3.0"
-      force "com.facebook.fresco:imagepipeline-native:3.3.0"
-      force "com.facebook.fresco:nativeimagefilters:3.3.0"
-      force "com.facebook.fresco:nativeimagetranscoder:3.3.0"
+      force "com.facebook.fresco:fresco:3.6.0"
+      force "com.facebook.fresco:imagepipeline-native:3.6.0"
+      force "com.facebook.fresco:nativeimagefilters:3.6.0"
+      force "com.facebook.fresco:nativeimagetranscoder:3.6.0"
 
       // ✅ SoLoader 改成 0.12.1（目前中央倉庫的最新）
       force "com.facebook.soloader:soloader:0.12.1"

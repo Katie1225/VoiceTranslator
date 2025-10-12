@@ -117,30 +117,54 @@ export const trimSilence = async (uri: string, name: string): Promise<RecordingI
   const outputName = `trim_${baseName}.m4a`;
   const outputPath = `${FileSystem.documentDirectory}${outputName}`;
 
+  debugLog(`✂️ 簡單靜音剪輯: ${name}`);
+
   try {
-    await FileSystem.deleteAsync(outputPath, { idempotent: true });
+    // 簡單的靜音移除命令
+    const command = `-i "${uri}" -af "silenceremove=start_periods=1:start_threshold=-30dB" -c:a aac -y "${outputPath}"`;
+    
+    debugLog(`🔧 執行命令: ${command}`);
+    await FFmpegWrapper.run(command);
+
+    // 檢查輸出檔案
+    const outputInfo = await FileSystem.getInfoAsync(outputPath);
+    
+    if (!outputInfo.exists) {
+      debugError('❌ 剪輯輸出檔案不存在');
+      throw new Error('剪輯失敗');
+    }
+
+    let outputSize = 0;
+    if (outputInfo.exists && 'size' in outputInfo) {
+      outputSize = outputInfo.size;
+    }
+
+    if (outputSize === 0) {
+      debugError('❌ 剪輯輸出檔案為空');
+      throw new Error('剪輯輸出為空');
+    }
+
+    debugLog(`✅ 靜音剪輯成功: ${outputSize} bytes`);
+    
+    return {
+      uri: outputPath,
+      name: outputName,
+      originalUri: uri,
+      isTrimmed: true,
+      size: outputSize
+    };
   } catch (err) {
-    debugError('⚠️ 無法刪除舊剪輯檔：', err);
+    debugError(`❌ 靜音剪輯失敗:`, err);
+    // 失敗時返回原始檔案
+    return {
+      uri: uri,
+      name: name,
+      originalUri: uri,
+      isTrimmed: false,
+      size: 0
+    };
   }
-
-  debugLog(`✂️ 開始剪輯音檔 ${name}`);
-const command = `-i "${uri}" -af "silenceremove=start_periods=1:start_threshold=-40dB:stop_periods=1:stop_threshold=-40dB" -c:a copy -y "${outputPath}"`;
-
-  await FFmpegWrapper.run(command);
-  
-  // ✅ 使用 expo-file-system 檢查檔案
-  const fileInfo = await FileSystem.getInfoAsync(outputPath);
-  if (!fileInfo.exists) debugError('靜音剪輯失敗');
-
-  return {
-    uri: outputPath,
-    name: outputName,
-    originalUri: uri,
-    isTrimmed: true,
-    size: fileInfo.exists ? (fileInfo as any).size || 0 : 0 
-  };
 };
-
 // 音檔加速 - 確保使用正確的格式
 export async function speedUpAudio(uri: string, speed: number, outputName?: string) {
   const fileName = outputName
@@ -413,74 +437,85 @@ export const transcribeAudio = async (
   const silentCounter = { count: 0 };
 
   onPartial?.(t('transcriptionStart'), 0, 0);
+  debugLog(`🎯 開始轉寫，共 ${segmentUris.length} 個分段`);
 
   // 2. Process each segment sequentially
   for (let index = 0; index < segmentUris.length; index++) {
     try {
       const segmentUri = segmentUris[index];
-      let audioToSend = segmentUri; // ✅ 現在是 M4A 格式
+      let audioToSend = segmentUri;
       let trimmed: RecordingItem | null = null;
       let spedUp: string | null = null;
 
-      try {
-        // ✂️ 嘗試剪輯 - 保持 M4A 格式
-       trimmed = await trimSilence(segmentUri, `${baseName}_seg${index}`);
-        audioToSend = trimmed.uri;
+      debugLog(`🔄 處理第 ${index + 1}/${segmentUris.length} 分段`);
 
-        // ⏩ 嘗試加速 - 保持 M4A 格式
+      try {
+        // ✂️ 嘗試剪輯
+        debugLog(`✂️ 剪輯中...`);
+        trimmed = await trimSilence(segmentUri, `${baseName}_seg${index}`);
+        audioToSend = trimmed.uri;
+        debugLog(`✅ 剪輯完成`);
+
+        // ⏩ 嘗試加速
         try {
+          debugLog(`⏩ 加速中...`);
           spedUp = await speedUpAudio(trimmed.uri, 1.2, `${baseName}_seg${index}`);
           audioToSend = spedUp;
+          debugLog(`✅ 加速完成`);
         } catch (e) {
-          debugError(`⚠️ 加速失敗，使用剪輯檔`, e);
+          debugError(`⚠️ 加速失敗，使用剪輯檔`);
         }
 
       } catch (e) {
-        debugError(`⚠️ 剪輯失敗，使用原始段`, e);
+        debugError(`⚠️ 剪輯失敗，使用原始段`);
         audioToSend = segmentUri;
       }
 
       // ✅ 檢查音檔有效性
       const validAudio = await processTrimmedAudio(audioToSend, silentCounter);
       if (!validAudio) {
-        debugLog(`🛑 第 ${index + 1} 段被視為無效或靜音，跳過`);
+        debugLog(`🛑 無效音檔，跳過`);
         continue;
       }
 
-      // 📤 上傳到 Whisper - 現在上傳 M4A 格式
-      debugLog(`📤 上傳第 ${index + 1} 段至 Whisper (格式: M4A)`);
-    //  const text = await sendToWhisper(item.uri, targetLang, t);
-            const text = await sendToWhisper(audioToSend, targetLang, t);
+      // 📤 上傳到 Whisper
+      debugLog(`📤 上傳 Whisper...`);
+      const text = await sendToWhisper(audioToSend, targetLang, t);
 
       // 累積結果
       if (text.trim()) {
         accumulatedText += text + '\n';
+        debugLog(`✅ 轉文字成功: ${text.length} 字元`);
+      } else {
+        debugLog(`⚠️ 轉文字空內容`);
       }
 
       // 回傳進度
       if (index < segmentUris.length - 1) {
         onPartial?.(`${t('transcriptionStart')}\n${accumulatedText.trim()}`, index + 1, segmentUris.length);
-      } else onPartial?.(accumulatedText.trim(), index + 1, segmentUris.length);
+      } else {
+        onPartial?.(accumulatedText.trim(), index + 1, segmentUris.length);
+      }
 
       // 🧹 清理檔案
       if (trimmed?.uri) await FileSystem.deleteAsync(trimmed.uri, { idempotent: true });
       if (spedUp) await FileSystem.deleteAsync(spedUp, { idempotent: true });
       await FileSystem.deleteAsync(segmentUri, { idempotent: true });
 
-      debugLog(`✅ 第 ${index + 1} 段處理完成`);
+      debugLog(`✅ 第 ${index + 1} 段完成`);
 
     } catch (err) {
-      debugError(`❌ 第 ${index + 1} 段處理失敗：`, err);
+      debugError(`❌ 第 ${index + 1} 段失敗：`, err);
     }
   }
 
+  debugLog(`🎉 轉寫完成，總文字: ${accumulatedText.length} 字元，跳過: ${silentCounter.count} 段`);
   return {
     transcript: { text: accumulatedText.trim() },
     skippedSilentSegments: silentCounter.count,
     text: accumulatedText.trim()
   };
 };
-
 export const getSummarizeModes = (t: (key: string) => string) => [
   { key: 'summary', label: t('summary') },
   { key: 'analysis', label: t('meetingNotes') },
