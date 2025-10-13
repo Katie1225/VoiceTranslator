@@ -121,7 +121,7 @@ export const trimSilence = async (uri: string, name: string): Promise<RecordingI
 
   try {
     // 簡單的靜音移除命令
-    const command = `-i "${uri}" -af "silenceremove=start_periods=1:start_threshold=-30dB" -c:a aac -y "${outputPath}"`;
+    const command = `-i "${uri}" -af "silenceremove=start_periods=1:start_threshold=-70dB" -c:a aac -y "${outputPath}"`;
     
     debugLog(`🔧 執行命令: ${command}`);
     await FFmpegWrapper.run(command);

@@ -10,6 +10,7 @@ import { useTheme } from '../constants/ThemeContext';
 import { useLoginContext } from '../constants/LoginContext';
 import { useTranslation } from '../constants/i18n';
 import { useLanguage } from '../constants/LanguageContext';
+import { debugError } from '@/utils/debugLog';
 
 type Props = {
   visible: boolean;
@@ -170,7 +171,7 @@ const pickSegment = async (sec: number) => {
         message: t('shareMessage'),
       });
     } catch (error) {
-      console.error(error);
+      debugError(error);
     }
   }}
   style={styles.menuItemButton}

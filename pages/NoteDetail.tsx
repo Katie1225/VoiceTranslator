@@ -6,7 +6,6 @@ import { View, Text, TouchableOpacity, ScrollView, TextInput, Alert, Share } fro
 import { RouteProp, useRoute, useNavigation, useFocusEffect, } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
-import Sound from 'react-native-sound';
 import { useTheme } from '../constants/ThemeContext';
 import RecorderHeader from '../components/RecorderHeader';
 import * as Sharing from 'expo-sharing';
@@ -15,7 +14,7 @@ import { logCoinUsage } from '../utils/googleSheetAPI';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   RecordingItem, summarizeItemWithMode,
-  transcribeAudio, summarizeWithMode, summarizeModes,
+  transcribeAudio, summarizeWithMode, summarizeModes, getAudioDurationInSeconds,
   parseDateTimeFromDisplayName, generateRecordingMetadata, updateRecordingFields, getSummarizeModes, splitAudioSegments,
 } from '../utils/audioHelpers';
 import type { RootStackParamList } from '../App';
@@ -38,6 +37,7 @@ import MoreMenu from '../components/MoreMenu';
 import { shareRecordingNote, shareRecordingFile, saveEditedRecording, deleteTextRecording, prepareEditing } from '../utils/editingHelpers';
 import { TouchableWithoutFeedback, Keyboard } from 'react-native';
 import { useTranslation } from '../constants/i18n';
+import { useAudioPlayer } from '../utils/useAudioPlayer';
 
 // ---- 全域：記錄正在跑轉寫的 uri，避免未完成又被重觸發 ----
 const __VN_RUNNING_SET: Set<string> =
@@ -59,6 +59,21 @@ export default function NoteDetailPage() {
     lastVisitedRecording,
     setLastVisitedRecording
   } = useRecordingContext();
+
+  const {
+    currentSound,
+    isPlaying,
+    playingUri,
+    setPlayingUri,
+    currentPlaybackRate,
+    setPlaybackRate,
+    playbackPosition,
+    playbackDuration,
+    playRecording,
+    togglePlayback,
+    setPlaybackPosition,
+    stopPlayback,
+  } = useAudioPlayer();
 
   // 🎯 抓主音檔與小音檔
   if (index === undefined) {
@@ -96,14 +111,14 @@ export default function NoteDetailPage() {
   const [viewType, setViewType] = useState(initialType);
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
-  const [sound, setSound] = useState<Sound | null>(null);
-  const [duration, setDuration] = useState(0);
-  const [position, setPosition] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
+  //const [sound, setSound] = useState<Sound | null>(null);
+  //const [duration, setDuration] = useState(0);
+  //const [position, setPosition] = useState(0);
+  //const [isPlaying, setIsPlaying] = useState(false);
 
   const [speedMenuVisible, setSpeedMenuVisible] = useState(false);
   const [speedAnchor, setSpeedAnchor] = useState<{ x: number; y: number } | null>(null);
-  const [playbackRate, setPlaybackRate] = useState(1.0);
+  //const [playbackRate, setPlaybackRate] = useState(1.0);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [menuVisible, setMenuVisible] = useState(false);
@@ -144,51 +159,23 @@ export default function NoteDetailPage() {
     setEditingState({ type: null, index: null, text: '' });
   };
 
-  // 初始化音檔
-  useEffect(() => {
-    const s = new Sound(currentItem.uri, '', (error) => {
-      if (!error) {
-        setDuration(s.getDuration() * 1000);
-      }
-    });
-    setSound(s);
-
-    return () => {
-      s.release();
-    };
-  }, []);
-
   // 切分音檔
   useEffect(() => {
-  AsyncStorage.getItem('VN_SEGMENT_DURATION').then(v => {
-    if (v) setSegmentDuration(Number(v));
-  });
-}, []);
+    AsyncStorage.getItem('VN_SEGMENT_DURATION').then(v => {
+      if (v) setSegmentDuration(Number(v));
+    });
+  }, []);
 
-  useEffect(() => {
-    if (isPlaying && sound) {
-      const interval = setInterval(() => {
-        sound.getCurrentTime((sec) => {
-          setPosition(sec * 1000);
-        });
-      }, 300);
-      return () => clearInterval(interval);
-    }
-  }, [isPlaying, sound]);
+  // ✅ 修改播放控制函数
+  const togglePlay = async () => {
+    if (!currentItem.uri) return;
 
-  const togglePlay = () => {
-    if (!sound) return;
-    if (isPlaying) {
-      sound.pause();
-      setIsPlaying(false);
-      setLastVisitedRecording(prev => prev ? { ...prev, isPlaying: false } : null); // 暫停時更新狀態
+    if (isPlaying && playingUri === currentItem.uri) {
+      await togglePlayback(currentItem.uri);
+      setLastVisitedRecording(prev => prev ? { ...prev, isPlaying: false } : null);
     } else {
-      sound.play(() => {
-        setIsPlaying(false);
-        setPosition(0);
-      });
-      setIsPlaying(true);
-      setLastVisitedRecording({ // 播放時更新狀態
+      await togglePlayback(currentItem.uri, index);
+      setLastVisitedRecording({
         index,
         uri: currentItem.uri,
         type: viewType,
@@ -197,36 +184,43 @@ export default function NoteDetailPage() {
     }
   };
 
+  // ✅ 修改音檔時長計算
+  const getAudioDuration = async (): Promise<number> => {
+    try {
+      // 使用 useAudioPlayer 的播放時長，或者使用 audioHelpers 的 getAudioDurationInSeconds
+      if (playbackDuration > 0) {
+        return playbackDuration / 1000; // 轉換為秒
+      }
+
+      // 或者調用 audioHelpers 中的函數
+      return await getAudioDurationInSeconds(currentItem.uri);
+    } catch (error) {
+      debugError('獲取音檔時長失敗:', error);
+      return 0;
+    }
+  };
+
+
   // 👇 每段逐字稿渲染（顯示子段 displayName + 該段文字）
   const renderSegmentedTranscript = () => {
     const parts = recordings[index]?.derivedFiles?.splitParts || [];
-
-    //
 
     const segments = parts.map((p: any) => {
       const text = (p?.transcript || '').trim();
       return {
         name: p.displayName || p.name || 'Segment',
-        text: text || t('transcribingInProgress'), // 先佔位
+        text: text || t('transcribingInProgress'),
       };
     });
 
     if (segments.length === 0) return null;
 
-    return (
-      <View style={{ gap: 12 }}>
-        {segments.map((seg: { name: string | number | boolean | React.ReactElement<any, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | React.ReactPortal | null | undefined; text: string | number | boolean | React.ReactElement<any, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | React.ReactPortal | null | undefined; }, i: any) => (
-          <View key={`${seg.name}-${i}`} style={{ gap: 6 }}>
-            <Text style={[styles.transcriptText, { fontWeight: 'bold' }]}>
-              {seg.name}
-            </Text>
-            <Text style={styles.transcriptText}>
-              {seg.text}
-            </Text>
-          </View>
-        ))}
-      </View>
-    );
+    // 返回純文字，讓外層 Text 處理
+    const textContent = segments.map(seg =>
+      `${seg.name}\n${seg.text}`
+    ).join('\n\n');
+
+    return textContent;
   };
 
   // ✅ 每段摘要渲染（顯示子段 displayName + 該段摘要）
@@ -241,7 +235,6 @@ export default function NoteDetailPage() {
   const renderSegmentedSummary = (mode: SummarizeMode = 'summary') => {
     const parts = recordings[index]?.derivedFiles?.splitParts ?? [];
 
-    // ✅ 明確轉成字串，避免 ReactNode / undefined
     const segments: Segment[] = parts
       .map((p: any) => ({
         uri: String(p.uri ?? ''),
@@ -252,52 +245,22 @@ export default function NoteDetailPage() {
 
     if (segments.length === 0) return null;
 
-    return (
-      <View style={{ gap: 12 }}>
-        {segments.map((seg, i) => (
-          <View key={`${seg.name}-${i}`} style={{ gap: 6 }}>
-            <Text style={[styles.transcriptText, { fontWeight: 'bold' }]}>
-              {seg.name}
-            </Text>
+    // 返回純文字，讓外層 Text 處理
+    const textContent = segments.map(seg =>
+      `${seg.name}\n${seg.text}`
+    ).join('\n\n');
 
-            <Text style={styles.transcriptText}>
-              {seg.text}
-            </Text>
-
-            {/* ✎ 編輯該段摘要 */}
-            <TouchableOpacity
-              onPress={() => {
-                setEditingState({
-                  type: 'summary',
-                  index,
-                  uri: seg.uri,      // ← 子音檔
-                  text: seg.text,    // ← 明確是 string
-                  mode,              // ← 當前模式
-                });
-                setIsEditing(true);
-              }}
-              style={{ alignSelf: 'flex-start', paddingVertical: 4, paddingHorizontal: 8 }}
-            >
-              <Text style={[styles.transcriptActionButton, { color: colors.primary }]}>
-                ✎ {t('edit')}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        ))}
-      </View>
-    );
+    return textContent;
   };
-
-
 
   // 逐段轉文字（只處理還沒有 transcript 的分段）
   const transcribeMissingSplitParts = async (
     partsInput?: any[],
     recordingsInput?: RecordingItem[]
-  ) => {
+  ): Promise<RecordingItem[]> => {
     const main = (recordingsInput ?? recordings)[index];
     const parts = partsInput ?? main?.derivedFiles?.splitParts ?? [];
-    if (!parts.length) return;
+    if (!parts.length) return recordingsInput ?? recordings; // ✅ 返回原陣列
 
     const lang = (Localization.getLocales?.()[0]?.languageTag || 'zh-TW').includes('CN') ? 'cn' : 'tw';
 
@@ -442,28 +405,20 @@ export default function NoteDetailPage() {
         }
 
         // ⑤ ✅ 扣這一段的錢（純靜音不會走到這裡；太短和正常都會扣）
-// ✅ 先量測該子檔實際長度；失敗才回退 part.durationSec / SEGMENT_DURATION
-let measuredSec = 0;
-try {
-  measuredSec = await new Promise<number>((resolve, reject) => {
-    const s = new Sound(part.uri, '', (err) => {
-      if (err) return resolve(0); // 量不到就回 0，後面會有 fallback
-      const d = Math.ceil(s.getDuration());
-      s.release();
-      resolve(isFinite(d) && d > 0 ? d : 0);
-    });
-  });
-} catch { /* ignore */ }
+        // ✅ 使用 audioHelpers 中的 getAudioDurationInSeconds 函數
+        let measuredSec = 0;
+        try {
+          measuredSec = await getAudioDurationInSeconds(part.uri);
+          measuredSec = Math.ceil(measuredSec); // 確保是整數
+        } catch {
+          measuredSec = 0;
+        }
 
-const segmentDurationSec =
-  measuredSec > 0
-    ? measuredSec
-    : Math.ceil(part?.durationSec ?? SEGMENT_DURATION);
+        const segmentDurationSec = measuredSec > 0
+          ? measuredSec
+          : Math.ceil(part?.durationSec ?? SEGMENT_DURATION);
 
-const coinsForThisPart =
-  Math.ceil(segmentDurationSec / (COIN_UNIT_MINUTES * 60)) * COIN_COST_PER_UNIT;
-
-
+        const coinsForThisPart = Math.ceil(segmentDurationSec / (COIN_UNIT_MINUTES * 60)) * COIN_COST_PER_UNIT;
 
         if (coinsForThisPart > 0) {
           const stored = await AsyncStorage.getItem('user');
@@ -616,21 +571,18 @@ const coinsForThisPart =
       const checkLogin = async () => {
         const stored = await AsyncStorage.getItem('user');
         if (!stored && !isLoggingIn) {
-          // ✅ 顯示提示：「尚未登入」
           debugWarn('尚未登入', '登入後可解鎖 AI 工具箱與錄音文檔轉文字功能');
         }
       };
       checkLogin();
-      return () => {
-        if (sound) {
-          sound.stop(() => {
-            sound.release();
-          });
-        }
-      };
-    }, [isLoggingIn, sound])
-  );
 
+      // ✅ useAudioPlayer 會自動處理資源清理，不需要手動清理
+      return () => {
+        // 可選：只更新 UI 狀態
+        setLastVisitedRecording(prev => prev ? { ...prev, isPlaying: false } : null);
+      };
+    }, [isLoggingIn, setLastVisitedRecording])
+  );
   // 確認金幣
   const ensureCoins = async (requiredCoins: number): Promise<boolean> => {
     // 先檢查登入狀態
@@ -712,9 +664,9 @@ const coinsForThisPart =
         const done = !!(p?.transcript && p.transcript.trim().length > 0);
         // 純靜音也會寫入 placeholder => 視為「已處理，不再計價」
         if (!done) {
-const sec = Math.ceil(p?.durationSec ?? SEGMENT_DURATION);
-// ✅ 不再取 min，上限去掉，直接累計該段實際秒數
-remain += sec;
+          const sec = Math.ceil(p?.durationSec ?? SEGMENT_DURATION);
+          // ✅ 不再取 min，上限去掉，直接累計該段實際秒數
+          remain += sec;
         }
       }
       return remain;
@@ -785,24 +737,24 @@ remain += sec;
 
     if (isTranscribing) return; // ✅ 避免同時跑兩個
     // 已有主音檔逐字稿就不處理（避免誤卡狀態）
-    if (currentItem?.transcript?.trim()?.length) return;  
+    if (currentItem?.transcript?.trim()?.length) return;
     if (activeTask) { Alert.alert(t('pleaseWait'), t('anotherTaskInProgress')); return; }
     setActiveTask('transcribe');
     setIsTranscribing(true);
 
-// 本次操作的唯一 key（分段用子檔 uri；母檔用母檔 uri）
-const transcribeKey = String(uri ?? recordings[index]?.uri ?? '');
+    // 本次操作的唯一 key（分段用子檔 uri；母檔用母檔 uri）
+    const transcribeKey = String(uri ?? recordings[index]?.uri ?? '');
 
-// ---- 防重複觸發（尚未完成）----
-try {
-  if (transcribeKey && __VN_RUNNING_SET.has(transcribeKey)) {
-    // 同一段還在跑，直接略過這次按鈕
-    setActiveTask(null);
-    setIsTranscribing(false);
-    return;
-  }
-  if (transcribeKey) __VN_RUNNING_SET.add(transcribeKey); // 開始：上鎖
-} catch {}
+    // ---- 防重複觸發（尚未完成）----
+    try {
+      if (transcribeKey && __VN_RUNNING_SET.has(transcribeKey)) {
+        // 同一段還在跑，直接略過這次按鈕
+        setActiveTask(null);
+        setIsTranscribing(false);
+        return;
+      }
+      if (transcribeKey) __VN_RUNNING_SET.add(transcribeKey); // 開始：上鎖
+    } catch { }
 
 
     // Create a RecordingItem-compatible object if currentItem is SplitPart
@@ -814,27 +766,11 @@ try {
       const user = stored ? JSON.parse(stored) : null;
 
       //先確認音檔長度跟需要金額
-      const durationSec = await new Promise<number>((resolve, reject) => {
-        const sound = new Sound(currentItem.uri, '', (error) => {
-          if (error) {
-            reject(new Error(t('errorLoadingAudio') + ': ' + error.message)); // 無法載入音訊
-            try {
-  const key = String(uri ?? recordings[index]?.uri ?? '');
-  if (key) __VN_RUNNING_SET.delete(key);
-} catch {}
+      const durationSec = await getAudioDuration();
 
-            return;
-          }
-          const duration = sound.getDuration();
-          sound.release(); // ✅ 記得釋放資源
-          if (duration === 0) {
-            reject(new Error(t('invalidAudioDuration'))); // 無法取得音檔長度
-          } else {
-            resolve(Math.ceil(duration));
-          }
-        });
-      });
-      // ✅ 計算所需金幣數量
+      if (durationSec === 0) {
+        throw new Error(t('invalidAudioDuration'));
+      }
 
       const isMainAudio = !uri; // 沒傳 uri 就是主音檔
       const parts = recordings[index]?.derivedFiles?.splitParts || [];
@@ -852,14 +788,14 @@ try {
           setIsTranscribing(false);
           setActiveTask(null);
           try {
-  const key = String(uri ?? recordings[index]?.uri ?? '');
-  if (key) __VN_RUNNING_SET.delete(key);
-} catch {}
+            const key = String(uri ?? recordings[index]?.uri ?? '');
+            if (key) __VN_RUNNING_SET.delete(key);
+          } catch { }
 
           return;
         }
-// ✅ 小音檔估價用實際長度
-remainingSec = durationSec;
+        // ✅ 小音檔估價用實際長度
+        remainingSec = durationSec;
 
       } else {
         // 主音檔
@@ -881,9 +817,9 @@ remainingSec = durationSec;
         setIsTranscribing(false);
         setActiveTask(null);
         try {
-  const key = String(uri ?? recordings[index]?.uri ?? '');
-  if (key) __VN_RUNNING_SET.delete(key);
-} catch {}
+          const key = String(uri ?? recordings[index]?.uri ?? '');
+          if (key) __VN_RUNNING_SET.delete(key);
+        } catch { }
 
         return;
       }
@@ -894,15 +830,15 @@ remainingSec = durationSec;
         setIsTranscribing(false);
         setActiveTask(null);
         try {
-  const key = String(uri ?? recordings[index]?.uri ?? '');
-  if (key) __VN_RUNNING_SET.delete(key);
-} catch {}
+          const key = String(uri ?? recordings[index]?.uri ?? '');
+          if (key) __VN_RUNNING_SET.delete(key);
+        } catch { }
 
         return;
       }
 
       let storedAfter = await AsyncStorage.getItem('user');
-let userAfter = storedAfter ? JSON.parse(storedAfter) : null;
+      let userAfter = storedAfter ? JSON.parse(storedAfter) : null;
 
       if (isMainAudio && !alreadySplit && NEED_AUTO_SPLIT) {
         setPartialTranscript(t('splittingInProgress')); // 顯示「分段中…」
@@ -927,12 +863,10 @@ let userAfter = storedAfter ? JSON.parse(storedAfter) : null;
             const part = await splitAudioSegments(parent.uri, start, segmentLength, t, parent.displayName);
             if (!part) continue;
 
-            
-
-// 取得母音檔暫存的分段筆記
-const temp = (parent as any).tempNoteSegs || [];
-// 把第 seg 段的文字下放到這個子段
-part.notes = (temp[seg]?.text || '').trim();
+            // 取得母音檔暫存的分段筆記
+            const temp = (parent as any).tempNoteSegs || [];
+            // 把第 seg 段的文字下放到這個子段
+            part.notes = (temp[seg]?.text || '').trim();
 
 
             // ✅ 複製主音檔 notes 到小音檔（避免重複才複製）
@@ -993,18 +927,18 @@ part.notes = (temp[seg]?.text || '').trim();
 
 
       if (userAfter) {
-  const coinResult = await logCoinUsage({
-    id: userAfter.id,
-    email: userAfter.email,
-    name: userAfter.name,
-    action: 'transcript',
-    value: -coinsToDeduct,
-    note: `轉文字：${currentItem.displayName || currentItem.name || ''}，長度 ${durationSec}s，扣 ${coinsToDeduct} 金幣`
-  });
-  if (!coinResult.success) {
-    debugWarn("轉換成功，但扣金幣失敗", coinResult.message || "請稍後再試");
-  }
-}
+        const coinResult = await logCoinUsage({
+          id: userAfter.id,
+          email: userAfter.email,
+          name: userAfter.name,
+          action: 'transcript',
+          value: -coinsToDeduct,
+          note: `轉文字：${currentItem.displayName || currentItem.name || ''}，長度 ${durationSec}s，扣 ${coinsToDeduct} 金幣`
+        });
+        if (!coinResult.success) {
+          debugWarn("轉換成功，但扣金幣失敗", coinResult.message || "請稍後再試");
+        }
+      }
 
 
 
@@ -1033,9 +967,9 @@ part.notes = (temp[seg]?.text || '').trim();
         setSummaries(autoSummaries); // ✅ 畫面立即顯示打勾
         setSummaryMode('summary');
         try {
-  const key = String(uri ?? recordings[index]?.uri ?? '');
-  if (key) __VN_RUNNING_SET.delete(key);
-} catch {}
+          const key = String(uri ?? recordings[index]?.uri ?? '');
+          if (key) __VN_RUNNING_SET.delete(key);
+        } catch { }
 
 
         return;
@@ -1062,7 +996,7 @@ part.notes = (temp[seg]?.text || '').trim();
         setSummaries(autoSummaries);
         setSummaryMode('summary');
         resetEditingState();
-        
+
         return;
       }
 
@@ -1116,37 +1050,37 @@ part.notes = (temp[seg]?.text || '').trim();
       Alert.alert(t('error'), (err as Error).message || t('transcriptionFailedNoCharge'));
       //   Alert.alert("❌ 錯誤", (err as Error).message || "轉換失敗，這次不會扣金幣");
     } finally {
-      try { if (transcribeKey) __VN_RUNNING_SET.delete(transcribeKey); } catch {}
+      try { if (transcribeKey) __VN_RUNNING_SET.delete(transcribeKey); } catch { }
       setActiveTask(null);
       setIsTranscribing(false);
     }
   };
 
   // 判斷母音檔現有摘要是否「可用」：可用就直接用，不要重生；不可用才重生
-function isStaleMainSummary(cacheText: string, mode: string): boolean {
-  const t = (cacheText || '').trim();
+  function isStaleMainSummary(cacheText: string, mode: string): boolean {
+    const t = (cacheText || '').trim();
 
-  // 1) 太短通常是舊 bullet 或 placeholder
-  if (t.length < 120) return true;
+    // 1) 太短通常是舊 bullet 或 placeholder
+    if (t.length < 120) return true;
 
-  // 2) 典型舊 bullet/placeholder 關鍵字（你 log 裡出現過）
-  const badPhrases = [
-    '以下是錄音內容的重點摘要', '在這次的講座中，主要討論了以下幾個重點',
-    '重點摘要：', '以下內容是一份「已整理好的重點」', '以下是逐字稿的重點摘要',
-  ];
-  if (badPhrases.some(p => t.includes(p))) return true;
+    // 2) 典型舊 bullet/placeholder 關鍵字（你 log 裡出現過）
+    const badPhrases = [
+      '以下是錄音內容的重點摘要', '在這次的講座中，主要討論了以下幾個重點',
+      '重點摘要：', '以下內容是一份「已整理好的重點」', '以下是逐字稿的重點摘要',
+    ];
+    if (badPhrases.some(p => t.includes(p))) return true;
 
-  // 3) 沒有任何段落標記/內容痕跡（你聚合素材常見「【段落名】」）
-  const hasSegmentMark = t.includes('【');
-  if (!hasSegmentMark) {
-    // 如果沒有段落標記，且幾乎都是「• 」開頭的清單，也視為舊格式
-    const bulletOnly = t.split('\n').filter(Boolean).every(line => line.trim().startsWith('•'));
-    if (bulletOnly) return true;
+    // 3) 沒有任何段落標記/內容痕跡（你聚合素材常見「【段落名】」）
+    const hasSegmentMark = t.includes('【');
+    if (!hasSegmentMark) {
+      // 如果沒有段落標記，且幾乎都是「• 」開頭的清單，也視為舊格式
+      const bulletOnly = t.split('\n').filter(Boolean).every(line => line.trim().startsWith('•'));
+      if (bulletOnly) return true;
+    }
+
+    // 4) 若有你自己的「生成時間/標章」可加更準（此處略）
+    return false; // 不舊 → 可用
   }
-
-  // 4) 若有你自己的「生成時間/標章」可加更準（此處略）
-  return false; // 不舊 → 可用
-}
 
   // 重點摘要AI工具箱邏輯
   const handleSummarize = async (
@@ -1167,38 +1101,38 @@ function isStaleMainSummary(cacheText: string, mode: string): boolean {
       // 1) 已經有摘要 → 直接顯示
 
       const isMainAudio = !uri;
-const hasSplits = !!recordings[index]?.derivedFiles?.splitParts?.length;
-const cacheText = String(currentItem.summaries?.[mode] ?? '').trim();
-const hasCache = cacheText.length > 0;
+      const hasSplits = !!recordings[index]?.derivedFiles?.splitParts?.length;
+      const cacheText = String(currentItem.summaries?.[mode] ?? '').trim();
+      const hasCache = cacheText.length > 0;
 
-debugLog('[Summarize] enter', {
-  mode, isMainAudio, hasSplits, hasCache,
-  cachePreview: cacheText.slice(0, 100),
-});
+      debugLog('[Summarize] enter', {
+        mode, isMainAudio, hasSplits, hasCache,
+        cachePreview: cacheText.slice(0, 100),
+      });
 
-// 子音檔：有快取 → 直接顯示
-if (!isMainAudio && hasCache) {
-  setSummaryMode(mode);
-  setViewType('summary');
-  return;
-}
+      // 子音檔：有快取 → 直接顯示
+      if (!isMainAudio && hasCache) {
+        setSummaryMode(mode);
+        setViewType('summary');
+        return;
+      }
 
-// ✅ 母音檔（未切段）：只要有快取就直接顯示（不做舊稿判斷）
-if (isMainAudio && !hasSplits && hasCache) {
-  setSummaryMode(mode);
-  setViewType('summary');
-  return;
-}
+      // ✅ 母音檔（未切段）：只要有快取就直接顯示（不做舊稿判斷）
+      if (isMainAudio && !hasSplits && hasCache) {
+        setSummaryMode(mode);
+        setViewType('summary');
+        return;
+      }
 
-// ✅ 母音檔（已切段）：有快取且不是「舊格式」→ 直接顯示；否則才重生
-if (isMainAudio && hasSplits && hasCache && !isStaleMainSummary(cacheText, mode)) {
-  setSummaryMode(mode);
-  setViewType('summary');
-  return;
-}
+      // ✅ 母音檔（已切段）：有快取且不是「舊格式」→ 直接顯示；否則才重生
+      if (isMainAudio && hasSplits && hasCache && !isStaleMainSummary(cacheText, mode)) {
+        setSummaryMode(mode);
+        setViewType('summary');
+        return;
+      }
 
-// 其餘情況（沒快取、或切段母音檔快取是舊稿）→ 才進入重生
-debugLog('[Summarize] regenerate: no cache or stale main');
+      // 其餘情況（沒快取、或切段母音檔快取是舊稿）→ 才進入重生
+      debugLog('[Summarize] regenerate: no cache or stale main');
 
       // 2) 需要金幣就先檢查
       let user: any = null;
@@ -1234,44 +1168,44 @@ debugLog('[Summarize] regenerate: no cache or stale main');
 
       // 5) 呼叫 helpers：會自動把「標題＋筆記＋逐字稿」組成輸入
       // 主音檔用「聚合素材」，避免只有段落標題
-let summary: string;
+      let summary: string;
 
-if (isMainAudio) {
-  if (hasSplits) {
-    // ✅ 已切段的母音檔：用聚合素材重生
-    const material = buildAggregatedMaterialForMode(recordings, index, mode);
-    const synthetic = { ...currentItem, transcript: material };
-    synthetic.summaries = {}; // 只在重生時清（這裡一定是要重生的分支）
-    debugLog('[Summarize] using aggregated material', {
-      mode, materialLen: material.length, materialHead: material.slice(0, 200),
-    });
-    summary = await summarizeItemWithMode(
-      synthetic,
-      mode,
-      t,
-      { startTime, date },
-      { mergeSplitParts: false, withLabels: true }
-    );
-  } else {
-    // ✅ 未切段的母音檔：用本檔 transcript 直接生成（不聚合、也不清 summaries）
-    summary = await summarizeItemWithMode(
-      currentItem,
-      mode,
-      t,
-      { startTime, date },
-      { mergeSplitParts: false, withLabels: true }
-    );
-  }
-} else {
-  // 子音檔照舊
-  summary = await summarizeItemWithMode(
-    currentItem,
-    mode,
-    t,
-    { startTime, date },
-    { mergeSplitParts: false, withLabels: true }
-  );
-}
+      if (isMainAudio) {
+        if (hasSplits) {
+          // ✅ 已切段的母音檔：用聚合素材重生
+          const material = buildAggregatedMaterialForMode(recordings, index, mode);
+          const synthetic = { ...currentItem, transcript: material };
+          synthetic.summaries = {}; // 只在重生時清（這裡一定是要重生的分支）
+          debugLog('[Summarize] using aggregated material', {
+            mode, materialLen: material.length, materialHead: material.slice(0, 200),
+          });
+          summary = await summarizeItemWithMode(
+            synthetic,
+            mode,
+            t,
+            { startTime, date },
+            { mergeSplitParts: false, withLabels: true }
+          );
+        } else {
+          // ✅ 未切段的母音檔：用本檔 transcript 直接生成（不聚合、也不清 summaries）
+          summary = await summarizeItemWithMode(
+            currentItem,
+            mode,
+            t,
+            { startTime, date },
+            { mergeSplitParts: false, withLabels: true }
+          );
+        }
+      } else {
+        // 子音檔照舊
+        summary = await summarizeItemWithMode(
+          currentItem,
+          mode,
+          t,
+          { startTime, date },
+          { mergeSplitParts: false, withLabels: true }
+        );
+      }
       // 6) 寫回資料
       const updated = updateRecordingFields(recordings, index, uri, {
         summaries: {
@@ -1506,6 +1440,13 @@ if (isMainAudio) {
     }
   };
 
+  debugLog('Current colors:', colors);
+  debugLog('Current styles.transcriptText color:', styles.transcriptText?.color);
+
+  // 在 renderNoteBlock 調用前添加
+  debugLog('styles.transcriptText:', styles.transcriptText);
+  debugLog('Current viewType:', viewType);
+
   return (
     <SafeAreaView style={{ backgroundColor: colors.container, flex: 1 }}>
 
@@ -1534,45 +1475,40 @@ if (isMainAudio) {
           }}
         >
           <PlaybackBar
-            editableName={!uri}  // 只有主音檔可編輯名稱
+            editableName={!uri}
             editingState={editingState}
             itemIndex={index}
             item={currentItem}
-            isPlaying={isPlaying}
+            isPlaying={isPlaying && playingUri === currentItem.uri} // ✅ 使用 useAudioPlayer 的狀態
             isVisible={true}
-            playbackPosition={position}
-            playbackDuration={duration}
-            playbackRate={playbackRate}
-            onPlayPause={togglePlay}
+            playbackPosition={playingUri === currentItem.uri ? playbackPosition : 0} // ✅ 使用 useAudioPlayer 的狀態
+            playbackDuration={playbackDuration} // ✅ 使用 useAudioPlayer 的狀態
+            playbackRate={currentPlaybackRate} // ✅ 使用 useAudioPlayer 的狀態
+            onPlayPause={togglePlay} // ✅ 使用新的播放控制函數
             onSeek={(ms) => {
-              if (sound) {
-                sound.setCurrentTime(ms / 1000);
-                setPosition(ms);
+              if (currentSound) {
+                currentSound.setCurrentTime(ms / 1000); // ✅ 使用 useAudioPlayer 的 adapter
+                setPlaybackPosition(ms);
               }
             }}
             onEditRename={(newName) => {
               const updated = [...recordings];
-
-              // 1️⃣ 修改主音檔的 displayName
               const mainItem = updated[index];
               mainItem.displayName = newName;
 
-              // 2️⃣ 如果有 splitParts（子音檔），一起更新 displayName
               const parts = mainItem.derivedFiles?.splitParts;
               if (parts && Array.isArray(parts)) {
                 parts.forEach((part) => {
-                  const partNameSuffix = part.displayName?.split('|')[1]?.trim(); // 取原本的後綴，例如 "00:00-00:30"
+                  const partNameSuffix = part.displayName?.split('|')[1]?.trim();
                   part.displayName = partNameSuffix
                     ? `${newName} | ${partNameSuffix}`
-                    : `${newName}`; // fallback
+                    : `${newName}`;
                 });
               }
 
-              // 3️⃣ 儲存
               setRecordings(updated);
               saveRecordings(updated);
             }}
-
             onMorePress={(e) => {
               e?.target?.measureInWindow?.((x: number, y: number, width: number, height: number) => {
                 if (selectedMenuIndex === index) {
@@ -1586,7 +1522,6 @@ if (isMainAudio) {
               });
             }}
             onSpeedPress={(e) => {
-
               if (speedMenuVisible) {
                 setSpeedMenuVisible(false);
                 return;
@@ -1800,6 +1735,7 @@ if (isMainAudio) {
         )}
       </View>
 
+      {/* 速度選單 */}
       {speedMenuVisible && speedAnchor && (
         <View style={{
           position: 'absolute',
@@ -1815,19 +1751,19 @@ if (isMainAudio) {
             <TouchableOpacity
               key={rate}
               onPress={() => {
-                setPlaybackRate(rate);            // 記住用戶選擇的速率
-                if (isPlaying && sound) {         // ✅ 只有正在播放才套用速率
-                  sound.setSpeed(rate);
+                setPlaybackRate(rate); // ✅ 使用 useAudioPlayer 的 setPlaybackRate
+                if (isPlaying && currentSound) {
+                  currentSound.setSpeed(rate); // ✅ 使用 useAudioPlayer 的 adapter
                 }
-                setSpeedMenuVisible(false);       // 關閉選單
+                setSpeedMenuVisible(false);
               }}
               style={{
                 paddingVertical: 6,
                 paddingHorizontal: 10,
-                backgroundColor: playbackRate === rate ? colors.primary + '33' : 'transparent',
+                backgroundColor: currentPlaybackRate === rate ? colors.primary + '33' : 'transparent', // ✅ 使用 useAudioPlayer 的狀態
               }}
             >
-              <Text style={{ color: colors.text, fontWeight: playbackRate === rate ? 'bold' : 'normal' }}>
+              <Text style={{ color: colors.text, fontWeight: currentPlaybackRate === rate ? 'bold' : 'normal' }}>
                 {rate}x
               </Text>
             </TouchableOpacity>

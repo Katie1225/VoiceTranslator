@@ -72,13 +72,14 @@ const { t } = useTranslation();
   );
 };
 
+// components/AudioItem.tsx
 export const renderNoteBlock = (props: {
   type: 'transcript' | 'summary' | 'notes';
   index: number;
   value: string;
   uri?: string; 
   editingIndex: number | null;
-   editingUri?: string | null;  
+  editingUri?: string | null;  
   editValue: string;
   onChangeEdit: (text: string) => void;
   onSave: () => void;
@@ -110,9 +111,8 @@ export const renderNoteBlock = (props: {
     renderContent,
   } = props;
 
-const isEditing = editingIndex === index || editingUri === uri;
-const { t } = useTranslation();
-
+  const isEditing = editingIndex === index || editingUri === uri;
+  const { t } = useTranslation();
 
   return (
     <View style={[{
@@ -144,7 +144,15 @@ const { t } = useTranslation();
             }}
             autoFocus
           />
+        ) : props.renderContent ? (
+          // ✅ 修正：直接返回 renderContent()，不包裹在 Text 中
+  <Text style={{ color: colors.text, fontSize: 16, lineHeight: 24 }}>
+    {/* 使用空的 Text 組件來建立繼承上下文 */}
+    <Text>{""}</Text>
+    {props.renderContent()}
+  </Text>
         ) : (
+          // ✅ 非重組顯示：純文字才用 Text 組件
           <Text
             style={{
               fontSize: 16,
@@ -154,13 +162,7 @@ const { t } = useTranslation();
             selectable
             selectionColor={colors.primary}
           >
-            {props.renderContent ? (
-              props.renderContent()
-            ) : (
-              <Text style={{ fontSize: 16, color: colors.text, lineHeight: 24 }} selectable selectionColor={colors.primary}>
-                {value}
-              </Text>
-            )}
+            {value}
           </Text>
         )}
       </ScrollView>
@@ -168,20 +170,18 @@ const { t } = useTranslation();
       {/* 固定底部按鈕區 */}
       <View style={{
         borderTopWidth: 0,
-        //borderColor: colors.primary,
         padding: 10,
         flexDirection: 'row',
         justifyContent: 'flex-end',
         backgroundColor: colors.container
-
       }}>
         {isEditing ? (
           <>
             <TouchableOpacity onPress={onSave}>
-              <Text style={styles.transcriptActionButton}>💾 {t('save')}    </Text>
+              <Text style={[styles.transcriptActionButton, { color: colors.text }]}>💾 {t('save')}    </Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={onCancel}>
-              <Text style={styles.transcriptActionButton}>✖️ {t('cancel')}  </Text>
+              <Text style={[styles.transcriptActionButton, { color: colors.text }]}>✖️ {t('cancel')}  </Text>
             </TouchableOpacity>
           </>
         ) : (
@@ -191,20 +191,20 @@ const { t } = useTranslation();
               onPress={() => onChangeEdit(value)}
               style={{ opacity: props.editable ? 1 : 0.4 }}
             >
-              <Text style={styles.transcriptActionButton}>✏️ {t('edit')}    </Text>
+              <Text style={[styles.transcriptActionButton, { color: colors.text }]}>✏️ {t('edit')}    </Text>
             </TouchableOpacity>
             <TouchableOpacity
               disabled={!props.editable}
               onPress={onShare}
               style={{ opacity: props.editable ? 1 : 0.4 }} >
-              <Text style={styles.transcriptActionButton}>📤 {t('forward')}    </Text>
+              <Text style={[styles.transcriptActionButton, { color: colors.text }]}>📤 {t('forward')}    </Text>
             </TouchableOpacity>
             {APP_VARIANT === 'notedebug' && (
               <TouchableOpacity
                 disabled={!props.editable}
                 onPress={onDelete}
                 style={{ opacity: props.editable ? 1 : 0.4 }}>
-                <Text style={styles.transcriptActionButton}>🗑️ {t('delete')}  </Text>
+                <Text style={[styles.transcriptActionButton, { color: colors.text }]}>🗑️ {t('delete')}  </Text>
               </TouchableOpacity>
             )}
           </>

@@ -2,6 +2,7 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Localization from 'expo-localization';
+import { debugLog } from '@/utils/debugLog';
 
 type LanguageCode = 'en' | 'zh' | 'ja';
 
@@ -30,7 +31,7 @@ export const LanguageProvider = ({ children }: { children: React.ReactNode }) =>
       const primaryLocale = deviceLocales[0];
       const deviceLang = primaryLocale?.languageCode || 'en';
       
-      console.log('🌍 裝置語言資訊:', {
+      debugLog('🌍 裝置語言資訊:', {
         locales: deviceLocales,
         primaryLanguage: deviceLang,
         region: primaryLocale?.regionCode
