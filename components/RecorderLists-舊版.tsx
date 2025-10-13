@@ -16,6 +16,8 @@ import {
 } from 'react-native';
 import SoundLevel from 'react-native-sound-level';
 import { useKeepAwake } from 'expo-keep-awake';
+import AudioRecorderPlayer from 'react-native-audio-recorder-player';
+import RNFS from 'react-native-fs';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Localization from 'expo-localization';
 import { useNavigation } from '@react-navigation/native';
@@ -402,6 +404,20 @@ parts.forEach((p, i) => {
 
               // 3. 強制寫入 JSON 檔案
               await saveRecordings(updated);
+
+              // 4. 手動刪除外部備份中的對應記錄 (可選)
+              try {
+                const backupPath = `${RNFS.ExternalDirectoryPath}/recordings_backup.json`;
+                if (await RNFS.exists(backupPath)) {
+                  const backupContent = await RNFS.readFile(backupPath, 'utf8');
+                  const backupData = JSON.parse(backupContent);
+                  const updatedBackup = backupData.filter((rec: RecordingItem) => rec.uri !== item.uri);
+                  await RNFS.writeFile(backupPath, JSON.stringify(updatedBackup), 'utf8');
+                }
+              } catch (backupErr) {
+                debugWarn("無法更新備份檔案:", backupErr);
+              }
+
             } catch (err) {
               Alert.alert(t('deleteFailed'), (err as Error).message);
             }

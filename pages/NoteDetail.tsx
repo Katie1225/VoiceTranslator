@@ -1440,13 +1440,6 @@ export default function NoteDetailPage() {
     }
   };
 
-  debugLog('Current colors:', colors);
-  debugLog('Current styles.transcriptText color:', styles.transcriptText?.color);
-
-  // 在 renderNoteBlock 調用前添加
-  debugLog('styles.transcriptText:', styles.transcriptText);
-  debugLog('Current viewType:', viewType);
-
   return (
     <SafeAreaView style={{ backgroundColor: colors.container, flex: 1 }}>
 

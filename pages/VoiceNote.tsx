@@ -221,10 +221,15 @@ const RecorderPageVoiceNote = () => {
   };
 
   // 展平成純文字（相容你現有的 notes 儲存）
-  const flattenNoteSegs = (segs: NoteSeg[]) =>
-    segs
-      .map(s => (s.text.trim() ? `${s.label}\n${s.text.trim()}` : s.label))
-      .join('\n\n');
+// 修復筆記儲存邏輯 - 只儲存有實際內容的筆記
+const flattenNoteSegs = (segs: NoteSeg[]) => {
+  const validSegs = segs.filter(s => s.text.trim());
+  if (validSegs.length === 0) return '';
+  
+  return validSegs
+    .map(s => `${s.label}\n${s.text.trim()}`)
+    .join('\n\n');
+};
 
   // 筆記模態框相關效果
   useEffect(() => {
@@ -615,19 +620,20 @@ const RecorderPageVoiceNote = () => {
         const { label, metadataLine } = generateDisplayNameParts(noteTitleEditing, metadata.durationSec, t);
         const displayName = label;
         const displayDate = metadataLine;
-        const flatNotes = flattenNoteSegs(noteSegs);
-        
-        const newItem: RecordingItem = {
-          size: fileInfo.size,
-          uri: permanentUri, // ✅ 使用永久路徑
-          name,
-          displayName,
-          displayDate,
-          derivedFiles: {},
-          date: metadata.date,
-          notes: flatNotes || notesEditing || '',
-          durationSec: metadata.durationSec,
-        };
+const flatNotes = flattenNoteSegs(noteSegs);
+const finalNotes = flatNotes || notesEditing || '';
+
+const newItem: RecordingItem = {
+  size: fileInfo.size,
+  uri: permanentUri,
+  name,
+  displayName,
+  displayDate,
+  derivedFiles: {},
+  date: metadata.date,
+  notes: finalNotes, // 只有當有實際內容時才設置
+  durationSec: metadata.durationSec,
+};
         (newItem as any).tempNoteSegs = noteSegs;
 
         debugLog('📌 建立新錄音項目', { name, displayName, uri: permanentUri });
