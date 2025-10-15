@@ -50,7 +50,9 @@ export default function NoteDetailPage() {
   const { styles, colors } = useTheme();
   const route = useRoute<RouteProp<RootStackParamList, 'NoteDetail'>>();
   const { t } = useTranslation();
-  const { index, uri, type: initialType, summaryMode: initialSummaryMode } = route.params;
+  const { index: rawIndex, uri, type: initialType, summaryMode: initialSummaryMode } = route.params;
+
+  // ✅ 若沒有 index，根據 uri 在 recordings 中尋找
   const [activeTask, setActiveTask] = useState<'transcribe' | 'summarize' | null>(null);
 
   const {
@@ -59,6 +61,7 @@ export default function NoteDetailPage() {
     lastVisitedRecording,
     setLastVisitedRecording
   } = useRecordingContext();
+
 
   const {
     currentSound,
@@ -75,18 +78,55 @@ export default function NoteDetailPage() {
     stopPlayback,
   } = useAudioPlayer();
 
-  // 🎯 抓主音檔與小音檔
-  if (index === undefined) {
-    Alert.alert(t('error'), t('audioIndexNotFound')); // 錯誤. 找不到音檔 index
-    navigation.goBack();
+  // ✅ 提前計算 index，避免在渲染中調用 setState
+  const index = React.useMemo(() => {
+    return rawIndex ?? recordings.findIndex(r => r.uri === uri);
+  }, [rawIndex, recordings, uri]);
+
+  // ✅ 提前檢查並處理無效情況
+  const isValid = React.useMemo(() => {
+    if (index === undefined && !uri) {
+      return false;
+    }
+    return true;
+  }, [index, uri]);
+
+  // ✅ 在 useEffect 中處理導航，避免渲染期間調用
+  React.useEffect(() => {
+    if (!isValid) {
+      Alert.alert(t('error'), t('audioIndexNotFound'));
+      navigation.goBack();
+    }
+  }, [isValid, navigation, t]);
+
+  if (!isValid) {
     return null;
   }
-  const mainItem = recordings[index];
-  const subItem = uri
-    ? mainItem?.derivedFiles?.splitParts?.find((p: { uri: string }) => p.uri === uri)
+
+  // 🎯 抓主音檔與小音檔
+  const mainItem = index !== undefined ? recordings[index] : undefined;
+  const subItem = uri && mainItem?.derivedFiles?.splitParts
+    ? mainItem.derivedFiles.splitParts.find((p: { uri: string }) => p.uri === uri)
     : null;
 
-  const currentItem: RecordingItem = subItem ?? mainItem;
+  let currentItem: RecordingItem | null = subItem ?? mainItem ?? null;
+
+  if (!currentItem && uri) {
+    const found = recordings.find(r => r.uri === uri);
+    if (found) currentItem = found;
+  }
+
+  // ✅ 使用 useEffect 處理找不到筆記的情況
+  React.useEffect(() => {
+    if (!currentItem) {
+      console.warn('找不到對應筆記:', uri);
+      navigation.goBack();
+    }
+  }, [currentItem, uri, navigation]);
+
+  if (!currentItem) {
+    return null;
+  }
 
 
   /* 檢查 currentItem 結構
@@ -165,6 +205,21 @@ export default function NoteDetailPage() {
       if (v) setSegmentDuration(Number(v));
     });
   }, []);
+
+  // 自動編輯
+  useEffect(() => {
+    // 檢查是否需要自動進入編輯模式
+    if (route.params.shouldEdit && viewType === 'notes') {
+      // 設置編輯狀態
+      setEditingState({
+        type: 'notes',
+        index: index,
+        uri: currentItem.uri,
+        text: currentItem.notes || '',
+      });
+      setIsEditing(true);
+    }
+  }, [route.params.shouldEdit, viewType]);
 
   // ✅ 修改播放控制函数
   const togglePlay = async () => {

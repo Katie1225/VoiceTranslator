@@ -41,6 +41,7 @@ export type RecordingItem = {
   end?: number;            
   createdAt?: string;       
   isSplitPart?: boolean;    
+  isTextRecord?: boolean;
 };
 
 export const notifyAwsRecordingEvent = async (

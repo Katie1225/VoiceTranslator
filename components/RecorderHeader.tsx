@@ -8,6 +8,7 @@ import { handleLogin } from '../utils/loginHelpers';
 import { Platform } from 'react-native';
 import { APP_TITLE } from '../constants/variant';
 import { useTranslation } from '../constants/i18n';
+import { useNavigation } from '@react-navigation/native';
 
 interface RecorderHeaderProps {
   mode?: 'main' | 'detail';
@@ -15,7 +16,7 @@ interface RecorderHeaderProps {
   onBack?: () => void;
   onPickAudio?: () => void;
   onCloseAllMenus?: () => void;
-  sortOption?: 'latest' | 'oldest' | 'size' | 'name-asc' | 'name-desc'| 'starred';
+  sortOption?: 'latest' | 'oldest' | 'size' | 'name-asc' | 'name-desc' | 'starred';
   setSortOption?: (opt: any) => void;
   searchQuery?: string;
   setSearchQuery?: (s: string) => void;
@@ -28,15 +29,15 @@ interface RecorderHeaderProps {
 const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
   const noop = () => { };
   const defaultStr = '';
-const { t } = useTranslation(); 
-const labelMap: Record<string, string> = {
-  latest: t('sortNewest'),
-  oldest: t('sortOldest'),
-  size: t('sortBySize'),
-  'name-asc': t('sortByName'),
-'name-desc': t('sortByNameDesc'),
-starred: t('sortByFavoriteStar'),
-};
+  const { t } = useTranslation();
+  const labelMap: Record<string, string> = {
+    latest: t('sortNewest'),
+    oldest: t('sortOldest'),
+    size: t('sortBySize'),
+    'name-asc': t('sortByName'),
+    'name-desc': t('sortByNameDesc'),
+    starred: t('sortByFavoriteStar'),
+  };
   const {
     mode,
     onBack,
@@ -54,6 +55,7 @@ starred: t('sortByFavoriteStar'),
   const [menuVisible, setMenuVisible] = useState(false);
   const [isSortModalVisible, setIsSortModalVisible] = useState(false);
   const [isSearchModalVisible, setIsSearchModalVisible] = useState(false);
+  const navigation = useNavigation();
 
   const toggleSort = () => {
     onCloseAllMenus();
@@ -81,15 +83,15 @@ starred: t('sortByFavoriteStar'),
       >
         {/* 左側按鈕區塊 */}
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          {mode === 'detail' ? (
-            <TouchableOpacity onPress={onBack}>
-              <Icon name="arrow-left" size={30} color={colors.primary} />
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity onPress={() => setMenuVisible(!menuVisible)}>
-              <Icon name="menu" size={34} color={colors.primary} />
-            </TouchableOpacity>
-          )}
+        {mode === 'detail' ? (
+  <TouchableOpacity onPress={onBack}>
+    <Icon name="arrow-left" size={30} color={colors.primary} />
+  </TouchableOpacity>
+) : (
+  <TouchableOpacity onPress={() => navigation.navigate('MenuPage' as never)}>
+    <Icon name="menu" size={34} color={colors.primary} />
+  </TouchableOpacity>
+)}
 
           <Text
             numberOfLines={1}
@@ -106,28 +108,30 @@ starred: t('sortByFavoriteStar'),
         </View>
 
 
-{rightSlot != null ? (
-  React.isValidElement(rightSlot)
-    ? <View>{rightSlot}</View>
-    : <Text>{String(rightSlot)}</Text>   // 傳字串/數字時，用 <Text> 包
-) : (
-  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
-    <TouchableOpacity onPress={toggleSearch}>
-      <Icon name="magnify" size={30} color={colors.primary} />
-    </TouchableOpacity>
+        {rightSlot != null ? (
+          React.isValidElement(rightSlot)
+            ? <View>{rightSlot}</View>
+            : <Text>{String(rightSlot)}</Text>   // 傳字串/數字時，用 <Text> 包
+        ) : (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
+            <TouchableOpacity onPress={toggleSearch}>
+              <Icon name="magnify" size={30} color={colors.primary} />
+            </TouchableOpacity>
 
-    {mode !== 'detail' && (
-      <>
-        <TouchableOpacity onPress={toggleSort}>
-          <Icon name="sort" size={30} color={colors.primary} />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={onPickAudio}>
-          <Icon name="folder" size={30} color={colors.primary} />
-        </TouchableOpacity>
-      </>
-    )}
-  </View>
-)}
+            {mode !== 'detail' && (
+              <>
+                <TouchableOpacity onPress={toggleSort}>
+                  <Icon name="sort" size={30} color={colors.primary} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={onPickAudio}>
+                  <Icon name="folder" size={30} color={colors.primary} />
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        )}
+
+
 
         {mode !== 'detail' && (
           <HamburgerMenu
@@ -166,7 +170,7 @@ starred: t('sortByFavoriteStar'),
           }}
         >
           <Text style={{ fontSize: 12, color: colors.subtext, marginBottom: 4 }}>
- {`${t('currentSort')}：${labelMap[sortOption]}`}
+            {`${t('currentSort')}：${labelMap[sortOption]}`}
           </Text>
           <View style={{ height: 12 }} />
           <Text
@@ -250,7 +254,7 @@ starred: t('sortByFavoriteStar'),
               marginBottom: 8,
             }}
           >
- {mode === 'detail' ? t('searchContent') : t('searchPlaceholder')}
+            {mode === 'detail' ? t('searchContent') : t('searchPlaceholder')}
           </Text>
 
           <TextInput

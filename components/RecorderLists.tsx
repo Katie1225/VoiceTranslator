@@ -11,7 +11,7 @@ import {
   TouchableWithoutFeedback,
   FlatList,
 } from 'react-native';
-import SoundLevel from 'react-native-sound-level';
+
 import { useKeepAwake } from 'expo-keep-awake';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Localization from 'expo-localization';
@@ -414,12 +414,6 @@ const RecorderLists: React.FC<Props> = ({
     }
   }, [lastVisitedRecording]);
 
-  useEffect(() => {
-    return () => {
-      SoundLevel.stop();
-    };
-  }, []);
-
   const visibleMiniType = (index: number) =>
     showNotesIndex === index ? 'notes' :
       showTranscriptIndex === index ? 'transcript' :
@@ -582,6 +576,16 @@ const RecorderLists: React.FC<Props> = ({
                               editableName={true}
                               showSpeedControl={true}
                               onPlayPause={() => handlePlayPause(item.uri, index)}
+                                onTextPress={() => { // 新增：文字記錄的點擊處理
+    closeAllMenus();
+    stopPlayback();
+    setSelectedPlayingIndex(null);
+    navigation.navigate('NoteDetail', {
+      index,
+      type: 'notes',
+    });
+    setLastVisitedRecording({ index, type: 'notes' });
+  }}
                               onSeek={(positionMs) => {
                                 if (currentSound) {
                                   currentSound.setCurrentTime(positionMs / 1000);

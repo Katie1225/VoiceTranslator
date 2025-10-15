@@ -9,6 +9,7 @@ import { ThemeProvider } from './constants/ThemeContext';
 
 import RecorderPageVoiceNote from './pages/VoiceNote';
 import NoteDetailPage from './pages/NoteDetail';
+import MenuPage from './pages/MenuPage';
 
 import TopicSummaryPage from './pages/TopicSummary';
 import { RecordingItem } from './utils/audioHelpers'; 
@@ -30,12 +31,14 @@ const SelectedPage = variantMap[APP_VARIANT] || (() => {
 // ✅ 完整路由型別
 export type RootStackParamList = {
   RecorderPage: undefined;
+  MenuPage: undefined;
   NoteDetail: {
     index?: number;
     uri?: string;
     type: 'notes' | 'transcript' | 'summary';
     shouldTranscribe?: boolean;
     summaryMode?: string;
+     shouldEdit?: boolean;
   };
   TopicSummaryPage: {
     items: RecordingItem[];
@@ -50,12 +53,13 @@ export default function App() {
   <LoginProvider>
     <RecordingProvider>
       <ThemeProvider>
-            <LanguageProvider>
+            <LanguageProvider>              
         <NavigationContainer>
           <Stack.Navigator initialRouteName="RecorderPage" screenOptions={{ headerShown: false }}>
             <Stack.Screen name="RecorderPage" component={SelectedPage} />
             <Stack.Screen name="NoteDetail" component={NoteDetailPage} />
             <Stack.Screen name="TopicSummaryPage" component={TopicSummaryPage} />
+            <Stack.Screen name="MenuPage" component={MenuPage} />
           </Stack.Navigator>
         </NavigationContainer>
         </LanguageProvider>

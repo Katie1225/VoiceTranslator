@@ -1,6 +1,7 @@
-// components/HamburgerMenu.tsx
+//pages/MenuPage.tsx
+
 import React, { useEffect, useState } from 'react';
-import { Linking, Alert, View, Text, TouchableOpacity, Image, Share, ScrollView, Dimensions } from 'react-native';
+import { ScrollView, View, Text, TouchableOpacity, Image, Share, Dimensions, Alert, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { logCoinUsage, fetchUserInfo } from '../utils/googleSheetAPI';
@@ -11,13 +12,8 @@ import { useLoginContext } from '../constants/LoginContext';
 import { useTranslation } from '../constants/i18n';
 import { useLanguage } from '../constants/LanguageContext';
 import { debugError } from '@/utils/debugLog';
-
-type Props = {
-  visible: boolean;
-  onClose: () => void;
-  onLoginPress: () => Promise<boolean>;
-  onLoginSuccess?: () => void;
-};
+import RecorderHeader from '../components/RecorderHeader';
+import { useNavigation } from '@react-navigation/native';
 
 type GoogleUser = {
   id: string;
@@ -29,29 +25,50 @@ type GoogleUser = {
   coins?: number;
 };
 
-const HamburgerMenu = ({ visible, onClose, onLoginPress, onLoginSuccess }: Props) => {
+export default function MenuPage() {
   const { colors, styles, isDarkMode, toggleTheme, setCustomPrimaryColor, customPrimaryColor, additionalColors } = useTheme();
+  const navigation = useNavigation();
+  const { t } = useTranslation();
+  const { locale, setAppLocale } = useLanguage();
+  const { isLoggingIn, setIsLoggingIn } = useLoginContext();
+
   const [currentUser, setCurrentUser] = useState<GoogleUser | null>(null);
+  const [lang, setLang] = useState<'zh' | 'en' | 'ja'>(locale);
+  const [promptPref, setPromptPref] = useState<'ask' | 'off'>('ask');
+  const [segmentPref, setSegmentPref] = useState<number>(600);
+
+  const PREF_KEY = 'VN_TRANSCRIBE_PROMPT_PREF';
+  const SEGMENT_KEY = 'VN_SEGMENT_DURATION';
+
   useEffect(() => {
-    const loadUser = async () => {
+    const loadUserData = async () => {
       const stored = await AsyncStorage.getItem('user');
       if (stored) {
         setCurrentUser(JSON.parse(stored));
       }
-    };
-    loadUser();
-  }, [visible]);
-  const { isLoggingIn, setIsLoggingIn } = useLoginContext();
 
-  const { t } = useTranslation();
-  const { locale, setAppLocale } = useLanguage();
+      const promptValue = await AsyncStorage.getItem(PREF_KEY);
+      if (promptValue === 'off') setPromptPref('off'); else setPromptPref('ask');
+
+      const segmentValue = await AsyncStorage.getItem(SEGMENT_KEY);
+      const sec = segmentValue ? Number(segmentValue) : 600;
+      setSegmentPref(sec);
+      setSegmentDuration(sec);
+    };
+
+    loadUserData();
+  }, []);
+
+  useEffect(() => {
+    setLang(locale);
+  }, [locale]);
 
   const handleLogout = async () => {
     await GoogleSignin.signOut();
     await AsyncStorage.removeItem('user');
     setCurrentUser(null);
-    //  Alert.alert('已登出');
   };
+
   const handleLoginWithAutoClose = async () => {
     setIsLoggingIn(true);
     const result = await handleLogin(setIsLoggingIn, t);
@@ -62,89 +79,49 @@ const HamburgerMenu = ({ visible, onClose, onLoginPress, onLoginSuccess }: Props
         {
           text: t('continue'),
           onPress: () => {
-            if (onLoginSuccess) onLoginSuccess();
+            // 重新加载用户数据
+            const reloadUser = async () => {
+              const stored = await AsyncStorage.getItem('user');
+              if (stored) {
+                setCurrentUser(JSON.parse(stored));
+              }
+            };
+            reloadUser();
           }
         }
       ]);
     }
   };
 
-  const [lang, setLang] = useState<'zh' | 'en' | 'ja'>(locale);  // 用 context 的 locale 當初值
-  useEffect(() => {
-    setLang(locale); // 每次打開選單或 locale 改變時，同步顯示
-  }, [visible, locale]);
-
-
   const pickLang = async (code: 'zh' | 'en' | 'ja') => {
     setLang(code);
-    await setAppLocale(code); // 由 context 寫入 appLang
-    onClose();
+    await setAppLocale(code);
   };
-
-
-  const PREF_KEY = 'VN_TRANSCRIBE_PROMPT_PREF'; // 'ask' | 'off'
-  const [promptPref, setPromptPref] = useState<'ask' | 'off'>('ask');
-
-  useEffect(() => {
-    AsyncStorage.getItem(PREF_KEY).then(v => {
-      if (v === 'off') setPromptPref('off'); else setPromptPref('ask');
-    });
-  }, [visible]);
 
   const setPref = async (v: 'ask' | 'off') => {
     setPromptPref(v);
     await AsyncStorage.setItem(PREF_KEY, v);
-    onClose(); // 選完就關閉選單（可移除）
   };
-
-  const [segmentPref, setSegmentPref] = useState<number>(600); // 預設 10 分鐘
-  const SEGMENT_KEY = 'VN_SEGMENT_DURATION';
-
-  useEffect(() => {
-    AsyncStorage.getItem(SEGMENT_KEY).then(v => {
-      const sec = v ? Number(v) : 600;
-      setSegmentPref(sec);
-      setSegmentDuration(sec); // ← 這行很關鍵：讓全域 SEGMENT_DURATION 一起恢復
-    });
-  }, [visible]);
 
   const pickSegment = async (sec: number) => {
     setSegmentPref(sec);
     await AsyncStorage.setItem(SEGMENT_KEY, String(sec));
-    setSegmentDuration(sec);   // 更新全域常數
-    onClose();
+    setSegmentDuration(sec);
   };
 
-  const { height: screenHeight } = Dimensions.get('window');
-  const menuMaxHeight = screenHeight - 120;
-
-  if (!visible) return null;
-
   return (
-    <View style={{
-      position: 'absolute',
-      top: 55,
-      left: 10,
-      right: 20,
-      backgroundColor: colors.container,
-      borderRadius: 12,
-      padding: 12,
-      zIndex: 9999, // 確保足夠高
-      elevation: 10,
-      height: menuMaxHeight,
-      // 添加陰影和邊框
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.25,
-      shadowRadius: 3.84,
-    }}>
-      <ScrollView
-        style={{ flex: 1 }}
-        showsVerticalScrollIndicator={true}
-        contentContainerStyle={{ paddingBottom: 8, flexGrow: 1, }} // 添加底部 padding
-        onTouchStart={(e) => e.stopPropagation()}
-        onTouchMove={(e) => e.stopPropagation()}
-      >
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <RecorderHeader
+        mode="detail"
+        title={t('settingsMenu')}
+        onBack={() => navigation.goBack()}
+      />
+<ScrollView
+  style={{ flex: 1 }}
+  contentContainerStyle={{ paddingHorizontal: 20 }}
+  showsVerticalScrollIndicator={true}
+>
+        {/* 用户登录/信息区域 */}
         {currentUser ? (
           <View style={[styles.menuItemButton, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
             <View style={{ flexDirection: 'column' }}>
@@ -166,11 +143,12 @@ const HamburgerMenu = ({ visible, onClose, onLoginPress, onLoginSuccess }: Props
           <TouchableOpacity onPress={handleLoginWithAutoClose} style={styles.menuItemButton}>
             <Text style={styles.menuItem}>☁️ {t('googleLogin')}</Text>
           </TouchableOpacity>
-
         )}
 
+        {/* 版本信息 */}
         <Text style={styles.menuItem}>{t('version')}: {version} </Text>
 
+        {/* 联系开发者 */}
         <TouchableOpacity
           onPress={() => {
             Linking.openURL('mailto:katie@example.com?subject=User Feedback');
@@ -179,6 +157,8 @@ const HamburgerMenu = ({ visible, onClose, onLoginPress, onLoginSuccess }: Props
         >
           <Text style={styles.menuItem}>✉️ {t('contactKai')}</Text>
         </TouchableOpacity>
+
+        {/* 分享应用 */}
         <TouchableOpacity
           onPress={async () => {
             try {
@@ -194,11 +174,12 @@ const HamburgerMenu = ({ visible, onClose, onLoginPress, onLoginSuccess }: Props
           <Text style={styles.menuItem}>📲 {t('shareApp')}</Text>
         </TouchableOpacity>
 
-
-        <TouchableOpacity onPress={() => { onClose(); toggleTheme(); }} style={styles.menuItemButton}>
+        {/* 主题切换 */}
+        <TouchableOpacity onPress={toggleTheme} style={styles.menuItemButton}>
           <Text style={styles.menuItem}>{isDarkMode ? t('switchToLight') : t('switchToDark')}</Text>
         </TouchableOpacity>
 
+        {/* 主题色选择 */}
         <Text style={styles.menuHeader}>{t('primaryColor')}</Text>
         <View
           style={[
@@ -207,7 +188,7 @@ const HamburgerMenu = ({ visible, onClose, onLoginPress, onLoginSuccess }: Props
           ]}
         >
           <TouchableOpacity
-            onPress={() => { onClose(); setCustomPrimaryColor(null); }}
+            onPress={() => setCustomPrimaryColor(null)}
           />
           {Object.entries(additionalColors).map(([name, color]) => (
             <TouchableOpacity
@@ -217,14 +198,15 @@ const HamburgerMenu = ({ visible, onClose, onLoginPress, onLoginSuccess }: Props
                 { backgroundColor: color },
                 customPrimaryColor === color && {
                   borderWidth: 2,
-                  borderColor: colors.text,   // 或 colors.primary，看你要哪一種
+                  borderColor: colors.text,
                 },
               ]}
-              onPress={() => { onClose(); setCustomPrimaryColor(color); }}
+              onPress={() => setCustomPrimaryColor(color)}
             />
           ))}
-
         </View>
+
+        {/* 语言选择 */}
         <Text style={styles.menuHeader}>{t('chooseLanguage')}</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 8 }}>
           {[
@@ -250,6 +232,8 @@ const HamburgerMenu = ({ visible, onClose, onLoginPress, onLoginSuccess }: Props
             );
           })}
         </View>
+
+        {/* 转录偏好 */}
         <Text style={[styles.menuHeader, { marginTop: 20 }]}>{t('transcribePrefTitle')}</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 8 }}>
           {[
@@ -274,13 +258,14 @@ const HamburgerMenu = ({ visible, onClose, onLoginPress, onLoginSuccess }: Props
             );
           })}
         </View>
+
+        {/* 分段时长 */}
         <Text style={[styles.menuHeader, { marginTop: 20 }]}>{t('segmentDuration')}</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 8 }}>
           {[
-            { sec: 60, label: t('segment1min') }, // 1 分鐘
-            { sec: 300, label: t('segment5min') }, // 5 分鐘
-            { sec: 600, label: t('segment10min') }, // 10 分鐘
-            // 用超大數代表「不切斷」，讓「item.durationSec > SEGMENT_DURATION」幾乎永遠不成立 → 不顯示展開分段按鈕
+            { sec: 60, label: t('segment1min') },
+            { sec: 300, label: t('segment5min') },
+            { sec: 600, label: t('segment10min') },
             { sec: 999999, label: t('segmentNoSplit') },
           ].map(({ sec, label }) => {
             const selected = segmentPref === sec;
@@ -304,6 +289,4 @@ const HamburgerMenu = ({ visible, onClose, onLoginPress, onLoginSuccess }: Props
       </ScrollView>
     </View>
   );
-};
-
-export default HamburgerMenu;
+}

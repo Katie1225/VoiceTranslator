@@ -18,6 +18,7 @@ interface PlaybackBarProps {
     playbackRate: number;
     editableName?: boolean;
     onPlayPause: () => void;
+    onTextPress?: () => void; // 新增：文字記錄的點擊事件
     onSeek: (positionMs: number) => void;
     onEditRename?: (newName: string) => void;
     onMorePress: (e: any) => void;
@@ -59,6 +60,7 @@ const PlaybackBar: React.FC<PlaybackBarProps> = ({
     playbackRate,
     editableName = false,
     onPlayPause,
+    onTextPress,
     onSeek,
     onEditRename,
     onMorePress,
@@ -75,11 +77,12 @@ const PlaybackBar: React.FC<PlaybackBarProps> = ({
     variant = 'main',
 
 }) => {
-const isEditingName =
-  editableName &&
-  editingState?.type === 'name' &&
-  editingState?.index === itemIndex &&
-  editingState?.uri === item.uri;
+    const isTextRecord = (item as any).isTextRecord;
+    const isEditingName =
+        editableName &&
+        editingState?.type === 'name' &&
+        editingState?.index === itemIndex &&
+        editingState?.uri === item.uri;
 
     const [editName, setEditName] = React.useState(item.displayName || '');
 
@@ -99,6 +102,118 @@ const isEditingName =
         setEditName(item.displayName || '');
     }, [item.displayName]);
 
+    // 文字記錄的播放條
+    if (isTextRecord) {
+        return (
+            <View
+                style={[
+                    styles.playbackContainer,
+                    !isVisible && { paddingBottom: 0, marginBottom: 0 },
+                ]}
+            >
+                {/* 第一行：文字按鈕 + 檔名 + 功能按鈕 */}
+                <View style={styles.playbackHeader}>
+                    <TouchableOpacity onPress={onTextPress || onPlayPause}>
+                        <View
+                            style={{
+                                width: 30,
+                                height: 30,
+                                borderRadius: 17,
+                                backgroundColor: colors.primary,
+                                justifyContent: 'center',
+                                alignItems: 'center',
+                            }}
+                        >
+                            <Text style={{ color: colors.background, fontSize: 12, fontWeight: 'bold' }}>A</Text>
+                        </View>
+                    </TouchableOpacity>
+
+                    {isEditingName ? (
+                        <TextInput
+                            value={editName}
+                            onChangeText={(text) => {
+                                setEditName(text);
+                                if (setEditingState) {
+                                    setEditingState((prev) => ({
+                                        ...prev,
+                                        text,
+                                    }));
+                                }
+                            }}
+                            onBlur={() => {
+                                onEditRename?.(editName);
+                            }}
+                            style={[
+                                styles.audioTitleInput,
+                                { color: colors.text, borderColor: colors.primary }
+                            ]}
+                            autoFocus
+                        />
+                    ) : (
+                        <TouchableOpacity
+                            style={{ flex: 1 }}
+                            onPress={onTextPress || onPlayPause}
+                            activeOpacity={0.7}
+                        >
+                            <View style={{ flex: 1, minHeight: 60 }}>
+                                <Text
+                                    style={[styles.audioTitle, {
+                                        fontSize: variant === 'sub' ? 13 : 16,
+                                        fontWeight: 'normal',
+                                        color: colors.text,
+                                    }]}
+                                    numberOfLines={2}
+                                >
+                                    {(editName || '').split('\n')[0]}
+                                </Text>
+                                {isRecordingItem(item) && item.displayDate && (
+                                    <Text
+                                        style={[styles.audioSubtitle, { color: colors.subtext, fontSize: 13 }]}
+                                        numberOfLines={1}
+                                    >
+                                        {item.displayDate}
+                                    </Text>
+                                )}
+                            </View>
+                        </TouchableOpacity>
+                    )}
+
+                    {/* 收藏星號 */}
+                    <TouchableOpacity
+                        onPress={() => {
+                            setRecordings(prev => {
+                                const updated = prev.map(r =>
+                                    r.uri === item.uri ? { ...r, isStarred: !r.isStarred } : r
+                                );
+                                saveRecordings(updated);
+                                return updated;
+                            });
+                        }}
+                        style={{ marginRight: 10, top: -15 }}
+                    >
+                        <Icon
+                            name={item.isStarred ? 'star' : 'star-outline'}
+                            size={28}
+                            color={item.isStarred ? colors.primary : '#999999'}
+                        />
+                    </TouchableOpacity>
+
+                    {typeof renderRightButtons === 'string' ? (
+                        <Text>{renderRightButtons}</Text>
+                    ) : renderRightButtons ? (
+                        renderRightButtons
+                    ) : (
+                        <TouchableOpacity onPress={onMorePress}>
+                            <Icon name="dots-vertical" size={20} color={colors.text} />
+                        </TouchableOpacity>
+                    )}
+                </View>
+                {/* 文字記錄沒有播放進度條和速度控制 */}
+            </View>
+        );
+    }
+
+    // 原有音檔播放界面
     return (
         <View
             style={[

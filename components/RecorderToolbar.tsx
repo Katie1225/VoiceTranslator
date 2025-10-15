@@ -16,6 +16,8 @@ interface RecorderControlsProps {
     title?: string;
     currentDecibels: number;
     onToggleNotesModal: () => void;
+        isNotesVisible?: boolean;
+    onCreateTextNote: () => void; 
 }
 
 const RecorderControls: React.FC<RecorderControlsProps> = ({
@@ -28,31 +30,33 @@ const RecorderControls: React.FC<RecorderControlsProps> = ({
     title,
     currentDecibels,
     onToggleNotesModal,
+     isNotesVisible = false,
+    onCreateTextNote, // 新增：接收創建文字筆記的函數
 }) => {
     const { colors, toggleTheme, setCustomPrimaryColor } = useTheme();
     const [displayTime, setDisplayTime] = useState(0);
     const [menuVisible, setMenuVisible] = useState(false);
     const [decibelHistory, setDecibelHistory] = useState<number[]>([]);
     const { t } = useTranslation();
-// 錄音顯示時間
-useEffect(() => {
-  const timer: ReturnType<typeof setInterval> | null =
-    recording
-      ? setInterval(() => {
-          const currentTime = recordingTimeRef.current || 0;
-          setDisplayTime(currentTime);
-        }, 1000)
-      : null;
 
-  if (!recording) {
-    setDisplayTime(0);
-  }
+    // 錄音顯示時間
+    useEffect(() => {
+        const timer: ReturnType<typeof setInterval> | null =
+            recording
+                ? setInterval(() => {
+                    const currentTime = recordingTimeRef.current || 0;
+                    setDisplayTime(currentTime);
+                }, 1000)
+                : null;
 
-  return () => {
-    if (timer) clearInterval(timer);
-  };
-}, [recording]);
+        if (!recording) {
+            setDisplayTime(0);
+        }
 
+        return () => {
+            if (timer) clearInterval(timer);
+        };
+    }, [recording]);
 
     useEffect(() => {
         setDecibelHistory((prev) => {
@@ -76,7 +80,7 @@ useEffect(() => {
         return `${h}:${m}:${s}`;
     };
 
-    return (
+     return (
         <>
             <View style={{
                 flexDirection: 'row',
@@ -85,8 +89,7 @@ useEffect(() => {
                 paddingTop: 0,
                 minHeight: 70,
             }}>
-                {/* 左邊 45%：時間 / 標題 */}
-
+                {/* 左邊 45%：時間 / 標題 - 保持不變 */}
                 <View style={{ flex: 5.5, alignItems: 'center', justifyContent: 'center', marginLeft: -10, }}>
                     {recording ? (
                         <>
@@ -105,7 +108,7 @@ useEffect(() => {
                             <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', height: 30, overflow: 'hidden' }}>
                                 {decibelHistory.map((dB, index) => {
                                     const height = dB < -90
-                                        ? 2 // ← 強制最小 2px
+                                        ? 2
                                         : Math.max(2, ((Math.max(-90, Math.min(dB, 0)) + 100) / 100) * 30);
                                     return (
                                         <View
@@ -118,8 +121,7 @@ useEffect(() => {
                                             }}
                                         />
                                     );
-                                })
-                                }
+                                })}
                             </View>
                         </>
                     ) : (
@@ -137,14 +139,35 @@ useEffect(() => {
                                 fontFamily: Platform.OS === 'ios' ? 'Avenir' : 'Noto Sans TC',
                             }}
                         >
-                            {/*現在開始記錄*/}
                             {t('startRecording')}
                         </Text>
                     )}
                 </View>
 
-                {/* 中間 15%：錄音按鈕 */}
-                <View style={{ flex: 1.5, marginRight: 0 }}>
+                {/* 中間 15%：錄音按鈕 - 添加三角形 */}
+                <View style={{ flex: 1.5, marginRight: 0, alignItems: 'center' }}>
+                    {/* 錄音時顯示的小三角形 */}
+                    {recording && (
+                        <TouchableOpacity 
+                            onPress={onToggleNotesModal}
+                            style={{
+                                position: 'absolute',
+                                top: -5,
+                                right: -5,
+                                zIndex: 10,
+                                backgroundColor: colors.container,
+                                borderRadius: 10,
+                                padding: 2,
+                            }}
+                        >
+                            <MaterialCommunityIcons 
+                                name={isNotesVisible ? "chevron-down" : "chevron-up"} 
+                                size={16} 
+                                color={colors.primary} 
+                            />
+                        </TouchableOpacity>
+                    )}
+                    
                     <TouchableOpacity
                         style={{
                             width: 60,
@@ -168,13 +191,17 @@ useEffect(() => {
                         )}
                     </TouchableOpacity>
                 </View>
-                {/* 左邊 15% 編寫筆 */}
+
+                {/* 右邊 15% 小本本按鈕 - 保持不變 */}
                 <View style={{ flex: 1.5, marginRight: 20 }}>
-                    {recording && (
-                        <TouchableOpacity onPress={onToggleNotesModal}>
-                            <MaterialCommunityIcons name="pencil-plus" size={30} color={colors.subtext} style={{ marginLeft: 10 }} />
-                        </TouchableOpacity>
-                    )}
+                    <TouchableOpacity onPress={onCreateTextNote}>
+                        <MaterialCommunityIcons 
+                            name="text-box-plus" 
+                            size={30} 
+                            color={colors.subtext} 
+                            style={{ marginLeft: 10 }} 
+                        />
+                    </TouchableOpacity>
                 </View>
             </View>
         </>

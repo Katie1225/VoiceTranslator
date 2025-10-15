@@ -155,6 +155,9 @@ const translations = {
     segment5min: "5 minutes",
     segment10min: "10 minutes",
     segmentNoSplit: "No splitting",
+    textNote: 'Note',
+    createTextNoteFailed: 'Failed to create text note',
+    settingsMenu: 'Setting Menu',
     shareApp: "Share this App",
     shareMessage: "I'm using this voice-to-text app and it's super useful! Download it here 👉 https://play.google.com/store/apps/details?id=com.katiehuang.audiorecordermvp"
   },
@@ -311,9 +314,11 @@ const translations = {
     segment5min: "5 分鐘",
     segment10min: "10 分鐘",
     segmentNoSplit: "不切斷",
+    textNote: '筆記',
+    createTextNoteFailed: '創建文字筆記失敗',
     shareApp: "分享給朋友",
-    shareMessage: "我正在使用這個錄音轉文字 App，很好用！快來下載 👉 https://play.google.com/store/apps/details?id=com.katiehuang.audiorecordermvp"
-
+    shareMessage: "我正在使用這個錄音轉文字 App，很好用！快來下載 👉 https://play.google.com/store/apps/details?id=com.katiehuang.audiorecordermvp",
+    settingsMenu: '設定',
   },
   ja: {
     record: '録音',
@@ -465,6 +470,9 @@ const translations = {
     segment5min: "5分",
     segment10min: "10分",
     segmentNoSplit: "分割しない",
+    textNote: 'メモ',
+    createTextNoteFailed: 'テキストメモの作成に失敗しました',
+    settingsMenu: '設定',
     shareApp: "友達に共有する",
     shareMessage: "この音声文字起こしアプリを使っています。とても便利ですよ！ダウンロードはこちら 👉 https://play.google.com/store/apps/details?id=com.katiehuang.audiorecordermvp"
   }
