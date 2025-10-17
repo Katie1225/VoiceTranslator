@@ -781,7 +781,11 @@ const RecorderPageVoiceNote = () => {
         const permanentUri = await saveAudioFile(uri, fileName);
 
         const metadata = await generateRecordingMetadata(permanentUri);
-        const { label, metadataLine } = generateDisplayNameParts(noteTitleEditing, metadata.durationSec, t);
+        const { label, metadataLine } = generateDisplayNameParts(
+          noteTitleEditing,
+          metadata.durationSec,
+          t
+        );
         const displayName = label;
         const displayDate = metadataLine;
 
@@ -793,7 +797,7 @@ const RecorderPageVoiceNote = () => {
         });
 
         const newItem: RecordingItem = {
-          uri: permanentUri, // ✅ 使用永久路徑
+          uri: permanentUri,
           name: fileName,
           displayName,
           displayDate,
@@ -804,7 +808,18 @@ const RecorderPageVoiceNote = () => {
           durationSec: metadata.durationSec,
         };
 
-        setRecordings(prev => [newItem, ...prev]);
+        // ✅ 添加到錄音列表
+        const updated = [newItem, ...recordings];
+        setRecordings(updated);
+        await saveRecordings(updated); // 確保立即保存
+
+        setSelectedPlayingIndex(0);
+        setPlayingUri(permanentUri);
+
+        debugLog('✅ 音檔匯入成功，已添加到列表');
+
+        // ✅ 使用與錄音後相同的轉文字提示邏輯
+        await maybePromptTranscribe(0); // 新項目在索引 0
       }
     } catch (err) {
       debugError('❌ 選取音檔失敗', err);
@@ -947,142 +962,142 @@ const RecorderPageVoiceNote = () => {
           <LoginOverlay />
 
           {/* 關鍵筆記 */}
-{showNotesModal && (
-    <View style={{
-        position: 'absolute',
-        bottom: 95,
-        left: 10,
-        right: 10,
-        backgroundColor: colors.container,
-        borderRadius: 12,
-        borderColor: colors.primary,
-        borderWidth: 3,
-        padding: 12,
-        elevation: 10,
-        zIndex: 999,
-    }}>
-        {/* 標題欄 - 新增收起按鈕 */}
-        <View style={{
-            flexDirection: 'row',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: 8,
-        }}>
-            <Text style={{
-                color: colors.text,
-                fontSize: 16,
-                fontWeight: 'bold',
-            }}>{t('notes')}</Text>
-            
-            {/* 收起按鈕 */}
-            <TouchableOpacity 
-                onPress={() => {
+          {showNotesModal && (
+            <View style={{
+              position: 'absolute',
+              bottom: 95,
+              left: 10,
+              right: 10,
+              backgroundColor: colors.container,
+              borderRadius: 12,
+              borderColor: colors.primary,
+              borderWidth: 3,
+              padding: 12,
+              elevation: 10,
+              zIndex: 999,
+            }}>
+              {/* 標題欄 - 新增收起按鈕 */}
+              <View style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 8,
+              }}>
+                <Text style={{
+                  color: colors.text,
+                  fontSize: 16,
+                  fontWeight: 'bold',
+                }}>{t('notes')}</Text>
+
+                {/* 收起按鈕 */}
+                <TouchableOpacity
+                  onPress={() => {
                     // 關閉之前：若草稿有字，先收進當下段
                     if (draftLine.trim()) submitDraftLine();
-                    
+
                     const flat = flattenNoteSegs(noteSegs);
                     const merged = flat || notesEditing || '';
-                    
+
                     if (merged && showNotesIndex !== null) {
-                        const updated = [...recordings];
-                        updated[showNotesIndex].notes = merged;
-                        (updated[showNotesIndex] as any).tempNoteSegs = noteSegs;
-                        setRecordings(updated);
-                        saveRecordings(updated);
+                      const updated = [...recordings];
+                      updated[showNotesIndex].notes = merged;
+                      (updated[showNotesIndex] as any).tempNoteSegs = noteSegs;
+                      setRecordings(updated);
+                      saveRecordings(updated);
                     }
-                    
+
                     setShowNotesModal(false);
+                  }}
+                >
+                  <MaterialCommunityIcons
+                    name="minus"
+                    size={24}
+                    color={colors.text}
+                  />
+                </TouchableOpacity>
+              </View>
+
+              {/* 單行主標題輸入 */}
+              <TextInput
+                placeholder={t('enterTitle')}
+                placeholderTextColor="#888"
+                value={noteTitleEditing}
+                onChangeText={setNoteTitleEditing}
+                style={{
+                  height: 36,
+                  paddingHorizontal: 10,
+                  backgroundColor: colors.background,
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderColor: colors.primary,
+                  color: colors.text,
+                  marginBottom: 12
                 }}
-            >
-                <MaterialCommunityIcons 
-                    name="minus" 
-                    size={24} 
-                    color={colors.text} 
-                />
-            </TouchableOpacity>
-        </View>
+              />
 
-        {/* 單行主標題輸入 */}
-        <TextInput
-            placeholder={t('enterTitle')}
-            placeholderTextColor="#888"
-            value={noteTitleEditing}
-            onChangeText={setNoteTitleEditing}
-            style={{
-                height: 36,
-                paddingHorizontal: 10,
-                backgroundColor: colors.background,
-                borderRadius: 8,
-                borderWidth: 1,
-                borderColor: colors.primary,
-                color: colors.text,
-                marginBottom: 12
-            }}
-        />
-
-        {/* 多行補充內容 */}
-        <ScrollView
-            ref={notesScrollRef}
-            style={{ maxHeight: 200, marginBottom: 8 }}
-            contentContainerStyle={{ paddingBottom: 4, gap: 8 }}
-            keyboardShouldPersistTaps="handled"
-            onContentSizeChange={() => {
-                notesScrollRef.current?.scrollToEnd({ animated: true });
-            }}
-        >
-            {noteSegs.length === 0 ? (
-                <Text style={{ color: '#888' }}>
+              {/* 多行補充內容 */}
+              <ScrollView
+                ref={notesScrollRef}
+                style={{ maxHeight: 200, marginBottom: 8 }}
+                contentContainerStyle={{ paddingBottom: 4, gap: 8 }}
+                keyboardShouldPersistTaps="handled"
+                onContentSizeChange={() => {
+                  notesScrollRef.current?.scrollToEnd({ animated: true });
+                }}
+              >
+                {noteSegs.length === 0 ? (
+                  <Text style={{ color: '#888' }}>
                     {t('notesPlaceholderLine1')}
-                </Text>
-            ) : (
-                noteSegs.map((seg, i) => (
+                  </Text>
+                ) : (
+                  noteSegs.map((seg, i) => (
                     <View key={`${seg.startSec}-${i}`} style={{ gap: 6 }}>
-                        {/* 灰色時間條（不可編） */}
-                        <Text
-                            style={{
-                                color: '#888',
-                                fontSize: 13,
-                                backgroundColor: colors.background,
-                                paddingVertical: 4,
-                                paddingHorizontal: 8,
-                                borderRadius: 6,
-                                borderWidth: 1,
-                                borderColor: colors.primary + '55',
-                            }}
-                        >
-                            {seg.label}
-                        </Text>
+                      {/* 灰色時間條（不可編） */}
+                      <Text
+                        style={{
+                          color: '#888',
+                          fontSize: 13,
+                          backgroundColor: colors.background,
+                          paddingVertical: 4,
+                          paddingHorizontal: 8,
+                          borderRadius: 6,
+                          borderWidth: 1,
+                          borderColor: colors.primary + '55',
+                        }}
+                      >
+                        {seg.label}
+                      </Text>
 
-                        {/* 這一段的可編輯框框 */}
-                        <TextInput
-                            placeholder={t('enterDescription')}
-                            placeholderTextColor="#888"
-                            value={seg.text}
-                            onChangeText={(txt) => {
-                                setNoteSegs(prev => {
-                                    const arr = [...prev];
-                                    arr[i] = { ...arr[i], text: txt };
-                                    return arr;
-                                });
-                            }}
-                            multiline
-                            style={{
-                                minHeight: 60,
-                                padding: 10,
-                                backgroundColor: colors.background,
-                                borderRadius: 8,
-                                borderWidth: 1,
-                                borderColor: colors.primary,
-                                color: colors.text,
-                                textAlignVertical: 'top',
-                            }}
-                        />
+                      {/* 這一段的可編輯框框 */}
+                      <TextInput
+                        placeholder={t('enterDescription')}
+                        placeholderTextColor="#888"
+                        value={seg.text}
+                        onChangeText={(txt) => {
+                          setNoteSegs(prev => {
+                            const arr = [...prev];
+                            arr[i] = { ...arr[i], text: txt };
+                            return arr;
+                          });
+                        }}
+                        multiline
+                        style={{
+                          minHeight: 60,
+                          padding: 10,
+                          backgroundColor: colors.background,
+                          borderRadius: 8,
+                          borderWidth: 1,
+                          borderColor: colors.primary,
+                          color: colors.text,
+                          textAlignVertical: 'top',
+                        }}
+                      />
                     </View>
-                ))
-            )}
-        </ScrollView>
-    </View>
-)}
+                  ))
+                )}
+              </ScrollView>
+            </View>
+          )}
 
           {/* 批量處理音檔 */}
           {isSelectionMode && (

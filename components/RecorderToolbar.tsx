@@ -16,8 +16,8 @@ interface RecorderControlsProps {
     title?: string;
     currentDecibels: number;
     onToggleNotesModal: () => void;
-        isNotesVisible?: boolean;
-    onCreateTextNote: () => void; 
+    isNotesVisible?: boolean;
+    onCreateTextNote: () => void;
 }
 
 const RecorderControls: React.FC<RecorderControlsProps> = ({
@@ -30,7 +30,7 @@ const RecorderControls: React.FC<RecorderControlsProps> = ({
     title,
     currentDecibels,
     onToggleNotesModal,
-     isNotesVisible = false,
+    isNotesVisible = false,
     onCreateTextNote, // 新增：接收創建文字筆記的函數
 }) => {
     const { colors, toggleTheme, setCustomPrimaryColor } = useTheme();
@@ -80,7 +80,7 @@ const RecorderControls: React.FC<RecorderControlsProps> = ({
         return `${h}:${m}:${s}`;
     };
 
-     return (
+    return (
         <>
             <View style={{
                 flexDirection: 'row',
@@ -148,26 +148,24 @@ const RecorderControls: React.FC<RecorderControlsProps> = ({
                 <View style={{ flex: 1.5, marginRight: 0, alignItems: 'center' }}>
                     {/* 錄音時顯示的小三角形 */}
                     {recording && (
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             onPress={onToggleNotesModal}
                             style={{
                                 position: 'absolute',
-                                top: -5,
-                                right: -5,
+                                top: -25,  // 調整位置讓三角形更明顯
+                                right: -25, // 調整位置讓三角形更明顯
                                 zIndex: 10,
-                                backgroundColor: colors.container,
+                                backgroundColor: 'transparent', // 改為透明背景
                                 borderRadius: 10,
-                                padding: 2,
+                                padding: 6, // 增加點擊區域
                             }}
                         >
-                            <MaterialCommunityIcons 
-                                name={isNotesVisible ? "chevron-down" : "chevron-up"} 
-                                size={16} 
-                                color={colors.primary} 
-                            />
+                            {isNotesVisible ? null : (
+                                <MaterialCommunityIcons name="menu-up" size={40} color={colors.text} />
+                            )}
                         </TouchableOpacity>
                     )}
-                    
+
                     <TouchableOpacity
                         style={{
                             width: 60,
@@ -195,11 +193,11 @@ const RecorderControls: React.FC<RecorderControlsProps> = ({
                 {/* 右邊 15% 小本本按鈕 - 保持不變 */}
                 <View style={{ flex: 1.5, marginRight: 20 }}>
                     <TouchableOpacity onPress={onCreateTextNote}>
-                        <MaterialCommunityIcons 
-                            name="text-box-plus" 
-                            size={30} 
-                            color={colors.subtext} 
-                            style={{ marginLeft: 10 }} 
+                        <MaterialCommunityIcons
+                            name="text-box-plus"
+                            size={30}
+                            color={colors.subtext}
+                            style={{ marginLeft: 20 }}
                         />
                     </TouchableOpacity>
                 </View>

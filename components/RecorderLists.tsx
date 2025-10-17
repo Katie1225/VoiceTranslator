@@ -488,9 +488,11 @@ const RecorderLists: React.FC<Props> = ({
                         : selectedPlayingIndex === index || isLastVisitedMainOrChild;
 
                     // 修复：判断是否显示主音档的三个按钮
-                    const shouldShowMainButtons =
-                      (isThisPlaying && !playingUri?.includes('split_')) ||
-                      (selectedPlayingIndex === index && !playingUri?.includes('split_'));
+const shouldShowMainButtons = 
+  (isThisPlaying && !playingUri?.includes('split_')) ||
+  (selectedPlayingIndex === index && !playingUri?.includes('split_')) ||
+  // ✅ 新增：導入音檔也顯示按鈕
+  (!item.uri.includes('rec_') && !item.uri.includes('split_')); // 導入音檔的特徵
 
                     // 修复：获取主音档显示文字
                     const mainDisplayText = getMainItemDisplayText(item);

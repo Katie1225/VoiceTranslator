@@ -341,15 +341,17 @@ export const sendToWhisper = async (
 
     // ✅ 動態設定檔案類型和 MIME 類型
     const fileExtension = audioUri.split('.').pop()?.toLowerCase() || 'm4a';
-    let mimeType = 'audio/mp4'; // M4A 的預設 MIME 類型
-    
-    // 根據副檔名設定正確的 MIME 類型
-    if (fileExtension === 'wav') {
-      mimeType = 'audio/wav';
-    } else if (fileExtension === 'mp3') {
-      mimeType = 'audio/mpeg';
-    }
-
+// 根據副檔名設定正確的 MIME 類型
+let mimeType = 'audio/mp4'; // 預設
+if (fileExtension === 'wav') {
+  mimeType = 'audio/wav';
+} else if (fileExtension === 'mp3') {
+  mimeType = 'audio/mpeg';
+} else if (fileExtension === 'm4a') {
+  mimeType = 'audio/mp4';
+} else if (fileExtension === 'aac') {
+  mimeType = 'audio/aac';
+}
     const formData = new FormData();
     formData.append('audio', {
       uri: audioUri,
@@ -741,29 +743,28 @@ export async function generateRecordingMetadata(uri: string): Promise<{
     const { duration } = await getAudioDuration(uri);
     durationSec = Math.round(duration);
 
+    // ✅ 針對導入音檔：嘗試從檔案屬性獲取創建時間
     try {
-      // ✅ 使用 expo-file-system 獲取檔案資訊
       const fileInfo = await FileSystem.getInfoAsync(uri);
       if (fileInfo.exists) {
-        // 注意：expo-file-system 的 getInfoAsync 不提供 mtime
-        // 我們使用當前時間減去音檔時長來估算開始時間
-        const now = new Date();
-        startDate = new Date(now.getTime() - durationSec * 1000);
+        // 導入音檔：使用當前時間作為錄音時間
+        startDate = new Date();
       }
     } catch {
-      const now = new Date();
-      startDate = new Date(now.getTime() - durationSec * 1000);
+      // 失敗時使用當前時間
+      startDate = new Date();
     }
   } catch (error) {
     debugError('獲取音檔時長失敗:', error);
+    // ✅ 導入音檔容錯：設置預設時長
+    durationSec = 0;
   }
 
-  // ✅ 使用 expo-file-system 獲取檔案大小
   const fileInfo = await FileSystem.getInfoAsync(uri);
   return {
     date: startDate.toISOString(),
     durationSec,
-    size: fileInfo.exists ? (fileInfo as any).size || 0 : 0 
+    size: fileInfo.exists ? (fileInfo as any).size || 0 : 0
   };
 }
 

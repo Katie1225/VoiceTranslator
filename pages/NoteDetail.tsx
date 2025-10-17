@@ -1365,38 +1365,87 @@ export default function NoteDetailPage() {
     return lines.filter(Boolean).join('\n\n').trim();
   }
 
-  const handleShare = async () => {
-    const isMainAudio = !uri;
+const handleShare = async () => {
+  const isMainAudio = !uri;
+  const parts = recordings[index]?.derivedFiles?.splitParts || [];
 
-    // 主音檔 + 工具箱(summary) 視圖：直接分享聚合好的純文字
-    if (isMainAudio && viewType === 'summary') {
-      const content = buildAggregatedContentForMainSummary(
-        recordings,
-        index,
-        summaryMode,
-        `${currentItem.displayName || ''} — ${t('toolbox')}`
-      );
+  let shareContent = '';
 
-      if (!content) {
-        Alert.alert(t('error'), t('shareFailed')); // 可換成你的文案
-        return;
+  try {
+    // 根據當前視圖類型獲取分享內容
+    if (viewType === 'notes') {
+      // Notes 分享：使用與顯示相同的內容
+      shareContent = currentItem.notes || '';
+      
+    } else if (viewType === 'transcript') {
+      // Transcript 分享
+      if (isMainAudio && parts.length > 0) {
+        // 長音檔：使用分段逐字稿（與顯示相同邏輯）
+        const segments = parts.map((p: any) => {
+          const text = (p?.transcript || '').trim();
+          return {
+            name: p.displayName || p.name || 'Segment',
+            text: text || t('transcribingInProgress'),
+          };
+        }).filter(seg => seg.text);
+        
+        shareContent = segments.map(seg => `${seg.name}\n${seg.text}`).join('\n\n');
+      } else {
+        // 短音檔或子音檔：直接使用 transcript
+        shareContent = isTranscribing ? partialTranscript : finalTranscript;
       }
+      
+    } else if (viewType === 'summary') {
+      // Summary 分享
+      if (isMainAudio && parts.length > 0 && summaryMode === 'summary') {
+        // 長音檔：使用分段摘要（與顯示相同邏輯）
+        const segments = parts
+          .map((p: any) => ({
+            uri: String(p.uri ?? ''),
+            name: String(p.displayName ?? p.name ?? 'Segment'),
+            text: String(p?.summaries?.[summaryMode] ?? '').trim(),
+          }))
+          .filter((s: { text: string }) => s.text.length > 0);
 
-      try {
-        await Share.share({
-          title: currentItem.displayName || 'Export',
-          message: content, // 直接丟文字
-        });
-      } catch (e) {
-        Alert.alert(t('error'), t('shareFailed'));
+        if (segments.length > 0) {
+          shareContent = segments.map(seg => `${seg.name}\n${seg.text}`).join('\n\n');
+        } else {
+          // 沒有分段摘要，回退到主音檔摘要
+          shareContent = summaries?.[summaryMode] || '';
+        }
+      } else {
+        // 短音檔、子音檔或其他摘要模式
+        shareContent = summaries?.[summaryMode] || '';
       }
+    }
+
+    // 檢查內容是否為空
+    if (!shareContent.trim()) {
+      Alert.alert(t('error'), t('noContentToShare'));
       return;
     }
 
-    // 其他情境維持原行為
-    await shareRecordingNote(currentItem, viewType as 'transcript' | 'summary' | 'notes', summaryMode);
-  };
+    // 建立標題（檔名 + 時間，分兩行）
+    const titleLine1 = currentItem.displayName || currentItem.name || 'Audio';
+    const titleLine2 = currentItem.displayDate || '';
+    
+    const fullTitle = titleLine2 ? `${titleLine1}\n${titleLine2}` : titleLine1;
 
+    // 組合完整分享內容：標題 + 內容
+    const fullShareContent = `${fullTitle}\n\n${shareContent}`;
+
+    // 執行分享
+    await Share.share({
+      title: `${titleLine1} - ${t(viewType)}`, // 這裡只放檔名作為分享標題
+      message: fullShareContent, // 完整內容包含檔名、時間和實際內容
+    });
+
+  } catch (error) {
+    console.error('Share failed:', error);
+    Alert.alert(t('error'), t('shareFailed'));
+  }
+};
+  
 
   const content =
     viewType === 'transcript'

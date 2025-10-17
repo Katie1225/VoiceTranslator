@@ -2,7 +2,6 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, TextInput } from 'react-native';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
-import HamburgerMenu from './HamburgerMenu';
 import { useTheme } from '../constants/ThemeContext';
 import { handleLogin } from '../utils/loginHelpers';
 import { Platform } from 'react-native';
@@ -52,7 +51,6 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
     setIsLoggingIn = noop,
   } = props;
   const { colors } = useTheme();
-  const [menuVisible, setMenuVisible] = useState(false);
   const [isSortModalVisible, setIsSortModalVisible] = useState(false);
   const [isSearchModalVisible, setIsSearchModalVisible] = useState(false);
   const navigation = useNavigation();
@@ -83,15 +81,15 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
       >
         {/* 左側按鈕區塊 */}
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-        {mode === 'detail' ? (
-  <TouchableOpacity onPress={onBack}>
-    <Icon name="arrow-left" size={30} color={colors.primary} />
-  </TouchableOpacity>
-) : (
-  <TouchableOpacity onPress={() => navigation.navigate('MenuPage' as never)}>
-    <Icon name="menu" size={34} color={colors.primary} />
-  </TouchableOpacity>
-)}
+          {mode === 'detail' ? (
+            <TouchableOpacity onPress={onBack}>
+              <Icon name="arrow-left" size={30} color={colors.primary} />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity onPress={() => navigation.navigate('MenuPage' as never)}>
+              <Icon name="menu" size={34} color={colors.primary} />
+            </TouchableOpacity>
+          )}
 
           <Text
             numberOfLines={1}
@@ -130,27 +128,6 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
             )}
           </View>
         )}
-
-
-
-        {mode !== 'detail' && (
-          <HamburgerMenu
-            visible={menuVisible}
-            onClose={() => setMenuVisible(false)}
-            onLoginPress={async () => {
-              const result = await handleLogin(setIsLoggingIn);
-              if (result) {
-                return new Promise((resolve) => {
-                  resolve(true);
-                  setMenuVisible(false);
-                });
-              }
-              return false;
-            }}
-            onLoginSuccess={() => setMenuVisible(false)}
-          />
-        )}
-
       </View>
 
       {isSortModalVisible && (
