@@ -1,7 +1,7 @@
 //pages/MenuPage.tsx
 
 import React, { useEffect, useState } from 'react';
-import { ScrollView, View, Text, TouchableOpacity, Image, Share, Dimensions, Alert, Linking } from 'react-native';
+import { ScrollView, View, Text, TouchableOpacity, Image, Share, Dimensions, Alert, Linking,Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { logCoinUsage, fetchUserInfo } from '../utils/googleSheetAPI';
@@ -14,6 +14,7 @@ import { useLanguage } from '../constants/LanguageContext';
 import { debugError } from '@/utils/debugLog';
 import RecorderHeader from '../components/RecorderHeader';
 import { useNavigation } from '@react-navigation/native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 type GoogleUser = {
   id: string;
@@ -24,6 +25,7 @@ type GoogleUser = {
   photo?: string;
   coins?: number;
 };
+
 
 export default function MenuPage() {
   const { colors, styles, isDarkMode, toggleTheme, setCustomPrimaryColor, customPrimaryColor, additionalColors } = useTheme();
@@ -110,7 +112,7 @@ export default function MenuPage() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
+<SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
       <RecorderHeader
         mode="detail"
         title={t('settingsMenu')}
@@ -287,6 +289,6 @@ export default function MenuPage() {
           })}
         </View>
       </ScrollView>
-    </View>
+</SafeAreaView>
   );
 }

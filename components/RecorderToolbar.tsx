@@ -190,17 +190,19 @@ const RecorderControls: React.FC<RecorderControlsProps> = ({
                     </TouchableOpacity>
                 </View>
 
-                {/* 右邊 15% 小本本按鈕 - 保持不變 */}
-                <View style={{ flex: 1.5, marginRight: 20 }}>
-                    <TouchableOpacity onPress={onCreateTextNote}>
-                        <MaterialCommunityIcons
-                            name="text-box-plus"
-                            size={30}
-                            color={colors.subtext}
-                            style={{ marginLeft: 20 }}
-                        />
-                    </TouchableOpacity>
-                </View>
+                {/* 右邊 15% 小本本按鈕 - 隱藏時佔位 */}
+<View style={{ flex: 1.5, marginRight: 20 }}>
+  {!recording && (
+    <TouchableOpacity onPress={onCreateTextNote}>
+      <MaterialCommunityIcons
+        name="text-box-plus"
+        size={30}
+        color={colors.subtext}
+        style={{ marginLeft: 20 }}
+      />
+    </TouchableOpacity>
+  )}
+</View>
             </View>
         </>
     );

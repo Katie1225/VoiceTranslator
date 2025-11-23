@@ -22,7 +22,7 @@ export const renderFilename = (
 
   const isPlayingThis = playingUri === uri;
   const label = iconPrefix ? `${iconPrefix} ${name}` : name;
-const { t } = useTranslation();
+  const { t } = useTranslation();
   return (
     <TouchableOpacity
       style={[isDerived ? styles.derivedFileItem : styles.nameContainer, { flex: 1 }]}
@@ -77,9 +77,9 @@ export const renderNoteBlock = (props: {
   type: 'transcript' | 'summary' | 'notes';
   index: number;
   value: string;
-  uri?: string; 
+  uri?: string;
   editingIndex: number | null;
-  editingUri?: string | null;  
+  editingUri?: string | null;
   editValue: string;
   onChangeEdit: (text: string) => void;
   onSave: () => void;
@@ -146,11 +146,11 @@ export const renderNoteBlock = (props: {
           />
         ) : props.renderContent ? (
           // ✅ 修正：直接返回 renderContent()，不包裹在 Text 中
-  <Text style={{ color: colors.text, fontSize: 16, lineHeight: 24 }}>
-    {/* 使用空的 Text 組件來建立繼承上下文 */}
-    <Text>{""}</Text>
-    {props.renderContent()}
-  </Text>
+          <Text selectable style={{ color: colors.text, fontSize: 16, lineHeight: 24 }}>
+            {/* 使用空的 Text 組件來建立繼承上下文 */}
+            <Text>{""}</Text>
+            {props.renderContent()}
+          </Text>
         ) : (
           // ✅ 非重組顯示：純文字才用 Text 組件
           <Text

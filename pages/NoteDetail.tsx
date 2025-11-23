@@ -173,7 +173,7 @@ export default function NoteDetailPage() {
 
     const parts = text.split(new RegExp(`(${keyword})`, 'gi'));
     return (
-      <Text style={styles.transcriptText}>
+      <Text style={styles.transcriptText}   selectable >
         {parts.map((part, i) =>
           part.toLowerCase() === keyword.toLowerCase() ? (
             <Text

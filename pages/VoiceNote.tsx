@@ -4,7 +4,7 @@ import {
   View,
   Text,
   TouchableOpacity,
-  SafeAreaView, StatusBar,
+  StatusBar,
   TextInput,
   Alert,
   ActivityIndicator,
@@ -13,6 +13,7 @@ import {
   ScrollView,
   Dimensions
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import SoundLevel from 'react-native-sound-level';
 import * as FileSystem from 'expo-file-system'; // ✅ 統一使用 expo-file-system
 import { useKeepAwake } from 'expo-keep-awake';
@@ -847,15 +848,45 @@ const RecorderPageVoiceNote = () => {
   };
 
   return (
-    <>
-      <StatusBar
-        backgroundColor={colors.container}
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-      />
-      <TouchableWithoutFeedback onPress={() => closeAllMenus({ preserveEditing: false })}>
-        <SafeAreaView style={[styles.container, { marginTop: 0, paddingTop: 0 }]}>
-          <>
-            {/* 錄音列表 */}
+   <>
+    <TouchableWithoutFeedback onPress={() => closeAllMenus({ preserveEditing: false })}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+        {/* 主要內容區域 */}
+        <View style={{ flex: 1 }}>
+          
+          {/* 頂部 Header - 固定高度 */}
+          <View style={{ backgroundColor: colors.container, zIndex: 100 }}>
+            <RecorderHeader
+              mode="main"
+              onPickAudio={pickAudio}
+              onCloseAllMenus={closeAllMenus}
+              sortOption={sortOption}
+              setSortOption={setSortOption}
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              setIsLoggingIn={setIsLoggingIn}
+              rightSlot={
+                searchQuery.trim() ? (
+                  <TouchableOpacity
+                    onPress={() => {
+                      const itemsToAnalyze = getFilteredSortedRecordings();
+                      navigation.navigate('TopicSummaryPage', {
+                        items: itemsToAnalyze,
+                        keyword: searchQuery.trim(),
+                      });
+                    }}
+                  >
+                    <Text style={{ color: colors.primary, fontWeight: 'bold' }}>
+                      {t('keywordSummaryPrefix')}{searchQuery.trim()}{t('keywordSummarySuffix')}
+                    </Text>
+                  </TouchableOpacity>
+                ) : undefined
+              }
+            />
+          </View>
+
+          {/* 錄音列表 - 佔據剩餘空間 */}
+          <View style={{ flex: 1, backgroundColor: colors.background }}>
             <RecorderLists
               items={getFilteredSortedRecordings()}
               searchQuery={searchQuery}
@@ -870,94 +901,58 @@ const RecorderPageVoiceNote = () => {
               saveRecordings={saveRecordings}
               safeDeleteFile={safeDeleteFile}
             />
+          </View>
 
-            {/* 整個上半段背景 */}
-            <View style={{ position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: colors.container, zIndex: 100, }}>
-              <RecorderHeader
-                mode="main"
-                onPickAudio={pickAudio}
-                onCloseAllMenus={closeAllMenus}
-                sortOption={sortOption}
-                setSortOption={setSortOption}
-                searchQuery={searchQuery}
-                setSearchQuery={setSearchQuery}
+          {/* 底部工具列 - 固定高度 */}
+          {searchQuery.trim() !== '' ? (
+            <SearchToolbar
+              resultCount={getFilteredSortedRecordings().length}
+              onCancelSearch={() => setSearchQuery('')}
+            />
+          ) : (
+            <View style={{
+              backgroundColor: colors.container,
+              paddingVertical: 10,
+              borderTopWidth: 3,
+              borderTopColor: colors.primary,
+            }}>
+              <RecorderControls
+                recording={recording}
+                recordingTimeRef={recordingTimeRef}
+                startRecording={startRecording}
+                stopRecording={stopRecording}
+                pickAudio={pickAudio}
                 setIsLoggingIn={setIsLoggingIn}
-                rightSlot={
-                  searchQuery.trim() ? (
-                    <TouchableOpacity
-                      onPress={() => {
-                        const itemsToAnalyze = getFilteredSortedRecordings();
-                        navigation.navigate('TopicSummaryPage', {
-                          items: itemsToAnalyze,
-                          keyword: searchQuery.trim(),
-                        });
-                      }}
-                    >
-                      <Text style={{ color: colors.primary, fontWeight: 'bold' }}>
-                        {t('keywordSummaryPrefix')}{searchQuery.trim()}{t('keywordSummarySuffix')}
-                      </Text>
-                    </TouchableOpacity>
-                  ) : undefined
-                }
+                title={title}
+                currentDecibels={currentDecibels}
+                onToggleNotesModal={() => {
+                  closeAllMenus();
+                  if (showNotesModal) {
+                    if (draftLine.trim()) submitDraftLine();
+
+                    const flat = flattenNoteSegs(noteSegs);
+                    const merged = flat || notesEditing || '';
+
+                    if (merged && showNotesIndex !== null) {
+                      const updated = [...recordings];
+                      updated[showNotesIndex].notes = merged;
+                      (updated[showNotesIndex] as any).tempNoteSegs = noteSegs;
+                      setRecordings(updated);
+                      saveRecordings(updated);
+                    }
+                    resetNotesDraft();
+                    setNoteSegs([]);
+                    lastSegIdxRef.current = -1;
+                    setDraftLine('');
+                  }
+                  setShowNotesModal(prev => !prev);
+                }}
+                isNotesVisible={showNotesModal}
+                onCreateTextNote={createTextNote}
               />
             </View>
-
-            {/* 底部工具列 */}
-            {searchQuery.trim() !== '' ? (
-              <SearchToolbar
-                resultCount={getFilteredSortedRecordings().length}
-                onCancelSearch={() => setSearchQuery('')}
-              />
-            ) : (
-              <View style={{
-                position: 'absolute',
-                bottom: 0,
-                left: 0,
-                right: 0,
-                backgroundColor: colors.container,
-                paddingVertical: 10,
-                borderTopWidth: 3,
-                borderTopColor: colors.primary,
-                zIndex: 100,
-              }}>
-                <RecorderControls
-                  recording={recording}
-                  recordingTimeRef={recordingTimeRef}
-                  startRecording={startRecording}
-                  stopRecording={stopRecording}
-                  pickAudio={pickAudio}
-                  setIsLoggingIn={setIsLoggingIn}
-                  title={title}
-                  currentDecibels={currentDecibels}
-                  onToggleNotesModal={() => {
-                    closeAllMenus();
-                    if (showNotesModal) {
-                      if (draftLine.trim()) submitDraftLine();
-
-                      const flat = flattenNoteSegs(noteSegs);
-                      const merged = flat || notesEditing || '';
-
-                      if (merged && showNotesIndex !== null) {
-                        const updated = [...recordings];
-                        updated[showNotesIndex].notes = merged;
-                        (updated[showNotesIndex] as any).tempNoteSegs = noteSegs;
-                        setRecordings(updated);
-                        saveRecordings(updated);
-                      }
-                      resetNotesDraft();
-                      setNoteSegs([]);
-                      lastSegIdxRef.current = -1;
-                      setDraftLine('');
-                    }
-                    setShowNotesModal(prev => !prev);
-                  }}
-                  isNotesVisible={showNotesModal}
-                  onCreateTextNote={createTextNote}
-                />
-              </View>
-            )}
-          </>
-
+          )}
+        </View>
           {/* 登入遮罩 */}
           <LoginOverlay />
 
@@ -965,7 +960,7 @@ const RecorderPageVoiceNote = () => {
           {showNotesModal && (
             <View style={{
               position: 'absolute',
-              bottom: 95,
+              bottom: 140,
               left: 10,
               right: 10,
               backgroundColor: colors.container,

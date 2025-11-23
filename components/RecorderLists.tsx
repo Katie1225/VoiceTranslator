@@ -448,10 +448,7 @@ const RecorderLists: React.FC<Props> = ({
                   }}
                   scrollEnabled={!editingState.type}
                   keyboardShouldPersistTaps="handled"
-                  style={[styles.listContainer, {
-                    marginTop: 40,
-                    marginBottom: 90,
-                  }]}
+                  style={styles.listContainer}
                   data={items}
                   keyExtractor={(item) => item.uri}
                   contentContainerStyle={{
