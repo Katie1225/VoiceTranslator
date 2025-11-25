@@ -513,6 +513,7 @@ modalClose: {
   fontSize: 16,
   color: colors.text, // 根據深色/淺色切換
 },
+
  
 });
 

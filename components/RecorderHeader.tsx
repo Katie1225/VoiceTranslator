@@ -1,10 +1,7 @@
-// components/RecorderHeader.tsx
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, TextInput } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput, Platform, Image } from 'react-native';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { useTheme } from '../constants/ThemeContext';
-import { handleLogin } from '../utils/loginHelpers';
-import { Platform } from 'react-native';
 import { APP_TITLE } from '../constants/variant';
 import { useTranslation } from '../constants/i18n';
 import { useNavigation } from '@react-navigation/native';
@@ -13,57 +10,48 @@ interface RecorderHeaderProps {
   mode?: 'main' | 'detail';
   title?: string;
   onBack?: () => void;
-  onPickAudio?: () => void;
+  onDelete?: () => void;  // 改為清除用
   onCloseAllMenus?: () => void;
-  sortOption?: 'latest' | 'oldest' | 'size' | 'name-asc' | 'name-desc' | 'starred';
-  setSortOption?: (opt: any) => void;
   searchQuery?: string;
   setSearchQuery?: (s: string) => void;
   rightSlot?: React.ReactNode;
   setIsLoggingIn?: (v: boolean) => void;
+  autoPlayEnabled?: boolean;
+  toggleAutoPlay?: () => void;
+  onToggleLayout?: () => void;
+  onSwapLanguages?: () => void;
+    isLanguageSwapped?: boolean;
 }
-
-
 
 const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
   const noop = () => { };
   const defaultStr = '';
   const { t } = useTranslation();
-  const labelMap: Record<string, string> = {
-    latest: t('sortNewest'),
-    oldest: t('sortOldest'),
-    size: t('sortBySize'),
-    'name-asc': t('sortByName'),
-    'name-desc': t('sortByNameDesc'),
-    starred: t('sortByFavoriteStar'),
-  };
   const {
     mode,
     onBack,
     title,
-    onPickAudio = noop,
+    onDelete = noop, // 現在是清除按鈕要用的函式
     onCloseAllMenus = noop,
-    sortOption = 'latest',
-    setSortOption = noop,
-    searchQuery = defaultStr,
-    setSearchQuery = noop,
     rightSlot,
-    setIsLoggingIn = noop,
+    autoPlayEnabled = false,
+    toggleAutoPlay,
+    onToggleLayout,
+    onSwapLanguages,
+     isLanguageSwapped = false,
   } = props;
   const { colors } = useTheme();
-  const [isSortModalVisible, setIsSortModalVisible] = useState(false);
-  const [isSearchModalVisible, setIsSearchModalVisible] = useState(false);
   const navigation = useNavigation();
 
-  const toggleSort = () => {
-    onCloseAllMenus();
-    setIsSortModalVisible((v) => !v);
+  const [isPressed, setIsPressed] = useState(false);
+
+  const handleSwapPress = () => {
+    // 按下時變色
+    setIsPressed(true);
+    props.onSwapLanguages?.();
+
   };
 
-  const toggleSearch = () => {
-    onCloseAllMenus();
-    setIsSearchModalVisible((v) => !v);
-  };
 
   return (
     <>
@@ -72,10 +60,14 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
-          paddingHorizontal: 16,
+          width: '100%',
+          alignSelf: 'stretch',
+          paddingHorizontal: 14,
           paddingVertical: 8,
           backgroundColor: colors.container,
-          borderBottomWidth: 2,
+          borderTopWidth: 1,
+          borderTopColor: colors.primary,
+          borderBottomWidth: 1,
           borderBottomColor: colors.primary,
         }}
       >
@@ -97,7 +89,7 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
               fontFamily: Platform.OS === 'ios' ? 'Avenir' : 'sans-serif-medium',
               marginLeft: 10,
               fontSize: 20,
-              fontWeight: '600',
+              fontWeight: '500',
               color: colors.text,
             }}
           >
@@ -105,172 +97,61 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
           </Text>
         </View>
 
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
 
-        {rightSlot != null ? (
-          React.isValidElement(rightSlot)
-            ? <View>{rightSlot}</View>
-            : <Text>{String(rightSlot)}</Text>   // 傳字串/數字時，用 <Text> 包
-        ) : (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
-            <TouchableOpacity onPress={toggleSearch}>
-              <Icon name="magnify" size={30} color={colors.primary} />
+          <TouchableOpacity onPress={() => navigation.navigate('LanguagePage' as never)}>
+            <Icon name="triangle" size={20} color={colors.primary} style={{ transform: [{ rotate: '180deg' }] }} />
+          </TouchableOpacity>
+
+          {/* 🔄 語言交換按鈕 */}
+          {props.onSwapLanguages && (
+            <TouchableOpacity onPress={handleSwapPress}>
+              <View style={{ padding: 6 }}>
+                <View
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 4,
+                    backgroundColor: isLanguageSwapped ? colors.primary : colors.container,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                  }}
+                >
+                  {/* 安全的圖片渲染 */}
+                  <Image
+                    source={require('../assets/translate_swap3.png')}
+                    style={{
+                      width: 34,
+                      height: 34,
+                      tintColor: isLanguageSwapped ? colors.background : colors.primary,
+                      resizeMode: 'contain',
+                    }}
+                    onError={(e) => console.log('圖片載入失敗:', e.nativeEvent.error)}
+                  />
+                </View>
+              </View>
             </TouchableOpacity>
+          )}
 
-            {mode !== 'detail' && (
-              <>
-                <TouchableOpacity onPress={toggleSort}>
-                  <Icon name="sort" size={30} color={colors.primary} />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={onPickAudio}>
-                  <Icon name="folder" size={30} color={colors.primary} />
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
-        )}
+          {toggleAutoPlay && (
+            <TouchableOpacity onPress={toggleAutoPlay}>
+              <Icon
+                name={autoPlayEnabled ? 'volume-high' : 'volume-off'}
+                size={28}
+                color={colors.primary}
+              />
+            </TouchableOpacity>
+          )}
+
+          {onDelete !== noop && (
+            <TouchableOpacity onPress={onDelete}>
+              <Icon name="delete-outline" size={30} color={colors.primary} />
+            </TouchableOpacity>
+          )}
+        </View>
+
+
       </View>
-
-      {isSortModalVisible && (
-        <View
-          style={{
-            position: 'absolute',
-            top: 55,
-            left: 100,
-            right: 10,
-            backgroundColor: colors.container,
-            borderTopLeftRadius: 12,
-            borderTopRightRadius: 12,
-            borderColor: colors.primary,
-            padding: 12,
-            elevation: 10,
-            zIndex: 999,
-          }}
-        >
-          <Text style={{ fontSize: 12, color: colors.subtext, marginBottom: 4 }}>
-            {`${t('currentSort')}：${labelMap[sortOption]}`}
-          </Text>
-          <View style={{ height: 12 }} />
-          <Text
-            style={{
-              color: colors.text,
-              fontSize: 16,
-              fontWeight: 'bold',
-              marginBottom: 8,
-            }}
-          >
-            {t('chooseSort')}
-          </Text>
-
-          {Object.entries(labelMap).map(([key, label]) => (
-            <TouchableOpacity
-              key={key}
-              style={{
-                paddingVertical: 10,
-                borderBottomWidth: 1,
-                borderColor: colors.border || '#444',
-              }}
-              onPress={() => {
-                setSortOption(key as any);
-                // setIsSortModalVisible(false);
-              }}
-            >
-              <Text
-                style={{
-                  color: sortOption === key ? colors.primary : colors.text,
-                  fontWeight: sortOption === key ? 'bold' : 'normal',
-                }}
-              >
-                {label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
-
-            <TouchableOpacity
-              onPress={() => {
-                setSortOption?.('latest'); // ✅ 清回預設排序（可改成你預設想要的）
-                setIsSortModalVisible(false);
-              }}
-              style={{ paddingVertical: 10, flex: 1, alignItems: 'center' }}
-            >
-              <Text style={{ color: colors.subtext }}>{t('cancel')}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setIsSortModalVisible(false)}
-              style={{ paddingVertical: 10, flex: 1, alignItems: 'center' }}
-            >
-              <Text style={{ color: colors.primary }}>{t('confirm')}</Text>
-            </TouchableOpacity>
-
-
-          </View>
-        </View>
-      )}
-
-      {isSearchModalVisible && (
-        <View
-          style={{
-            position: 'absolute',
-            top: 55,
-            left: 100,
-            right: 10,
-            backgroundColor: colors.container,
-            borderTopLeftRadius: 12,
-            borderTopRightRadius: 12,
-            borderColor: colors.primary,
-            padding: 12,
-            elevation: 10,
-            zIndex: 999,
-          }}
-        >
-          <Text
-            style={{
-              color: colors.text,
-              fontSize: 16,
-              fontWeight: 'bold',
-              marginBottom: 8,
-            }}
-          >
-            {mode === 'detail' ? t('searchContent') : t('searchPlaceholder')}
-          </Text>
-
-          <TextInput
-            placeholder={t('enterKeyword')}
-            placeholderTextColor="#888"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            style={{
-              borderColor: colors.primary,
-              borderWidth: 1,
-              padding: 10,
-              borderRadius: 8,
-              color: colors.text,
-              backgroundColor: colors.background,
-              marginBottom: 16,
-            }}
-          />
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
-
-            <TouchableOpacity
-              onPress={() => {
-                setIsSearchModalVisible(false);
-                setSearchQuery?.(''); // ✅ 清空搜尋欄內容
-              }}
-              style={{ paddingVertical: 10, flex: 1, alignItems: 'center' }}
-            >
-              <Text style={{ color: colors.subtext }}>{t('cancel')}</Text>
-
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => setIsSearchModalVisible(false)}
-              style={{ paddingVertical: 10, flex: 1, alignItems: 'center' }}
-            >
-              <Text style={{ color: colors.primary }}>{t('confirm')}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
     </>
   );
 };

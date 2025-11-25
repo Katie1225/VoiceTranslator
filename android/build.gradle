@@ -1,59 +1,37 @@
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 
 buildscript {
-    ext {
-        buildToolsVersion = findProperty('android.buildToolsVersion') ?: '35.0.0'
-        minSdkVersion = Integer.parseInt(findProperty('android.minSdkVersion') ?: '24')
-        compileSdkVersion = Integer.parseInt(findProperty('android.compileSdkVersion') ?: '35')
-        targetSdkVersion = Integer.parseInt(findProperty('android.targetSdkVersion') ?: '35')
-        kotlinVersion = findProperty('android.kotlinVersion') ?: '1.9.25'
-
-        ndkVersion = "28.0.13004108"
-    }
-    repositories {
-        google()
-        mavenCentral()
-    }
-    dependencies {
-        classpath("com.android.tools.build:gradle:8.5.2")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")
-        classpath('com.facebook.react:react-native-gradle-plugin')
-    }
+  repositories {
+    google()
+    mavenCentral()
+  }
+  dependencies {
+    classpath('com.android.tools.build:gradle')
+    classpath('com.facebook.react:react-native-gradle-plugin')
+    classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
+  }
 }
 
-apply plugin: "com.facebook.react.rootproject"
+def reactNativeAndroidDir = new File(
+  providers.exec {
+    workingDir(rootDir)
+    commandLine("node", "--print", "require.resolve('react-native/package.json')")
+  }.standardOutput.asText.get().trim(),
+  "../android"
+)
 
 allprojects {
   repositories {
-    // 先放標準倉庫
+    maven {
+      // All of React Native (JS, Obj-C sources, Android binaries) is installed from npm
+      url(reactNativeAndroidDir)
+    }
+
     google()
     mavenCentral()
     maven { url 'https://www.jitpack.io' }
-
-    // ⚠️ 只讓 Arthenica 倉庫供應自家 group，避免攔截 SoLoader / Fresco / FBJNI
-    exclusiveContent {
-      forRepository {
-      //  maven { url "https://repo.arthenica.com/releases" }
-      }
-      filter {
-     //   includeGroupByRegex "com\\.arthenica(\\..*)?"   // 只允許 com.arthenica* 的套件
-      }
-    }
-  }
-
-  configurations.all {
-    resolutionStrategy {
-      // Fresco 建議 3.3.0（或更高，例如 3.6.0 也在 Maven Central，有需要再升）
-      force "com.facebook.fresco:fresco:3.6.0"
-      force "com.facebook.fresco:imagepipeline-native:3.6.0"
-      force "com.facebook.fresco:nativeimagefilters:3.6.0"
-      force "com.facebook.fresco:nativeimagetranscoder:3.6.0"
-
-      // ✅ SoLoader 改成 0.12.1（目前中央倉庫的最新）
-      force "com.facebook.soloader:soloader:0.12.1"
-
-      // ✅ FBJNI 保持 0.7.0
-      force "com.facebook.fbjni:fbjni:0.7.0"
-    }
   }
 }
+
+apply plugin: "expo-root-project"
+apply plugin: "com.facebook.react.rootproject"

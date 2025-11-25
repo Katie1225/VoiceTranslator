@@ -1,12 +1,12 @@
 // components/LoginOverlay.tsx
 import React from 'react';
 import { View, Text } from 'react-native';
-import { useLoginContext } from '../constants/LoginContext';
+import { useLogin } from '../constants/LoginContext';
 import { useTheme } from '../constants/ThemeContext';
 import { useTranslation } from '../constants/i18n';
 
 export default function LoginOverlay() {
-  const { isLoggingIn } = useLoginContext();
+  const { isLoggingIn } = useLogin();
   const { colors } = useTheme();
 const { t } = useTranslation();
   if (!isLoggingIn) return null;

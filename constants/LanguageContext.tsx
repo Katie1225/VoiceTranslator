@@ -20,6 +20,7 @@ export const LanguageProvider = ({ children }: { children: React.ReactNode }) =>
   const setAppLocale = async (lang: LanguageCode) => {
     await AsyncStorage.setItem('appLang', lang);
     setLocale(lang);
+    debugLog(`🌍 手動設定語言: ${lang}`);
   };
 
   useEffect(() => {
@@ -31,18 +32,26 @@ export const LanguageProvider = ({ children }: { children: React.ReactNode }) =>
       const primaryLocale = deviceLocales[0];
       const deviceLang = primaryLocale?.languageCode || 'en';
       
-      debugLog('🌍 裝置語言資訊:', {
-        locales: deviceLocales,
+      debugLog('🌍 裝置語言偵測詳細資訊:', {
+        savedLanguage: saved,
+        deviceLocales: deviceLocales.map(l => ({
+          languageCode: l.languageCode,
+          languageTag: l.languageTag,
+          regionCode: l.regionCode
+        })),
         primaryLanguage: deviceLang,
-        region: primaryLocale?.regionCode
+        finalLanguage: saved || deviceLang
       });
 
       if (saved && (saved === 'en' || saved === 'zh' || saved === 'ja')) {
         setLocale(saved as LanguageCode);
+        debugLog(`🌍 使用儲存的語言: ${saved}`);
       } else if (deviceLang === 'zh' || deviceLang === 'ja') {
         setLocale(deviceLang as LanguageCode);
+        debugLog(`🌍 使用裝置語言: ${deviceLang}`);
       } else {
         setLocale('en');
+        debugLog('🌍 使用預設語言: en');
       }
     };
     init();

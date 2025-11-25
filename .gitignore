@@ -40,3 +40,13 @@ app-example
 android/.cxx/
 android/app/build/
 android/build/
+
+.env
+*.env
+zz/.env
+android/app/libs/*.aar
+android/aab_out/
+assets/models/
+*.aab
+*.so
+

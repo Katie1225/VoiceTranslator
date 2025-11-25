@@ -19,7 +19,7 @@ router.post('/', async (req, res) => {
     const gptResponse = await axios.post(
       'https://api.openai.com/v1/chat/completions',
       {
-        model: 'gpt-4o',
+        model: 'gpt-4o-mini',
         messages: [
           { role: 'system', content: prompt }, // 🔥 用傳進來的 prompt
           { role: 'user', content: `以下是逐字稿：\n\n${text}` },

@@ -11,13 +11,15 @@ import {
 } from 'react-native-iap';
 import { Alert, Platform, EmitterSubscription } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { logCoinUsage, checkCoinUsage } from './googleSheetAPI';
+import { recordTopup, checkSpecialBalance, handleLogin } from './googleSheetAPI';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { debugValue } from '../constants/variant'
+import { debugValue, productIds, productToCoins } from '../constants/variant'
 import { debugLog, debugWarn, debugError } from './debugLog';
 
 
+
 let onTopUpCompleted: (() => void) | null = null;
+
 
 export const setTopUpCompletedCallback = (fn: (() => void) | null) => {
     onTopUpCompleted = fn;
@@ -28,15 +30,6 @@ let onTopUpProcessingChange: ((isProcessing: boolean) => void) | null = null;
 export const setTopUpProcessingCallback = (fn: ((isProcessing: boolean) => void) | null) => {
     onTopUpProcessingChange = fn;
 };
-// 產品配置
-export const productToCoins: Record<string, number> = {
-    'topup_100': debugValue === '1' ? 10 : 100,
-    'topup_400': 400,
-    'topup_1000': 1000,
-};
-
-export const productIds = Object.keys(productToCoins);
-
 
 // 單例管理類
 class PurchaseManager {
@@ -119,11 +112,11 @@ class PurchaseManager {
                 debugWarn('交易未完成，略過');
                 return;
             }
-              if (this.isHandlingPurchase) {
-    debugWarn('⛔️ 正在處理儲值中，跳過重複呼叫');
-    return;
-  }
-  this.isHandlingPurchase = true;
+            if (this.isHandlingPurchase) {
+                debugWarn('⛔️ 正在處理儲值中，跳過重複呼叫');
+                return;
+            }
+            this.isHandlingPurchase = true;
 
             // 完成交易
             await finishTransaction({ purchase, isConsumable: true });
@@ -140,48 +133,32 @@ class PurchaseManager {
             const user = JSON.parse(await AsyncStorage.getItem('user') || '{}');
             debugLog('✅ 紀錄金幣');
 
-            const result = await checkCoinUsage({
-                id: user.id,
-                email: user.email,
-                name: user.name,
-                action: 'topup',
-                value: coinsToAdd,
-                note: `購買 ${coinsToAdd} 金幣`
-            });
+            await recordTopup(
+                user.id,
+                coinsToAdd,             // 正確：加值金額
+                purchase.productId,     // 正確：寫入 note 欄位
+                user.email              // 正確：email 欄位
+            );
+
 
             debugLog('✅ 上傳金幣');
-            debugLog(result);
-
-            if (!result.success) {
-                debugError(result.message || '金幣記錄失敗');
-            }
-
-            // 更新本地金幣已在CheckCoinUsage 完成
-
 
             // 強制同步最新 user 資料
             //    await loadUserAndSync();
 
             // 顯示加值成功提示
-          //  Alert.alert('✅ 加值成功', `已獲得 ${coinsToAdd} 金幣`);
-if (this.onTopUpCompleted) {
-  debugLog('🔁 呼叫儲值完成 iap callback');
-  this.onTopUpCompleted(coinsToAdd); // ✅ 把 coinsToAdd 傳出去
-  this.onTopUpCompleted = null;
-}
-
-            // 處理等待中的操作（現在確保金幣已更新後才執行）
-            /*       if (this.pendingActions.length > 0) {
-                       const actions = [...this.pendingActions];
-                       this.clearPendingActions();
-                       return actions;
-                   } */
+            //  Alert.alert('✅ 加值成功', `已獲得 ${coinsToAdd} 金幣`);
+            if (this.onTopUpCompleted) {
+                debugLog('🔁 呼叫儲值完成 iap callback');
+                this.onTopUpCompleted(coinsToAdd); // ✅ 把 coinsToAdd 傳出去
+                this.onTopUpCompleted = null;
+            }
         } catch (err) {
             debugError('❌ 購買處理失敗', err instanceof Error ? err.message : '未知錯誤');
         } finally {
             // 無論成功失敗都關閉遮罩
             if (onTopUpProcessingChange) onTopUpProcessingChange(false);
-                this.isHandlingPurchase = false;
+            this.isHandlingPurchase = false;
         }
     }
 
@@ -234,11 +211,11 @@ if (this.onTopUpCompleted) {
 export const purchaseManager = PurchaseManager.getInstance();
 
 export const waitForTopUp = (): Promise<number> => {
-  return new Promise((resolve) => {
-    purchaseManager.onTopUpCompleted = (coinsAdded: number) => {
-      resolve(coinsAdded);
-    };
-  });
+    return new Promise((resolve) => {
+        purchaseManager.onTopUpCompleted = (coinsAdded: number) => {
+            resolve(coinsAdded);
+        };
+    });
 };
 
 
