@@ -17,7 +17,7 @@ export const additionalColors = {
 
 export const lightTheme = {
   primary: '#00C1D4',
-  background: '#f8f9fa',
+  background: '#F7F3E9',
   secondary: '#e0e0e0',
   text: '#222',
   subtext: '#555',
@@ -29,7 +29,7 @@ export const lightTheme = {
 
 export const darkTheme = {
   primary: '#00C1D4',
-  background: '#121212',
+  background: '#2E2B27',
   secondary: '#424242',
   text: '#eee',
   subtext: '#ccc',

@@ -6,78 +6,91 @@ export const LANGUAGE_MAP = {
     label: 'English: English', 
     value: 'en', 
     speechCode: 'en-US',
-    englishName: 'English'
+    englishName: 'English',
+    flagEmoji: '🇺🇸', // 美國國旗
   },
   'ja': { 
     label: 'Japanese: 日本語', 
     value: 'ja', 
     speechCode: 'ja-JP',
-    englishName: 'Japanese'
+    englishName: 'Japanese',
+    flagEmoji: '🇯🇵', // 日本國旗
   },
   'ko': { 
     label: 'Korean: 한국어', 
     value: 'ko', 
     speechCode: 'ko-KR',
-    englishName: 'Korean'
+    englishName: 'Korean',
+    flagEmoji: '🇰🇷', // 韓國國旗
   },
   'fr': { 
     label: 'French: Français', 
     value: 'fr', 
     speechCode: 'fr-FR',
-    englishName: 'French'
+    englishName: 'French',
+    flagEmoji: '🇫🇷', // 法國國旗
   },
   'de': { 
     label: 'German: Deutsch', 
     value: 'de', 
     speechCode: 'de-DE',
-    englishName: 'German'
+    englishName: 'German',
+    flagEmoji: '🇩🇪', // 德國國旗
   },
   'es': { 
     label: 'Spanish: Español', 
     value: 'es', 
     speechCode: 'es-ES',
-    englishName: 'Spanish'
+    englishName: 'Spanish',
+    flagEmoji: '🇪🇸', // 西班牙國旗
   },
   'zh-TW': { 
     label: 'Chinese: 中文（繁體）', 
     value: 'zh-TW', 
     speechCode: 'zh-TW',
-    englishName: 'Chinese'
+    englishName: 'Chinese',
+    flagEmoji: '🇹🇼', // 台灣國旗
   },
   'tl': { 
     label: 'Filipino: Filipino', 
     value: 'tl', 
     speechCode: 'tl-PH',
-    englishName: 'Filipino'
+    englishName: 'Filipino',
+    flagEmoji: '🇵🇭', // 菲律賓國旗
   },
   'th': {
   label: 'Thai: ไทย',
   value: 'th',
   speechCode: 'th-TH',
-  englishName: 'Thai'
+  englishName: 'Thai',
+  flagEmoji: '🇹🇭', // 泰國國旗
 },
   'id': { 
     label: 'Indonesian: Bahasa Indonesia', 
     value: 'id', 
     speechCode: 'id-ID',
-    englishName: 'Indonesian'
+    englishName: 'Indonesian',
+    flagEmoji: '🇮🇩', // 印尼國旗
   },
   'vi': { 
     label: 'Vietnamese: Tiếng Việt', 
     value: 'vi', 
     speechCode: 'vi-VN',
-    englishName: 'Vietnamese'
+    englishName: 'Vietnamese',
+    flagEmoji: '🇻🇳', // 越南國旗
   },
   'hi': { 
   label: 'Hindi: हिन्दी', 
   value: 'hi', 
   speechCode: 'hi-IN',
-  englishName: 'Hindi'
+  englishName: 'Hindi',
+  flagEmoji: '🇮🇳', // 印度國旗
 },'pt': { 
   label: 'Portuguese: Português', 
   value: 'pt', 
   speechCode: 'pt-PT',
-  englishName: 'Portuguese'
+  englishName: 'Portuguese',
+  flagEmoji: '🇵🇹', // 葡萄牙國旗
 },
 } as const;
 

@@ -55,6 +55,7 @@ export default function MenuPage() {
     loadLayoutMode();
   }, []);
 
+
   // ✅ 載入本地金幣
   useEffect(() => {
     const loadLocalCoins = async () => {
@@ -112,6 +113,33 @@ export default function MenuPage() {
     })();
   }, [currentUser]);
 
+  // 新增處理佈局切換的函數
+const handleLayoutChange = async (mode: 'default' | 'reversed') => {
+  try {
+    setLayoutMode(mode);
+    
+    const currentState = await AsyncStorage.getItem('vt_swap_state');
+    const swapState = currentState ? JSON.parse(currentState) : {};
+    
+    const updatedState = {
+      ...swapState,
+      layoutMode: mode,
+      isUpsideDown: false,
+      reverseNextPair: false,
+      inputPosition: 'bottom'
+    };
+    
+    await AsyncStorage.setItem('vt_swap_state', JSON.stringify(updatedState));
+    
+    // ✅ 直接用現有的 setLayoutMode 參數
+    navigation.navigate("VoiceTranslator", { setLayoutMode: mode });
+    
+    debugLog(`🔄 MenuPage 設定佈局模式: ${mode}`);
+  } catch (error) {
+    debugError('切換佈局模式失敗:', error);
+  }
+};
+  
   // 修改登入函數
   const handleLoginWithAutoClose = async () => {
     setIsLoggingIn(true);
@@ -331,71 +359,61 @@ export default function MenuPage() {
 
         {/* 切換 Default / Reverse Layout */}
 <View style={{ flexDirection: 'row', gap: 10, marginVertical: 10 }}>
-  <TouchableOpacity
-    onPress={() => {
-      navigation.navigate("VoiceTranslator", {
-        setLayoutMode: 'default'
-      } as any);
-    }}
-    style={[
-      styles.menuItemButton,
-{
-  backgroundColor: layoutMode === 'default' ? colors.primary : 'transparent',
-  opacity: layoutMode === 'default' ? 1 : 1,
-  borderRadius: 20, // 圓圈效果
-  paddingHorizontal: 12, // 左右小一點
-  paddingVertical: 8, // 上下更小
-  marginVertical: 2,
-  alignItems: 'center', // 字置中
-  justifyContent: 'center', // 字置中
-  minHeight: 36 // 固定高度讓圈圈小一點
-}
-    ]}
-    disabled={layoutMode === 'default'}
-  >
-    <Text style={[
-      styles.menuItem,
-      {
-        color: layoutMode === 'default' ? colors.background : colors.text,
-        textAlign: 'center'
-      }
-    ]}>
-      💬 {t('conversationMode')}
-    </Text>
-  </TouchableOpacity>
+<TouchableOpacity
+  onPress={() => handleLayoutChange('default')}
+  style={[
+    styles.menuItemButton,
+    {
+      backgroundColor: layoutMode === 'default' ? colors.primary : 'transparent',
+      borderRadius: 20,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      marginVertical: 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: 36
+    }
+  ]}
+  disabled={layoutMode === 'default'}
+>
+  <Text style={[
+    styles.menuItem,
+    {
+      color: layoutMode === 'default' ? colors.background : colors.text,
+      textAlign: 'center'
+    }
+  ]}>
+    💬 {t('conversationMode')}
+  </Text>
+</TouchableOpacity>
 
-  <TouchableOpacity
-    onPress={() => {
-      navigation.navigate("VoiceTranslator", {
-        setLayoutMode: 'reversed'
-      } as any);
-    }}
-    style={[
-      styles.menuItemButton,
-{
-  backgroundColor: layoutMode === 'reversed' ? colors.primary : 'transparent',
-  opacity: layoutMode === 'reversed' ? 1 : 1,
-  borderRadius: 20, // 圓圈效果
-  paddingHorizontal: 12, // 左右小一點
-  paddingVertical: 8, // 上下更小
-  marginVertical: 2,
-  alignItems: 'center', // 字置中
-  justifyContent: 'center', // 字置中
-  minHeight: 36 // 固定高度讓圈圈小一點
-}
-    ]}
-    disabled={layoutMode === 'reversed'}
-  >
-    <Text style={[
-      styles.menuItem,
-      {
-        color: layoutMode === 'reversed' ? colors.background : colors.text,
-        textAlign: 'center'
-      }
-    ]}>
-      📚 {t('learningMode')}
-    </Text>
-  </TouchableOpacity>
+<TouchableOpacity
+  onPress={() => handleLayoutChange('reversed')}
+  style={[
+    styles.menuItemButton,
+    {
+      backgroundColor: layoutMode === 'reversed' ? colors.primary : 'transparent',
+      borderRadius: 20,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      marginVertical: 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: 36
+    }
+  ]}
+  disabled={layoutMode === 'reversed'}
+>
+  <Text style={[
+    styles.menuItem,
+    {
+      color: layoutMode === 'reversed' ? colors.background : colors.text,
+      textAlign: 'center'
+    }
+  ]}>
+    📚 {t('learningMode')}
+  </Text>
+</TouchableOpacity>
 </View>
         {/* 字體切換 */}
         <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -422,6 +440,15 @@ export default function MenuPage() {
             </TouchableOpacity>
           ))}
         </View>
+
+{/* 选择目标语言 
+<Text style={styles.menuHeader}>{t('chooseTargetLanguage')}</Text>
+<TouchableOpacity 
+  onPress={() => navigation.navigate('LanguagePage' as never)}
+  style={styles.menuItemButton}
+>
+  <Text style={styles.menuItem}>🌐 {t('selectLanguage')}</Text>
+</TouchableOpacity> */}
 
 
         {/* 主题切换 */}

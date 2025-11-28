@@ -17,7 +17,7 @@ import { debugError, debugLog, debugWarn } from './utils/debugLog';
 
 // 保留你原本的設定
 GoogleSignin.configure({
-  webClientId: '425967296243-5g13mk77njoqcca2h4d7ro4c2gifbg9q.apps.googleusercontent.com',
+  webClientId: '732781312395-blhdm11hejnni8c2k9orf7drjcorp1pp.apps.googleusercontent.com',
   offlineAccess: true,
 });
 

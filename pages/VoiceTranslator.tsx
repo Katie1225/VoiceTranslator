@@ -14,7 +14,7 @@ import TopUpModal from '../components/TopUpModal';
 import RecorderHeader from '../components/RecorderHeader';
 import { useTheme } from '../constants/ThemeContext';
 import { translateText } from '../utils/translateHelper';
-import { LANGUAGE_MAP, getDeviceLanguage, getSpeechLanguage } from '../constants/languages';
+import { LANGUAGE_MAP, LanguageCode, getDeviceLanguage, getSpeechLanguage } from '../constants/languages';
 import { useLogin } from '../constants/LoginContext';
 import { getInitialFreeCoins, productToCoins } from '@/constants/variant';
 import { purchaseManager, waitForTopUp } from '@/utils/iap';
@@ -79,34 +79,6 @@ export default function VoiceTranslator() {
     }, 16);
   };
 
-  // 在 VoiceTranslator.tsx 的 useEffect 中，修改為：
-  useEffect(() => {
-    const state = navigation.getState?.();
-    if (!state) return;
-
-    const currentRoute = state.routes[state.index];
-    const params = currentRoute?.params as any; // 暫時用 any 避免型別問題
-
-    if (params?.setLayoutMode) {
-      debugLog("🔄 MenuPage 要求設定佈局模式:", params.setLayoutMode);
-
-      // 直接設定佈局模式
-      setLayoutMode(params.setLayoutMode);
-
-      // 重置所有旋轉相關狀態
-      setIsUpsideDown(false);
-      setReverseNextPair(false);
-      setInputPosition('bottom');
-
-      // 確保螢幕方向為正向
-      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-
-      // 清除參數
-      navigation.setParams({ setLayoutMode: undefined } as any);
-
-    }
-  }, [navigation]);
-
   // 從 LoginContext 獲取用戶狀態
   const { currentUser, setCurrentUser } = useLogin();
 
@@ -129,6 +101,44 @@ export default function VoiceTranslator() {
       hideSubscription.remove();
     };
   }, []);
+
+useFocusEffect(
+  useCallback(() => {
+    const state = navigation.getState?.();
+    if (!state) return;
+
+    const currentRoute = state.routes[state.index];
+    const params = currentRoute?.params as any;
+
+    if (params?.setLayoutMode) {
+      const nextMode = params.setLayoutMode;
+      debugLog("🔄 接收到佈局模式:", nextMode);
+
+      // 直接設定佈局模式
+      setLayoutMode(nextMode);
+
+      // 重置所有旋轉相關狀態
+      setIsUpsideDown(false);
+      setReverseNextPair(false);
+      setInputPosition('bottom');
+
+      // 確保螢幕方向為正向
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+
+      // 清除參數
+      navigation.setParams({ setLayoutMode: undefined } as any);
+
+      // 顯示提示
+      setTimeout(() => {
+        Alert.alert(
+          '佈局模式已切換',
+          `當前模式: ${nextMode === 'default' ? '對話模式' : '學習模式'}`,
+          [{ text: '確定' }]
+        );
+      }, 100);
+    }
+  }, [navigation])
+);
 
   // 只在這個頁面畫面會旋轉
   useEffect(() => {
@@ -159,6 +169,25 @@ export default function VoiceTranslator() {
       setTimeout(scrollToBottom, 30);  // 快速捲到底即可
     }
   }, [messages]);
+  // ⭐ 進入頁面時讀取 targetLang
+useFocusEffect(
+  useCallback(() => {
+    const loadTargetLang = async () => {
+      try {
+        const saved = await AsyncStorage.getItem('targetLang');
+        if (saved) {
+          debugLog("🎯 回到 VoiceTranslator，自動更新 targetLang:", saved);
+          setTargetLang(saved);
+        }
+      } catch (e) {
+        debugWarn("讀取 targetLang 失敗:", e);
+      }
+    };
+    loadTargetLang();
+  }, [])
+);
+
+
 
   // 載入金幣 - 改進為實時監聽
   useEffect(() => {
@@ -196,25 +225,35 @@ export default function VoiceTranslator() {
   };
 
   // ⭐ 恢復所有交換相關狀態
-  const restoreSwapState = async () => {
-    try {
-      const saved = await AsyncStorage.getItem('vt_swap_state');
-      if (saved) {
-        const swapState = JSON.parse(saved);
+const restoreSwapState = async () => {
+  try {
+    const saved = await AsyncStorage.getItem('vt_swap_state');
+    if (saved) {
+      const swapState = JSON.parse(saved);
+      
+      // 檢查是否有正在進行的佈局更改
+      const state = navigation.getState?.();
+      const params = state?.routes[state.index]?.params as any;
+      
+      // 如果沒有佈局更改指令，才恢復狀態
+      if (!params?.setLayoutMode) {
         setIsLanguageSwapped(swapState.isLanguageSwapped || false);
         setIsUpsideDown(swapState.isUpsideDown || false);
         setReverseNextPair(swapState.reverseNextPair || false);
         setLayoutMode(swapState.layoutMode || 'default');
         setSourceLang(swapState.sourceLang || getDeviceLanguage());
-        setTargetLang(swapState.targetLang || 'en');
+      //  setTargetLang(swapState.targetLang || 'en');
         setInputPosition(swapState.inputPosition || 'bottom');
 
         debugLog('💾 恢復交換狀態:', swapState);
+      } else {
+        debugLog('⏩ 跳過狀態恢復，有佈局更改正在進行');
       }
-    } catch (e) {
-      debugWarn('恢復交換狀態失敗', e);
     }
-  };
+  } catch (e) {
+    debugWarn('恢復交換狀態失敗', e);
+  }
+};
 
   // ⭐ 在組件掛載時恢復狀態
   useEffect(() => {
@@ -241,29 +280,10 @@ export default function VoiceTranslator() {
   }, []);
 
   // ⭐ 當相關狀態改變時自動保存
-  useEffect(() => {
-    saveSwapState();
-  }, [isLanguageSwapped, isUpsideDown, reverseNextPair, layoutMode, sourceLang, targetLang, inputPosition]);
-
-  // ⭐ 使用 useFocusEffect 確保每次回到頁面都恢復正確的語言方向
-  useFocusEffect(
-    useCallback(() => {
-      // 恢復交換狀態
-      restoreSwapState();
-
-      // 原有的語言初始化邏輯
-      (async () => {
-        let savedLang = await AsyncStorage.getItem('targetLang');
-        if (!savedLang) {
-          const deviceLang = getDeviceLanguage();
-          savedLang = deviceLang;
-          await AsyncStorage.setItem('targetLang', savedLang);
-        }
-        setTargetLang(savedLang);
-        debugLog(`🌍 當前翻譯目標語言: ${savedLang}`);
-      })();
-    }, [])
-  );
+useEffect(() => {
+  debugLog(`📱 layoutMode 變化: ${layoutMode}`);
+  saveSwapState();
+}, [layoutMode]);
 
   const upperScrollRef = useRef<ScrollView>(null);
   const lowerScrollRef = useRef<ScrollView>(null);
@@ -727,7 +747,7 @@ export default function VoiceTranslator() {
   };
 
   return (
-    <KeyboardAvoidingView
+<KeyboardAvoidingView
       style={[
         styles.container,
         {
@@ -741,8 +761,14 @@ export default function VoiceTranslator() {
     >
       {/* 🔸依照 layoutMode 顯示不同版型 */}
       {layoutMode === 'default' ? (
-        /* ⭐ default mode：旋轉時整個區塊隱藏 ⭐ */
-        (!isRotating && (
+        
+        // ⭐⭐⭐ 修改開始：加入過場畫面判斷 ⭐⭐⭐
+        isRotating ? (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            {/* 顯示一個大的交換圖標 */}
+            <Icon name="swap-vertical-circle-outline" size={90} color={colors.primary} />
+          </View>
+        ) : (
           <>
             {/* 上半部：翻譯區 */}
             <View style={[
@@ -836,9 +862,9 @@ export default function VoiceTranslator() {
                 onDelete={handleClear}
                 autoPlayEnabled={autoPlay}
                 toggleAutoPlay={() => setAutoPlay(p => !p)}
-                onToggleLayout={handleToggleLayout}
                 onSwapLanguages={handleSwapLanguages}
                 isLanguageSwapped={isLanguageSwapped}
+                targetLangCode={targetLang as LanguageCode}
               />
             </View>
 
@@ -910,7 +936,7 @@ export default function VoiceTranslator() {
               </ScrollView>
             </View>
 
-            {/* 輸入框 - 永遠在底部，跟著大翻轉 */}
+{/* 輸入框 - 永遠在底部，跟著大翻轉 */}
             <View
               style={[
                 {
@@ -923,27 +949,50 @@ export default function VoiceTranslator() {
                   : { position: 'absolute', bottom: 0 }
               ]}
             >
-              <TextInput
-                style={[
-                  styles.input,
-                  {
-                    color: colors.text,
-                    backgroundColor: colors.container,
-                    borderColor: colors.primary,
-                    height: '100%'
-                  },
-                ]}
-                placeholder={t('enterTextPlaceholder')}
-                placeholderTextColor={colors.subtext}
-                value={text}
-                onChangeText={handleTextChange}
+              {/* ⭐ 修改：增加一個內層容器來做橫向排列 (Row) */}
+              <View style={{
+                flex: 1,
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: colors.container,
+                borderTopWidth: 1,
+                borderColor: colors.primary,
+                paddingRight: 10, // 給按鈕一點空間
+              }}>
+                <TextInput
+                  style={[
+                    styles.input,
+                    {
+                      color: colors.text,
+                      // backgroundColor, borderColor 移到外層了，這裡改透明
+                      backgroundColor: 'transparent', 
+                      borderTopWidth: 0, // 邊框也由外層控制
+                      height: '100%',
+                      flex: 1, // 讓輸入框佔據剩餘空間
+                    },
+                  ]}
+                  placeholder={t('enterTextPlaceholder')}
+                  placeholderTextColor={colors.subtext}
+                  value={text}
+                  onChangeText={handleTextChange}
+                  onSubmitEditing={handleSubmit}
+                  returnKeyType="send"
+                />
 
-                onSubmitEditing={handleSubmit}
-                returnKeyType="send"
-              />
+                {/* ⭐ 新增：當有文字時顯示傳送箭頭 */}
+                {text.trim().length > 0 && (
+                  <TouchableOpacity onPress={handleSubmit} activeOpacity={0.7}>
+                    <Icon 
+                      name="arrow-up-circle" 
+                      size={36} 
+                      color={colors.primary} 
+                    />
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
           </>
-        ))
+        )
 
       ) : (
         <>
@@ -954,9 +1003,9 @@ export default function VoiceTranslator() {
               onDelete={handleClear}
               autoPlayEnabled={autoPlay}
               toggleAutoPlay={() => setAutoPlay(prev => !prev)}
-              onToggleLayout={handleToggleLayout}
               onSwapLanguages={handleSwapLanguagesSimple} // ⭐ reverse mode 永遠 simple swap
               isLanguageSwapped={isLanguageSwapped}
+                              targetLangCode={targetLang as LanguageCode}
             />
           </View>
 
@@ -974,7 +1023,7 @@ export default function VoiceTranslator() {
               }}
               contentContainerStyle={[
                 styles.lowerScrollContent,
-
+    { paddingBottom: 70 } 
               ]}
             >
               {Object.values(
@@ -1078,33 +1127,57 @@ export default function VoiceTranslator() {
             </ScrollView>
           </View>
 
-          {/* ⭐ 反轉模式的輸入框：永遠固定在最底，不吃 rotate、不吃 swapped、不吃 default */}
+{/* ⭐ 反轉模式的輸入框：永遠固定在最底 */}
           <View
             style={{
               width: '100%',
               position: 'absolute',
               bottom: 0,
               backgroundColor: colors.background,
-              paddingHorizontal: 10,
-              paddingVertical: 8,
+              // paddingHorizontal: 10, // 移掉這個，讓邊框貼齊
+              // paddingVertical: 8,    // 移掉這個，讓高度固定
             }}
           >
-            <TextInput
-              style={[
-                styles.input,
-                {
-                  color: colors.text,
-                  backgroundColor: colors.container,
-                  borderColor: colors.primary,
-                }
-              ]}
-              placeholder={t('enterTextPlaceholder')}
-              placeholderTextColor={colors.subtext}
-              value={text}                    // ⭐ 完全沿用你原本的
-              onChangeText={handleTextChange} // ⭐ 沿用你原本的
-              onSubmitEditing={handleSubmit}  // ⭐ 沿用你原本的
-              returnKeyType="send"
-            />
+            {/* ⭐ 修改：同樣改為 Row 佈局 */}
+            <View style={{
+               flexDirection: 'row',
+               alignItems: 'center',
+               backgroundColor: colors.container,
+               borderTopWidth: 1,
+               borderColor: colors.primary,
+               height: 70, // 保持高度一致
+               paddingRight: 10,
+            }}>
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    color: colors.text,
+                    backgroundColor: 'transparent', // 改透明
+                    borderTopWidth: 0,              // 移除邊框
+                    flex: 1,                        // 佔滿空間
+                    height: '100%'
+                  }
+                ]}
+                placeholder={t('enterTextPlaceholder')}
+                placeholderTextColor={colors.subtext}
+                value={text}
+                onChangeText={handleTextChange}
+                onSubmitEditing={handleSubmit}
+                returnKeyType="send"
+              />
+
+              {/* ⭐ 新增：當有文字時顯示傳送箭頭 */}
+              {text.trim().length > 0 && (
+                <TouchableOpacity onPress={handleSubmit} activeOpacity={0.7}>
+                  <Icon 
+                    name="arrow-up-circle" 
+                    size={36} 
+                    color={colors.primary} 
+                  />
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
         </>
       )}

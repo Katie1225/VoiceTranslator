@@ -5,6 +5,7 @@ import { useTheme } from '../constants/ThemeContext';
 import { APP_TITLE } from '../constants/variant';
 import { useTranslation } from '../constants/i18n';
 import { useNavigation } from '@react-navigation/native';
+import { LANGUAGE_MAP, LanguageCode } from '../constants/languages'; // 👈 導入語言地圖
 
 interface RecorderHeaderProps {
   mode?: 'main' | 'detail';
@@ -21,6 +22,7 @@ interface RecorderHeaderProps {
   onToggleLayout?: () => void;
   onSwapLanguages?: () => void;
     isLanguageSwapped?: boolean;
+    targetLangCode?: LanguageCode; // 👈 新增：目前的來源語言
 }
 
 const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
@@ -38,7 +40,8 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
     toggleAutoPlay,
     onToggleLayout,
     onSwapLanguages,
-     isLanguageSwapped = false,
+    isLanguageSwapped = false,
+    targetLangCode = 'en', // 👈 預設為 'en'
   } = props;
   const { colors } = useTheme();
   const navigation = useNavigation();
@@ -52,6 +55,8 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
 
   };
 
+  // 取得國旗 Emoji
+  const flagEmoji = LANGUAGE_MAP[targetLangCode]?.flagEmoji || '🌍'; // 找不到則顯示地球
 
   return (
     <>
@@ -99,8 +104,9 @@ const RecorderHeader: React.FC<RecorderHeaderProps> = (props) => {
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
 
+          {/* 國旗按鈕 (語言選擇) - 替換原本的倒三角形 */}
           <TouchableOpacity onPress={() => navigation.navigate('LanguagePage' as never)}>
-            <Icon name="triangle" size={20} color={colors.primary} style={{ transform: [{ rotate: '180deg' }] }} />
+             <Text style={{ fontSize: 24 }}>{flagEmoji}</Text>
           </TouchableOpacity>
 
           {/* 🔄 語言交換按鈕 */}

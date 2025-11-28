@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "Voice Note",
+    "name": "Voice Translator",
     "slug": "audio-recorder-mvp",
     "version": "1.4.6.D",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/new-icon.png",
     "scheme": "myapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -19,15 +19,15 @@
     },
     "android": {
       "permissions": [
-        "RECORD_AUDIO",
+   //     "RECORD_AUDIO",
         "FOREGROUND_SERVICE",
-        "FOREGROUND_SERVICE_MICROPHONE",
+   //     "FOREGROUND_SERVICE_MICROPHONE",
         "WAKE_LOCK",
         "POST_NOTIFICATIONS"
       ],
       "versionCode": 6,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/icon.png",
+        "foregroundImage": "./assets/images/new-icon.png",
         "backgroundColor": "#ffffff"
       },
       "package": "com.katiehuang.audiorecordermvp"
@@ -35,14 +35,14 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/icon.png"
+      "favicon": "./assets/images/new-icon.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/icon.png",
+          "image": "./assets/images/new-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"

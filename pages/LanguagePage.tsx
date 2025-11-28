@@ -12,7 +12,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../constants/ThemeContext';
 import { useNavigation } from '@react-navigation/native';
-import { getAvailableLanguages, getDeviceLanguage, LanguageCode } from '../constants/languages';
+import { getAvailableLanguages, getDeviceLanguage, LanguageCode, LANGUAGE_MAP } from '../constants/languages';
 import { useTranslation } from '../constants/i18n'; 
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 
@@ -100,24 +100,36 @@ export default function LanguagePage() {
       >
         {allLanguages.length > 0 ? (
           allLanguages.map((lang) => (
-            <TouchableOpacity
-              key={lang.value}
-              style={[
-                styles.item,
-                { borderColor: colors.primary },
-                selectedLang === lang.value && { backgroundColor: colors.primary + '33' },
-              ]}
-              onPress={() => handleSelectLang(lang.value)}
-            >
-              <Text
-                style={{
-                  fontSize: 18,
-                  color: selectedLang === lang.value ? colors.primary : colors.text,
-                }}
-              >
-                {lang.label}
-              </Text>
-            </TouchableOpacity>
+<TouchableOpacity
+  key={lang.value}
+  style={[
+    styles.item,
+    { 
+      borderColor: colors.primary,
+      flexDirection: 'row',
+      alignItems: 'center'
+    },
+    selectedLang === lang.value && { backgroundColor: colors.primary + '33' },
+  ]}
+  onPress={() => handleSelectLang(lang.value)}
+>
+
+  {/* 國旗 */}
+  <Text style={{ fontSize: 24, marginRight: 12 }}>
+    {LANGUAGE_MAP[lang.value]?.flagEmoji ?? '🏳️'}
+  </Text>
+
+  {/* 語言名稱 */}
+  <Text
+    style={{
+      fontSize: 18,
+      color: selectedLang === lang.value ? colors.primary : colors.text,
+    }}
+  >
+    {lang.label}
+  </Text>
+</TouchableOpacity>
+
           ))
         ) : (
           // 沒有搜尋結果時顯示

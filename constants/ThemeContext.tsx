@@ -68,7 +68,7 @@ function getTintedPrimary(hex: string, ratio = 0.25): string {
 }
 
 export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
-    const [isDarkMode, setIsDarkMode] = useState(true);
+    const [isDarkMode, setIsDarkMode] = useState(false);
     const [customPrimaryColor, _setCustomPrimaryColor] = useState<string | null>(null);
     const [fontScale, setFontScaleState] = useState<FontScale>('medium');
 
